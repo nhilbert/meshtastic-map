@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meshtastic Karten</title>
+<!-- Served by scripts/mapapp.py. 3D view based on the Mesh Bonn session viewer (2026-09-20). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+<header>
+  <h1>Meshtastic — Karten</h1>
+  <span class="sub" id="status">lädt …</span>
+  <span class="spacer"></span>
+  <span class="seg" role="group" aria-label="Ansicht">
+    <button class="btn on" id="view2d" aria-pressed="true">2D Karte</button>
+    <button class="btn" id="view3d" aria-pressed="false">3D Laserscan</button>
+  </span>
+  <button class="btn" id="btnJobs" title="Hintergrundaufgaben: Rundgang, Simulation">Aufgaben</button>
+  <button class="btn" id="btnInsp" aria-pressed="false" aria-controls="right" disabled
+    title="Detailbereich ein-/ausblenden">Details</button>
+  <button class="btn" id="themeBtn" title="Hell/Dunkel">◐</button>
+</header>
+
+<main class="noinsp">
+  <aside id="rail">
+    <details class="sec" data-sec="layers" open>
+      <summary><h2>Ebenen</h2></summary>
+      <div class="lyr" id="lyr_link"></div>
+      <div id="layers"></div>
+    </details>
+    <details class="sec" data-sec="jobs" open>
+      <summary><h2>Aufgaben</h2></summary>
+      <div class="jobstart" id="jobStart"></div>
+      <div class="jobform" id="jobForm" hidden></div>
+      <div class="joblist" id="jobList"></div>
+    </details>
+    <details class="sec" data-sec="3d" id="sec3d" open>
+      <summary><h2>3D-Darstellung</h2></summary>
+      <div class="stack" id="layers3d"></div>
+      <label class="tog" for="vex">Höhenüberhöhung <span class="num" id="vexVal">1,0×</span></label>
+      <input class="rng" type="range" id="vex" min="1" max="4" step="0.1" value="1">
+      <label class="tog" for="fres">Fresnelzone <span class="num" id="fresVal">1,0 F</span></label>
+      <input class="rng" type="range" id="fres" min="0.3" max="1.6" step="0.1" value="1">
+    </details>
+    <details class="sec" data-sec="device">
+      <summary><h2>Gerät (USB)</h2><span class="dot" id="devDot"></span></summary>
+      <div class="dev"><span id="devText">—</span></div>
+      <div class="row2">
+        <input type="text" id="devPort" placeholder="Port (leer = automatisch)">
+        <button class="btn" id="devBtn">Verbinden</button>
+      </div>
+    </details>
+  </aside>
+
+  <section id="view">
+    <div id="map2d"></div>
+    <div id="pickBanner" class="banner" hidden role="status"><span id="pickText"></span>
+      <button class="btn small" id="pickCancel">Abbrechen (Esc)</button></div>
+    <div id="viewwrap" hidden>
+      <canvas id="c"></canvas>
+      <div class="ov" id="hint">Ziehen dreht · rechte Maustaste oder Umschalt+Ziehen verschiebt · Rad zoomt</div>
+      <div class="ctl3d">
+        <button class="btn" id="btn3dOverview">Übersicht</button>
+        <button class="btn" id="btn3dLink" hidden>Strecke zeigen</button>
+      </div>
+      <div class="ov" id="readout">—</div>
+      <div id="loading"><div id="loadingMsg">Laserscan wird aufgebaut …</div><div class="bar"><b></b></div></div>
+    </div>
+  </section>
+
+  <section id="right" hidden>
+    <div id="insp">
+      <div class="insphd">
+        <div class="tabs" role="tablist" id="tabs"></div>
+        <button class="btn small" id="btnCloseInsp" aria-label="Detailbereich schließen" title="Schließen">✕</button>
+      </div>
+      <div class="tabbody" id="t_link" hidden></div>
+      <div class="tabbody" id="t_models" hidden></div>
+      <div class="tabbody" id="t_walk" hidden></div>
+      <div class="tabbody" id="t_job" hidden></div>
+    </div>
+  </section>
+</main>
+<div id="toasts" aria-live="polite"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

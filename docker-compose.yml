@@ -1,0 +1,10 @@
+# Official Meshtastic web client, served locally at http://localhost:8080
+# Start: docker compose up -d     Stop: docker compose down
+# Connect via "Serial" in Chrome/Edge (Web Serial); the device stays on the host.
+services:
+  meshtastic-web:
+    image: ghcr.io/meshtastic/web:latest
+    container_name: meshtastic-web
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped

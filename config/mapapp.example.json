@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy to data/mapapp/layers.json to change which layers start enabled and their default settings.",
+  "layers": {
+    "sites": {"enabled": true},
+    "nodes": {"enabled": true, "settings": {"color": "hops", "max_age_h": 24}},
+    "walk": {"enabled": true, "settings": {"color": "snr", "walk_preset": "auto", "home_indoor": "open"}},
+    "coverage": {"enabled": false, "settings": {"model": "ENS", "opacity": 0.6}},
+    "scene": {"enabled": false}
+  }
+}

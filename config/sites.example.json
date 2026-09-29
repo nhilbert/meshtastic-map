@@ -1,0 +1,32 @@
+{
+  "_comment": "Copy to data/sim/sites.json (not committed) and enter your own sites. Coordinates here are public places in Bonn, not real nodes.",
+  "sites": {
+    "HOME": {
+      "lon": 7.0988, "lat": 50.7374,
+      "height_m": [3.0, 4.0], "clutter_m": 20.0,
+      "description": "home node at a ground-floor window (Marktplatz as placeholder)"
+    },
+    "ROOF": {
+      "lon": 7.1037, "lat": 50.7336,
+      "height_m": [15.0, 19.0], "clutter_m": 17.0,
+      "description": "relay on a roof terrace (Hofgarten as placeholder)"
+    },
+    "ROOF_W": {
+      "same_as": "ROOF", "height_m": [6.0, 10.0],
+      "description": "same building, window three floors lower"
+    }
+  },
+  "scenarios": [
+    {"id": "A1", "label": "HOME window open <-> ROOF", "a": "HOME", "b": "ROOF", "a_indoor": "open"},
+    {"id": "A2", "label": "HOME window closed, old glazing <-> ROOF", "a": "HOME", "b": "ROOF", "a_indoor": "trad"},
+    {"id": "A4", "label": "HOME antenna outside <-> ROOF", "a": "HOME", "b": "ROOF"},
+    {"id": "A5", "label": "HOME window open <-> ROOF_W window open", "a": "HOME", "b": "ROOF_W", "a_indoor": "open", "b_indoor": "open"},
+    {"id": "A6", "label": "as A1 with a T1000-E", "a": "HOME", "b": "ROOF", "a_indoor": "open", "device": "t1000e"}
+  ],
+  "corridor": {
+    "id_prefix": "K", "from": "HOME", "towards": "ROOF",
+    "distances_m": [100, 200, 300, 450],
+    "rx_height_m": [1.2, 1.8], "rx_clutter_m": 12.0, "tx_indoor": "open"
+  },
+  "preset_comparison": ["A1"]
+}
