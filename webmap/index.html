@@ -6,10 +6,10 @@
 <title>Meshtastic Karten</title>
 <!-- Served by scripts/mapapp.py. 3D view based on the Mesh Bonn session viewer (2026-09-20).
      Texts are German source text, translated by js/i18n.js (data-i18n*, catalogues in i18n/). -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<!-- Libraries, fonts and map tiles are served by the map app itself (webmap/vendor/, data/tiles/),
+     so the page works without internet. -->
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -129,9 +129,9 @@
 <div id="toasts" aria-live="polite"></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/proj4.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

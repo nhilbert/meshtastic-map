@@ -58,6 +58,7 @@ def test_phrases_stay_short_in_both_languages():
             next=name,
             name=name,
             text="Treffpunkt Ausgang Nord",
+            avg="4.2km/h",
             dist="1.2km",
             dir="NW",
             eta="~12min",
@@ -215,7 +216,10 @@ def test_commands_halt_go_abort_and_strangers(coord):
     feed(coord, position(*HOME))
     n = len(sent_texts(coord))
     feed(coord, text("?h"))
-    assert sent_texts(coord)[-1] == "? status ?R route ?Z target ?P path ?L legend HALT GO X=abort"
+    assert (
+        sent_texts(coord)[-1]
+        == "? status ?R route ?Z target ?E arrival ?P path ?L legend HALT GO X=abort"
+    )
     feed(coord, text("?z"))
     assert sent_texts(coord)[-1] == "#Z 500m N"
     feed(coord, text("?r"))
@@ -476,6 +480,39 @@ def test_hold_over_on_a_shortened_path(coord):
     coord._tick(time.time())  # a second tick is harmless
     feed(coord, position(*north(250)))
     assert coord.layer_features()  # the layer still renders
+
+
+def test_eta_command(coord):
+    coord.assign(NODE, [{"name": "Z", "lat": north(1000)[0], "lon": HOME[1]}], "foot", "de")
+    feed(coord, text("?e"))
+    assert sent_texts(coord)[-1] == "#Z zugewiesen, keine Position von dir"
+    feed(coord, position(*HOME))
+    feed(coord, text("?e"))
+    t = sent_texts(coord)[-1]
+    assert re.match(r"#Z Ankunft \d\d:\d\d \(~13min\) bei 4\.5km/h angenommen$", t)  # default
+    m = coord.missions[NODE]
+    # a measured speed: three legs of 100 m in 60 s each (6 km/h), backdated
+    base = time.time() - 240
+    m.positions.clear()
+    for i in range(4):
+        m.positions.append(
+            {
+                "time": base + i * 60,
+                "lat": north(i * 100)[0],
+                "lon": HOME[1],
+                "bits": 32,
+                "snr": 1,
+                "rssi": -90,
+                "hops": 0,
+                "speed": None,
+            }
+        )
+    m.travelled_m = 300
+    feed(coord, text("?e"))
+    t = sent_texts(coord)[-1]
+    assert re.match(r"#Z Ankunft \d\d:\d\d \(~7min\) 6km/h jetzt, 6km/h Schnitt$", t), t
+    feed(coord, text("?h"))
+    assert "?E Ankunft" in sent_texts(coord)[-1]
 
 
 def test_legend_once_and_on_request(coord):

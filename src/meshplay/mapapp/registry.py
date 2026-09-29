@@ -70,6 +70,7 @@ class Context:
         self.device = None  # meshplay.mapapp.device.DeviceLink, set by the server
         self.jobs = None  # meshplay.mapapp.jobs.JobManager, set by the server
         self.coord = None  # meshplay.mapapp.coord.missions.Coordinator, set by the server
+        self.tiles = None  # meshplay.mapapp.tiles.TileCache, set by the server
 
     @cached_property
     def scene(self):

@@ -850,6 +850,10 @@ class Coordinator:
                 speed_source=source,
                 eta_s=round(to_go / speed) if speed > 0 else None,
             )
+            first = m.positions[0]
+            moving_s = last["time"] - first["time"]
+            if m.travelled_m >= 50 and moving_s >= 60:  # the average over the whole mission
+                out["avg_speed_kmh"] = round(m.travelled_m / moving_s * 3.6, 1)
             if stop.arrive_by and out["eta_s"] is not None:
                 out["margin_min"] = round((stop.arrive_by - (now + out["eta_s"])) / 60)
         m.metrics = out
@@ -858,8 +862,8 @@ class Coordinator:
         """m/s: median of the last three usable legs (or reported ground speeds), else the
         profile's default."""
         samples = []
-        pts = list(m.positions)
-        for a, b in zip(pts[-6:-1], pts[-5:], strict=False):
+        pts = list(m.positions)[-6:]
+        for a, b in zip(pts, pts[1:], strict=False):
             dt = b["time"] - a["time"]
             d = distance_m((a["lat"], a["lon"]), (b["lat"], b["lon"]))
             if SPEED_DT_S[0] <= dt <= SPEED_DT_S[1] and d >= MOVE_MIN_M:
@@ -1197,6 +1201,7 @@ class Coordinator:
         if cmd is None or not m.active:
             return
         self._event(m.node, "command", command=cmd, text=text)
+        self._update_metrics(m, time.time())  # answers use the current age, speed and ETA
         if cmd == "status":
             self._send(m, "status", self._status_text(m), reply=True)
         elif cmd == "route":
@@ -1205,6 +1210,8 @@ class Coordinator:
             self._send(m, "target", self._target_text(m), reply=True)
         elif cmd == "path":
             self._send(m, "path", self._path_text(m), reply=True)
+        elif cmd == "eta":
+            self._send(m, "eta", self._eta_text(m), reply=True)
         elif cmd == "help":
             self._send(m, "help", phrases.phrase(m.lang, "help"), reply=True)
         elif cmd == "legend":
@@ -1286,6 +1293,25 @@ class Coordinator:
             return phrases.phrase(m.lang, "assign_nopos", target=m.guide.name)
         return phrases.phrase(
             m.lang, "target", target=m.guide.name, dist=fmt_dist(mt["dist_m"]), dir=mt["compass"]
+        )
+
+    def _eta_text(self, m: Mission) -> str:
+        """Arrival as a clock time from the current speed, with the average since the start."""
+        mt = m.metrics
+        if "dist_m" not in mt or mt.get("eta_s") is None:
+            return phrases.phrase(m.lang, "assign_nopos", target=m.guide.name)
+        now = time.time()
+        params = dict(
+            target=m.guide.name,
+            time=hhmm(now + mt["eta_s"]),
+            eta=fmt_eta(mt["eta_s"]),
+            speed=f"{mt['speed_kmh']:g}km/h",
+        )
+        if mt.get("speed_source") != "gemessen":
+            return phrases.phrase(m.lang, "eta_default", **params)
+        avg = mt.get("avg_speed_kmh")
+        return phrases.phrase(
+            m.lang, "eta", avg=f"{avg:g}km/h" if avg else params["speed"], **params
         )
 
     def _path_text(self, m: Mission) -> str:

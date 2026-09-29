@@ -41,7 +41,9 @@ PHRASES = {
         "halt_ok": "HALT ok",
         "resume": "Weiter #{target} {dist} {dir}",
         "aborted": "#{target} abgebrochen",
-        "help": "? Status ?R Weg ?Z Ziel ?P Pfad ?L Legende HALT GO X=Abbruch",
+        "help": "? Status ?R Weg ?Z Ziel ?E Ankunft ?P Pfad ?L Legende HALT GO X=Abbruch",
+        "eta": "#{target} Ankunft {time} ({eta}) {speed} jetzt, {avg} Schnitt",
+        "eta_default": "#{target} Ankunft {time} ({eta}) bei {speed} angenommen",
         "legend": (
             "Legende: #Ziel Entfernung Richtung(N/E/S/W) ~Minuten. R: Weg: E20m=20m nach Ost, "
             "L/R=links/rechts, U=umkehren, Z=Ziel. Antworte ? fuer Status, ?H Hilfe"
@@ -74,7 +76,9 @@ PHRASES = {
         "halt_ok": "HALT ok",
         "resume": "Next #{target} {dist} {dir}",
         "aborted": "#{target} aborted",
-        "help": "? status ?R route ?Z target ?P path ?L legend HALT GO X=abort",
+        "help": "? status ?R route ?Z target ?E arrival ?P path ?L legend HALT GO X=abort",
+        "eta": "#{target} arrival {time} ({eta}) {speed} now, {avg} average",
+        "eta_default": "#{target} arrival {time} ({eta}) assuming {speed}",
         "legend": (
             "Legend: #target distance direction(N/E/S/W) ~minutes. R: route: E20m=20m east, "
             "L/R=turn left/right, U=turn back, Z=target. Reply ? for status, ?H help"
@@ -86,6 +90,7 @@ COMMANDS = {
     "?": "status",
     "?r": "route",
     "?z": "target",
+    "?e": "eta",
     "?p": "path",
     "?h": "help",
     "?l": "legend",

@@ -118,9 +118,10 @@ simulated radio first.
   re-timed; passed waypoints stay passed. The node hears about it only when its current leg
   changed (`#C neu 600m NE ~8min`). A path can be saved as a template (*Als Vorlage
   speichern …*, without times) and loaded again under *Wegpunkt hinzufügen*.
-- **The field node** answers with `?` (status), `?r` (route), `?z` (target), `?p` (path), `?h`
-  (help), `?l` (legend), `halt`/`go` (pause the guidance) and `x` (abort). Nodes without a
-  mission are never answered.
+- **The field node** answers with `?` (status), `?r` (route), `?z` (target), `?e` (arrival
+  time from the current speed, with the average since the start), `?p` (path), `?h` (help),
+  `?l` (legend), `halt`/`go` (pause the guidance) and `x` (abort). Nodes without a mission
+  are never answered.
 - **Reading the messages.** `#KKR 210m N ~6min` is the target, the straight-line distance,
   the compass direction (N, NE, E, SE, S, SW, W, NW, English in every language) and the
   expected walking time. `R: E20m L150m L10m Z` is the way along the streets: the first leg
@@ -213,6 +214,20 @@ message to the tracker that starts with `>` is spoken by the tracker: `>?` arriv
 it. Messages go to `data/messages-sim.jsonl`, packets are not logged. This is how the messaging
 pane and the coordination mode are tried without touching the mesh.
 
+## Offline use
+
+The map app runs without internet: the page's libraries and fonts are served from
+`webmap/vendor/` (versions and licences in its README), the laser-scan scene, the node data,
+the messages and the coordination mode are local, and routing uses the downloaded road graph.
+Two things need the internet once:
+
+- the road graph of the coordination mode (**Straßennetz laden …**, or the import script);
+- the map tiles. The server fetches every tile the page shows from OpenStreetMap and keeps it
+  under `data/tiles/` (`mapapp/tiles.py`), so an area you looked at while online stays
+  available offline at the zoom levels you used; the rest of the map is grey. Before going
+  off grid, pan over the area at the zooms you need. There is no bulk download: OSM's tile
+  usage policy asks for that, and the attribution stays on the map.
+
 ## Layers
 
 | Layer | Source | Settings |
@@ -250,8 +265,10 @@ src/meshplay/mapapp/
   style.py         colour scales, PNG encoding
   layers/          one module per data layer, registered in layers/__init__.py
   tools/link.py    direct-link calculator
+  tiles.py         map tile cache (data/tiles/) for offline use
 webmap/
   index.html, css/app.css
+  vendor/          Leaflet, three.js, proj4, fonts (served locally)
   js/main.js       wiring: layer panel, link layer, inspector, notices, map picks
   js/forms.js      forms built from the server's Setting declarations (layers, tasks)
   js/tasks.js      task forms, list, log view

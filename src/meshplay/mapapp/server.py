@@ -38,6 +38,7 @@ from meshplay.mapapp.i18n import _, set_lang
 from meshplay.mapapp.jobs import JobManager
 from meshplay.mapapp.layers import ALL, BY_ID
 from meshplay.mapapp.registry import Context
+from meshplay.mapapp.tiles import TileCache
 from meshplay.mapapp.tools import link as link_tool
 
 WEB_DIR = Path(__file__).resolve().parents[3] / "webmap"
@@ -184,7 +185,7 @@ def make_handler(ctx: Context, scene_dir: Path | None):
         protocol_version = "HTTP/1.1"
 
         def log_message(self, fmt, *args):
-            if not self.path.startswith(("/js/", "/css/", "/scene/")):
+            if not self.path.startswith(("/js/", "/css/", "/scene/", "/tiles/", "/vendor/")):
                 super().log_message(fmt, *args)
 
         def send_json(self, obj, status=200):
@@ -210,6 +211,24 @@ def make_handler(ctx: Context, scene_dir: Path | None):
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(body)
+
+        def send_tile(self, parts: list[str]):
+            """/tiles/z/x/y.png from the cache (or the tile server, once); 404 when neither."""
+            try:
+                z, x, y = int(parts[0]), int(parts[1]), int(parts[2].removesuffix(".png"))
+            except ValueError:
+                self.send_error(404)
+                return
+            data = ctx.tiles.get(z, x, y) if ctx.tiles is not None else None
+            if data is None:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=2592000")  # the browser too
+            self.end_headers()
+            self.wfile.write(data)
 
         def fail(self, e: Exception):
             if isinstance(e, (ValueError, KeyError)):  # bad input: the message is for the user
@@ -262,6 +281,8 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                         self.send_error(404, "no scene")
                     else:
                         self.send_file(scene_dir / parts[1])
+                elif parts[:1] == ["tiles"] and len(parts) == 4:
+                    self.send_tile(parts[1:])
                 else:
                     rel = Path(*parts) if parts else Path("index.html")
                     path = (WEB_DIR / rel).resolve()
@@ -353,6 +374,7 @@ def run(
     ctx.device = DeviceLink(ctx.data_dir, log_packets, sim)
     ctx.jobs = JobManager(ctx)
     ctx.coord = Coordinator(ctx)
+    ctx.tiles = TileCache(ctx.data_dir / "tiles")
     if device:
         ctx.device.connect(None if device == "auto" else device)
     scene_dir = ensure_scene_export(ctx, force_export)

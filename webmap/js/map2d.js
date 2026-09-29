@@ -7,7 +7,9 @@ export class Map2D {
   constructor(el, center, handlers) {
     this.h = handlers;          // { onClick(lat, lon), onFeatureAction(feature, "a"|"b") }
     this.map = L.map(el, { zoomControl: true }).setView([center.lat, center.lon], 15);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    // The server caches the OpenStreetMap tiles under data/tiles/ (works offline for areas
+    // seen before); the attribution is OSM's and stays.
+    L.tileLayer("tiles/{z}/{x}/{y}.png", {
       maxZoom: 19, attribution: t("© OpenStreetMap-Mitwirkende"),
     }).addTo(this.map);
     this.layers = {};
