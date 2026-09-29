@@ -99,7 +99,9 @@ until the tab is closed.
 - Match the surrounding style: short docstrings that say why, a usage line at the top of every
   script, type hints, no dead code. Comments explain non-obvious reasons, not the code.
 - `src/meshplay/sim/p1812.py` is a verbatim port validated against ITU data: don't reformat or
-  refactor it (it is excluded from ruff).
+  refactor it (it is excluded from ruff). It is not MIT but under the ITU licence
+  (`LICENSE-ITU-P1812.txt`), which asks that every change be noted with date and nature in the
+  file header.
 - Code, comments, docs and commit messages are English.
 - **UI language:** the page is German today. English and German (maybe more) are planned, so
   keep user-facing strings (page and server messages meant for the page) simple, complete

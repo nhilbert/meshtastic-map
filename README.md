@@ -448,8 +448,9 @@ python -m pip freeze --exclude-editable | Out-File -Encoding utf8 requirements.l
 - The simulation, the fixed-point logger and the 3D viewer are ported from the *Mesh Bonn*
   project (state 2026-09-20); what was changed and why is in
   [docs/simulation.md](docs/simulation.md#review-of-the-original-code).
-- ITU-R P.1812-6 is a port of the ITU reference implementation and reproduces its 63 official
-  validation cases.
+- ITU-R P.1812-6 is a Python translation of the ITU-R WP 3K reference implementation
+  ([eeveetza/p1812](https://github.com/eeveetza/p1812)) and reproduces its 63 official
+  validation cases; it keeps the ITU licence.
 - Laser-scan data: Geobasis NRW, *3D-Messdaten Laserscanning*,
   [dl-de/zero-2-0](https://www.govdata.de/dl-de/zero-2-0).
 - Map tiles: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
@@ -457,6 +458,8 @@ python -m pip freeze --exclude-editable | Out-File -Encoding utf8 requirements.l
 
 ## Licence
 
-[MIT](LICENSE). The licence covers this code; the data you download (laser scan, map tiles) keeps
-its own licence (see above). Contributions and forks are welcome; for coding agents, the entry
+[MIT](LICENSE), with one exception: `src/meshplay/sim/p1812.py`, a Python translation of the
+ITU-R P.1812 reference implementation, stays under the ITU's licence
+([LICENSE-ITU-P1812.txt](LICENSE-ITU-P1812.txt)). The data you download (laser scan, map tiles)
+keeps its own licence (see above). Contributions and forks are welcome; for coding agents, the entry
 point is [CLAUDE.md](CLAUDE.md).

@@ -1,4 +1,9 @@
-# Copied unchanged from the Mesh Bonn project (11_Simulation_ITU/rf/p1812.py, 2026-09-20).
+# Derived from the ITU-R P.1812-6 reference implementation (MATLAB/Octave, ITU-R WP 3K,
+# https://github.com/eeveetza/p1812, version 6.1 of 2023-04-25).
+# Change: translated from MATLAB/Octave to Python on 2026-09-20 (Mesh Bonn project,
+# 11_Simulation_ITU/rf/p1812.py); the numerics are unchanged. Copied here as is.
+# Licence: NOT under the MIT licence of this project; the ITU licence of the original applies,
+# see LICENSE-ITU-P1812.txt.
 # Validated against the 63 ITU-R WP 3K test profiles (max. deviation 5e-8 dB), see
 # scripts/sim_validate_p1812.py. Keep the numerics as they are; ruff formatting is off for this file.
 """Portierung der ITU-R-Referenzimplementierung von Recommendation ITU-R P.1812-6
