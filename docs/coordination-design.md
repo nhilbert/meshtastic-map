@@ -97,8 +97,10 @@ DMs too. No callsign: the app shows the sender.
 **Budget.** ShortSlow carries about 6 kbit/s; a DM costs the packet, its ack and every relay
 hop. The design keeps unsolicited messages to one per `min_gap_s` (default 120 s) per node,
 combines several pending things into one message, and keeps texts under ~80 bytes (hard limit
-200, the existing `check_text`). Replies to commands are always answered; arrival, no-go and
-schedule warnings jump the queue but stay ≥ 30 s apart.
+200, the existing `check_text`). Replies to commands are always answered. Messages the mission
+depends on (assignment, arrival, next leg, a changed leg, end) are never rate-limited; no-go,
+off-course and schedule warnings jump the queue but stay ≥ 30 s apart from the last
+unrequested message.
 
 **Codes.** Compass letters are English in every language (`N NE E SE S SW W NW`). Turns are
 relative to the route's own direction, which is well defined whatever the walker's heading:

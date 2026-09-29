@@ -93,8 +93,26 @@ class Mission:
         self.instr_at_m = 0.0  # travelled distance at the last interval instruction
 
     @property
-    def stop(self) -> Waypoint:
+    def current(self) -> Waypoint:
         return self.path[self.index]
+
+    @property
+    def stop_index(self) -> int:
+        """The next stop at or after the current waypoint (the last waypoint is always one)."""
+        return next(
+            (i for i in range(self.index, len(self.path)) if self.path[i].kind == "stop"),
+            len(self.path) - 1,
+        )
+
+    @property
+    def stop(self) -> Waypoint:
+        return self.path[self.stop_index]
+
+    @property
+    def guide(self) -> Waypoint:
+        """What the guidance points at: with a route the next stop (the route runs through the
+        vias), without one the current waypoint, via or stop."""
+        return self.stop if self.route is not None else self.current
 
     @property
     def active(self) -> bool:
@@ -289,7 +307,7 @@ class Coordinator:
         if key != self._graph_key:
             try:
                 self._graph = RoadGraph.load(path)
-            except (OSError, ValueError, KeyError) as e:
+            except (OSError, EOFError, ValueError, KeyError) as e:
                 log.warning("Road graph %s unusable: %s", path, e)
                 self._graph = None
             self._graph_key = key
@@ -402,8 +420,10 @@ class Coordinator:
             log.exception("Routing failed: %s", e)
             self._event(m.node, "route_failed", error=str(e))
             return
-        m.route = routes[0]
-        m.route_ahead = [r.coords for r in routes[1:] if r]
+        k = m.stop_index - m.index  # segments up to and including the next stop
+        needed = routes[: k + 1]
+        m.route = Route.concat(needed) if all(needed) else None
+        m.route_ahead = [r.coords for r in routes[k + 1 :] if r]
         self._event(
             m.node,
             "route",
@@ -481,12 +501,13 @@ class Coordinator:
             (i for i, w in enumerate(path) if w.name.upper() not in passed), len(path) - 1
         )
         new = m.stop
-        changed = (new.name, new.lat, new.lon, new.arrive_by, new.hold_until) != (
+        # times compare by the minute: the page sends them back as hh:mm
+        changed = (new.name, new.lat, new.lon, _minute(new.arrive_by), _minute(new.hold_until)) != (
             old.name,
             old.lat,
             old.lon,
-            old.arrive_by,
-            old.hold_until,
+            _minute(old.arrive_by),
+            _minute(old.hold_until),
         )
         self._event(node, "path_edited", path=[w.name for w in path], changed=changed)
         self._route_for(m)
@@ -495,7 +516,7 @@ class Coordinator:
             if m.state == HOLDING:
                 m.state = UNDERWAY
             self._update_metrics(m, now)
-            self._send(m, "changed", self._leg_text(m, "changed"), priority=True)
+            self._send(m, "changed", self._leg_text(m, "changed"), must=True)
         else:
             self._update_metrics(m, now)
         self._save(force=True)
@@ -539,7 +560,7 @@ class Coordinator:
             self._send(m, "route", self._route_text(m), reply=True)
         elif action == "next":
             self._require_active(m)
-            if m.index >= len(m.path) - 1:
+            if m.stop_index >= len(m.path) - 1 and m.current.kind != "via":
                 raise ValueError(_("{name} ist schon der letzte Halt", name=m.stop.name))
             self._advance(m, time.time(), skipped=True)
         elif action == "path":
@@ -547,7 +568,7 @@ class Coordinator:
         elif action == "end":
             if m.active and self.settings["end_message"] and body.get("notify", True):
                 self._send(
-                    m, "ended", phrases.phrase(m.lang, "ended", target=m.stop.name), priority=True
+                    m, "ended", phrases.phrase(m.lang, "ended", target=m.guide.name), must=True
                 )
             m.state = ENDED
             self._event(node, "end")
@@ -573,6 +594,10 @@ class Coordinator:
             raise ValueError(_("Der Einsatz von {node} ist nicht mehr aktiv", node=m.node))
 
     # ------------------------------------------------------------ layer
+    def active_count(self) -> int:
+        with self._lock:
+            return sum(1 for m in self.missions.values() if m.active)
+
     def layer_features(self) -> list[dict]:
         """Map features for layers/coord.py: stops, trails, the line to the current stop."""
         from meshplay.mapapp.registry import feature, line
@@ -679,7 +704,7 @@ class Coordinator:
                 elif m.active and m.last is not None:
                     out.append(
                         line(
-                            [(m.last["lon"], m.last["lat"]), (m.stop.lon, m.stop.lat)],
+                            [(m.last["lon"], m.last["lat"]), (m.guide.lon, m.guide.lat)],
                             _style={"color": color, "weight": 2, "dash": "4 6", "opacity": 0.7},
                         )
                     )
@@ -773,13 +798,13 @@ class Coordinator:
         self._update_metrics(m, now)
         if m.awaiting_position:  # the assignment could not say where to go: now it can
             m.awaiting_position = False
-            self._send(m, "assign", self._leg_text(m, "assign"), priority=True)
+            self._send(m, "assign", self._leg_text(m, "assign"), must=True)
         self._decide(m, now)
         self._dirty = True
 
     def _update_metrics(self, m: Mission, now: float) -> None:
         last = m.last
-        stop = m.stop
+        stop = m.guide
         out = {
             "position_age_s": None if last is None else round(now - last["time"]),
             "precision_bits": None if last is None else last["bits"],
@@ -834,12 +859,20 @@ class Coordinator:
 
     # ------------------------------------------------------------ decisions
     def _decide(self, m: Mission, now: float) -> None:
+        if m.route is not None and self._pass_vias(m):
+            self._update_metrics(m, now)
+        stop = m.guide
         d = m.metrics["dist_m"]
-        stop = m.stop
         if d <= stop.radius_m:
-            if m.state == HOLDING:
+            if stop.kind == "via":  # no route: the via was a straight-line target
+                m.index += 1
+                m.flags.clear()
+                self._event(m.node, "via", name=stop.name)
+                self._update_metrics(m, now)
+                self._send(m, "next", self._leg_text(m, "next"), must=True)
+            elif m.state == HOLDING:
                 m.flags.discard("early")  # back at the stop: a new early departure warns again
-            elif stop.kind == "via" or m.index >= len(m.path) - 1 or not stop.hold_until:
+            elif m.stop_index >= len(m.path) - 1 or not stop.hold_until:
                 self._advance(m, now)
             else:
                 self._hold(m, now)
@@ -893,9 +926,26 @@ class Coordinator:
                 ),
             )
 
+    def _pass_vias(self, m: Mission) -> bool:
+        """With a route: vias the node has passed (projection beyond them, or within their
+        radius) are done silently. True if the current waypoint changed."""
+        along = m.metrics.get("along_m")
+        last = m.last
+        moved = False
+        while m.current.kind == "via" and m.index < m.stop_index:
+            via = m.current
+            via_along = m.route.progress(*via.pos)[0]
+            near = distance_m((last["lat"], last["lon"]), via.pos) <= via.radius_m
+            if along is None or (along < via_along - 10 and not near):
+                break
+            m.index += 1
+            moved = True
+            self._event(m.node, "via", name=via.name)
+        return moved
+
     def _decide_line(self, m: Mission, now: float, d: float) -> None:
         """Off course without a road graph: the distance grew three times in a row."""
-        stop = m.stop
+        stop = m.guide
         dists = [distance_m((p["lat"], p["lon"]), stop.pos) for p in list(m.positions)[-3:]]
         growing = len(dists) == 3 and all(
             b - a > OFF_STEP_M for a, b in zip(dists, dists[1:], strict=False)
@@ -1021,14 +1071,19 @@ class Coordinator:
             self._send(m, "route", phrases.phrase(m.lang, "route", legs=legs_text(legs, n)))
 
     def _advance(self, m: Mission, now: float, skipped: bool = False) -> None:
-        """The current waypoint is done: next one, or the mission is over."""
-        stop = m.stop
-        m.flags.clear()
-        if stop.kind == "via" and m.index < len(m.path) - 1:
+        """The next stop is done (reached, or skipped by the coordinator): the one after it
+        becomes current, or the mission is over."""
+        if skipped and m.current.kind == "via":  # skipping a via keeps the stop
+            self._event(m.node, "skipped", name=m.current.name)
             m.index += 1
-            self._event(m.node, "via", name=stop.name)
+            m.flags.clear()
+            self._route_for(m)
             self._update_metrics(m, now)
+            self._send(m, "next", self._leg_text(m, "next"), must=True)
             return
+        stop = m.stop
+        m.index = m.stop_index
+        m.flags.clear()
         reached_at = hhmm(now)
         self._event(m.node, "skipped" if skipped else "reached", name=stop.name)
         if m.index >= len(m.path) - 1:
@@ -1044,7 +1099,7 @@ class Coordinator:
                     travelled=fmt_dist(m.travelled_m),
                     duration=fmt_eta(now - m.assigned_at)[1:],
                 ),
-                priority=True,
+                must=True,
             )
             return
         m.index += 1
@@ -1052,7 +1107,7 @@ class Coordinator:
         self._route_for(m)
         self._update_metrics(m, now)
         if skipped:
-            self._send(m, "next", self._leg_text(m, "next"), priority=True)
+            self._send(m, "next", self._leg_text(m, "next"), must=True)
         else:
             self._send(
                 m,
@@ -1062,16 +1117,17 @@ class Coordinator:
                     "reached_next",
                     target=stop.name,
                     time=reached_at,
-                    next=m.stop.name,
+                    next=m.guide.name,
                     dist=fmt_dist(m.metrics["dist_m"]),
                     dir=m.metrics["compass"],
                     eta=fmt_eta(m.metrics.get("eta_s")),
                 ),
-                priority=True,
+                must=True,
             )
 
     def _hold(self, m: Mission, now: float) -> None:
         stop = m.stop
+        m.index = m.stop_index
         m.state, m.hold_arrived_at = HOLDING, now
         m.flags.clear()
         self._event(m.node, "hold", name=stop.name, until=stop.hold_until)
@@ -1087,7 +1143,7 @@ class Coordinator:
                 duration=fmt_eta(now - m.assigned_at)[1:],
                 until=hhmm(stop.hold_until),
             ),
-            priority=True,
+            must=True,
         )
 
     def _tick(self, now: float) -> None:
@@ -1103,12 +1159,15 @@ class Coordinator:
             self._update_metrics(m, now)
             if m.state == HOLDING and m.stop.hold_until and now >= m.stop.hold_until:
                 self._event(m.node, "hold_over", name=m.stop.name)
-                m.index += 1
-                m.state = UNDERWAY
                 m.flags.clear()
-                self._route_for(m)
-                self._update_metrics(m, now)
-                self._send(m, "next", self._leg_text(m, "next"), priority=True)
+                if m.stop_index >= len(m.path) - 1:  # the path was cut short meanwhile
+                    m.state, m.arrived_at = ARRIVED, now
+                else:
+                    m.index = m.stop_index + 1
+                    m.state = UNDERWAY
+                    self._route_for(m)
+                    self._update_metrics(m, now)
+                    self._send(m, "next", self._leg_text(m, "next"), must=True)
                 self._dirty = True
 
     # ------------------------------------------------------------ commands
@@ -1136,7 +1195,7 @@ class Coordinator:
         elif cmd == "abort":
             m.state = ABORTED
             self._send(
-                m, "aborted", phrases.phrase(m.lang, "aborted", target=m.stop.name), reply=True
+                m, "aborted", phrases.phrase(m.lang, "aborted", target=m.guide.name), reply=True
             )
         self._dirty = True
 
@@ -1144,17 +1203,18 @@ class Coordinator:
     def _leg_text(self, m: Mission, key: str) -> str:
         """assign / next / changed / resume: the current stop with distance, direction, ETA."""
         mt = m.metrics
+        guide = m.guide
         if "dist_m" not in mt:
-            return phrases.phrase(m.lang, "assign_nopos", target=m.stop.name)
+            return phrases.phrase(m.lang, "assign_nopos", target=guide.name)
         params = dict(
-            target=m.stop.name,
+            target=guide.name,
             dist=fmt_dist(mt["dist_m"]),
             dir=mt["compass"],
             eta=fmt_eta(mt.get("eta_s")),
         )
-        if key == "assign" and m.stop.arrive_by:
+        if key == "assign" and guide.arrive_by:
             key = "assign_by"
-            params.update(time=hhmm(m.stop.arrive_by), margin=_margin(mt.get("margin_min")))
+            params.update(time=hhmm(guide.arrive_by), margin=_margin(mt.get("margin_min")))
         text = phrases.phrase(m.lang, key, **params)
         if m.route is not None:  # the first legs fit in the same message
             n = int(self.settings["legs_per_message"])
@@ -1166,20 +1226,21 @@ class Coordinator:
 
     def _status_text(self, m: Mission) -> str:
         mt = m.metrics
+        guide = m.guide
         if "dist_m" not in mt:
-            return phrases.phrase(m.lang, "assign_nopos", target=m.stop.name)
+            return phrases.phrase(m.lang, "assign_nopos", target=guide.name)
         params = dict(
-            target=m.stop.name,
+            target=guide.name,
             dist=fmt_dist(mt["dist_m"]),
             dir=mt["compass"],
             eta=fmt_eta(mt.get("eta_s")),
             speed=f"{mt['speed_kmh']:g}km/h",
         )
-        if m.stop.arrive_by:
+        if guide.arrive_by:
             return phrases.phrase(
                 m.lang,
                 "status_by",
-                time=hhmm(m.stop.arrive_by),
+                time=hhmm(guide.arrive_by),
                 margin=_margin(mt.get("margin_min")),
                 **params,
             )
@@ -1188,7 +1249,7 @@ class Coordinator:
     def _route_text(self, m: Mission) -> str:
         mt = m.metrics
         if "dist_m" not in mt:
-            return phrases.phrase(m.lang, "assign_nopos", target=m.stop.name)
+            return phrases.phrase(m.lang, "assign_nopos", target=m.guide.name)
         if m.route is not None:
             n = int(self.settings["legs_per_message"])
             legs = legs_text(m.route.legs(mt.get("along_m", 0.0)), n)
@@ -1199,9 +1260,9 @@ class Coordinator:
     def _target_text(self, m: Mission) -> str:
         mt = m.metrics
         if "dist_m" not in mt:
-            return phrases.phrase(m.lang, "assign_nopos", target=m.stop.name)
+            return phrases.phrase(m.lang, "assign_nopos", target=m.guide.name)
         return phrases.phrase(
-            m.lang, "target", target=m.stop.name, dist=fmt_dist(mt["dist_m"]), dir=mt["compass"]
+            m.lang, "target", target=m.guide.name, dist=fmt_dist(mt["dist_m"]), dir=mt["compass"]
         )
 
     def _path_text(self, m: Mission) -> str:
@@ -1222,13 +1283,18 @@ class Coordinator:
         priority: bool = False,
         reply: bool = False,
         retried: bool = False,
+        must: bool = False,
     ) -> bool:
-        """Send if the mode is on and the rate limit allows; every outcome is an event."""
+        """Send if the mode is on and the rate limit allows; every outcome is an event.
+        priority: a warning that may follow another message after PRIORITY_GAP_S. must: a
+        message the mission depends on (assignment, arrival, next leg): never rate-limited.
+        reply: an answer to the node's command: never rate-limited, does not count as
+        proactive."""
         now = time.time()
         if not self.enabled:
             self._event(m.node, "suppressed", what=kind, text=text, why="mode off")
             return False
-        if not reply:
+        if not reply and not must:
             gap = now - m.last_proactive
             limit = PRIORITY_GAP_S if priority else float(self.settings["min_gap_s"])
             if gap < limit:
@@ -1316,6 +1382,10 @@ def _polygon(ring: list[tuple[float, float]], **props) -> dict:
         "geometry": {"type": "Polygon", "coordinates": [[list(p) for p in ring]]},
         "properties": props,
     }
+
+
+def _minute(ts: float | None) -> int | None:
+    return None if ts is None else int(ts // 60)
 
 
 def _margin(minutes: int | None) -> str:

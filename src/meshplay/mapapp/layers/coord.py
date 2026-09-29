@@ -43,7 +43,7 @@ class CoordLayer(Layer):
                 [STATE_COLORS[ENDED], _("beendet")],
             ],
         }
-        active = sum(1 for m in coord.missions.values() if m.active)
+        active = coord.active_count()
         note = (
             _("{n} aktive Einsätze", n=active)
             if coord.enabled

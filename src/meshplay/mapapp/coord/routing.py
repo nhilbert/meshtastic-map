@@ -160,6 +160,20 @@ class Route:
         coords = [tuple(c) for c in d["coords"]]
         return cls(coords, float(d["length_m"]), d.get("names") or [None] * (len(coords) - 1))
 
+    @classmethod
+    def concat(cls, routes: list[Route]) -> Route:
+        """One route from consecutive segments (each starts where the previous ended)."""
+        coords: list[tuple[float, float]] = []
+        names: list[str | None] = []
+        for r in routes:
+            for i, c in enumerate(r.coords):
+                if coords and i == 0 and _dist(*coords[-1], *c) < 0.5:
+                    continue
+                if coords:
+                    names.append(r.names[i - 1] if i > 0 and i - 1 < len(r.names) else None)
+                coords.append(c)
+        return cls(coords, _length(coords), names)
+
     @property
     def line(self):
         if self._line is None:

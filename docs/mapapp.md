@@ -106,7 +106,9 @@ simulated radio first.
 - **＋ Einsatz** (also *Ziel zuweisen* in a node's popup or ⚑ in the node list): pick the node
   (favourites first) and build the path: waypoints from the targets, the own sites or map
   clicks, each a *Halt* (announced, confirmed, may carry *Ankunft bis* and *Warten bis* as
-  `12:55` or `+15`) or a *Durchgang* (routing only). **Zuweisen** sends the first leg, e.g.
+  `12:55` or `+15`) or a *Durchgang* (via: with a road graph the route runs through it and
+  it is passed silently; without one it is an intermediate straight-line target and the next
+  leg follows when it is reached). **Zuweisen** sends the first leg, e.g.
   `#ALPHA 850m NE ~11min`; without a known position the leg follows the first position packet.
 - **Mission cards** show the current stop, distance and compass direction, ETA, speed, the age
   of the last position, the last message with its delivery state, and buttons *Status senden*,

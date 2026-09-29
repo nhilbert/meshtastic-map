@@ -59,7 +59,9 @@ async function poll() {
     C.data = d; C.err = "";
     if (C.sel && !d.missions.some(m => m.node === C.sel)) { C.sel = null; C.api.updateInspector(); }
   } catch (e) { C.err = e.message; }
-  render();
+  // While an editor is open the section is not rebuilt (that would wipe what is being typed);
+  // only the badge follows the state.
+  if (editing()) renderBadge(); else render();
   if (C.sel && !$("#t_coord").hidden) renderMissionDetail();
   const active = C.data && C.data.enabled && C.data.missions.some(m => ACTIVE.includes(m.state));
   C.timer = setTimeout(poll, active ? 3000 : 10000);
@@ -102,21 +104,21 @@ function statusText(s) {  // delivery states are German codes, see messages.js
 }
 
 // ---------------------------------------------------------------- rail section
-function render() {
-  const box = $("#coordBox"); if (!box) return;
-  const d = C.data;
-  const badge = $("#btnCoord");
-  if (!d) {
-    box.innerHTML = `<p class="msg">${esc(C.err || t("lädt …"))}</p>`;
-    badge.textContent = t("Koordination"); badge.classList.remove("busy");
-    return;
-  }
+const editing = () => !!(C.form || C.settings || C.editTarget || C.editArea || C.editPlace);
+function renderBadge() {
+  const d = C.data, badge = $("#btnCoord");
+  if (!d) { badge.textContent = t("Koordination"); badge.classList.remove("busy"); return; }
   const active = d.missions.filter(m => ACTIVE.includes(m.state)).length;
   badge.textContent = d.enabled && active ? t("Koordination · {n}", { n: active }) : t("Koordination");
   badge.classList.toggle("busy", d.enabled);
   $("#coordDot").style.background = d.enabled ? "var(--ok)" : "var(--line)";
+}
+function render() {
+  const box = $("#coordBox"); if (!box) return;
+  const d = C.data;
+  renderBadge();
+  if (!d) { box.innerHTML = `<p class="msg">${esc(C.err || t("lädt …"))}</p>`; return; }
   const connected = d.device_state === "verbunden";
-  const focus = document.activeElement && box.contains(document.activeElement) ? document.activeElement.dataset : null;
   box.innerHTML = `
     <label class="tog"><input type="checkbox" id="coordOn" ${d.enabled ? "checked" : ""} ${connected || d.enabled ? "" : "disabled"}>
       <strong>${t("Koordinationsmodus")}</strong></label>
@@ -148,7 +150,6 @@ function render() {
   if (C.form) bindForm(box, d);
   if (C.targets) bindTargets(box);
   if (C.areas) box.querySelectorAll("[data-ar]").forEach(b => b.addEventListener("click", () => areaAction(b.dataset.ar, b.dataset.id)));
-  if (focus && focus.f) { const el = box.querySelector(`[data-f="${focus.f}"]`); if (el) el.focus(); }
 }
 
 // One line about the road graph: loaded (with its size and date) or missing.
@@ -219,12 +220,12 @@ async function action(act, node) {
 
 // ---------------------------------------------------------------- settings
 function settingsHTML(d) {
-  return `<div class="jobform"><div class="hd">${t("Einstellungen")}</div>
+  return `<div class="jobform" data-settings><div class="hd">${t("Einstellungen")}</div>
     ${inputsHTML(d.declarations, C.settings, "coord")}
     <div class="row2"><button class="btn small" data-s-cancel>${t("Abbrechen")}</button><button class="btn small on" data-s-save>${t("Speichern")}</button></div></div>`;
 }
 function bindSettings(box, d) {
-  bindInputs(box.querySelector(".jobform"), d.declarations, C.settings, () => { });
+  bindInputs(box.querySelector(".jobform[data-settings]"), d.declarations, C.settings, () => { });
   box.querySelector("[data-s-cancel]").addEventListener("click", () => { C.settings = null; render(); });
   box.querySelector("[data-s-save]").addEventListener("click", async () => {
     try { await postJSON("api/coord/settings", C.settings); C.settings = null; C.api.toast(t("Einstellungen gespeichert")); }
@@ -265,7 +266,7 @@ function formHTML(d) {
   const targets = Object.keys(d.targets || {}).map(n => `<option value="t:${esc(n)}">${esc(n)}</option>`).join("");
   const sites = (C.api.sites() || []).map(s => `<option value="s:${esc(s.name)}">${esc(s.name)} (${t("Standort")})</option>`).join("");
   const templates = Object.keys(d.paths || {}).map(n => `<option value="p:${esc(n)}">${esc(t("Vorlage laden: {name}", { name: n }))}</option>`).join("");
-  return `<div class="jobform"><div class="hd">${f.edit ? t("Pfad bearbeiten") : t("Einsatz")}</div>
+  return `<div class="jobform" data-mission><div class="hd">${f.edit ? t("Pfad bearbeiten") : t("Einsatz")}</div>
     <label>${t("Knoten")}<select data-f="node" ${f.edit ? "disabled" : ""}>${nodeOptions(f.node)}</select></label>
     <div class="hd2" style="font-size:11px;color:var(--ink2)">${t("Pfad: Wegpunkte in Reihenfolge; der letzte ist das Ziel. Zeiten als 12:55 oder +15 (Minuten).")}</div>
     <div class="wplist">${rows || `<p class="note" style="margin:0">${t("Noch kein Wegpunkt.")}</p>`}</div>
@@ -291,7 +292,7 @@ function readForm(box) {
   });
 }
 function bindForm(box, d) {
-  const f = C.form, form = box.querySelector(".jobform:last-of-type");
+  const f = C.form, form = box.querySelector(".jobform[data-mission]");
   form.querySelector("[data-f=node]").value = f.node;
   if (!f.edit) {
     form.querySelector("[data-f=profile]").value = f.profile;

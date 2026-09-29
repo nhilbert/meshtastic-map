@@ -53,7 +53,10 @@ def parse_time(text: str, now: float | None = None) -> float:
         if h > 23 or mi > 59:
             raise ValueError(text)
         today = datetime.fromtimestamp(now)
-        return today.replace(hour=h, minute=mi, second=0, microsecond=0).timestamp()
+        ts = today.replace(hour=h, minute=mi, second=0, microsecond=0).timestamp()
+        if ts < now - 12 * 3600:  # "00:10" typed at 23:55 means tomorrow
+            ts += 24 * 3600
+        return ts
     m = _DELTA_RE.match(text)
     if m:
         return now + int(m[1]) * 60

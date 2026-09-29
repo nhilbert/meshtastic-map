@@ -284,9 +284,9 @@ def test_multi_stop_path_with_hold(coord):
     coord.assign(NODE, path, "foot", "de")
     feed(coord, position(*HOME))
     assert sent_texts(coord)[-1] == "#V 200m N ~3min"
-    feed(coord, position(*north(190)))  # via passed silently
+    feed(coord, position(*north(190)))  # via passed: without a road graph the next leg follows
     m = coord.missions[NODE]
-    assert m.index == 1 and sent_texts(coord)[-1] == "#V 200m N ~3min"
+    assert m.index == 1 and sent_texts(coord)[-1] == "Weiter #B 210m N ~3min"
     feed(coord, position(*north(395)))
     assert m.state == HOLDING
     assert (
@@ -408,6 +408,73 @@ def test_guidance_over_the_road_graph(coord, tmp_path):
     assert sent_texts(coord)[-1] == "R: L100m Row0str Z"
     feed(coord, position(*pt(3, 0.2)))
     assert m.state == ARRIVED
+
+
+def test_vias_with_a_route_are_silent(coord, tmp_path):
+    from meshplay.mapapp.coord import osm
+    from tests.test_coord_routing import grid_ways, pt
+
+    osm.write_graph(osm.build_graph(grid_ways()), tmp_path / "osm" / "roads.json.gz")
+    coord.settings["min_gap_s"] = 0
+    path = [
+        {"name": "V", "lat": pt(2, 0)[0], "lon": pt(2, 0)[1], "kind": "via"},
+        {"name": "Z", "lat": pt(2, 2)[0], "lon": pt(2, 2)[1]},
+    ]
+    coord.assign(NODE, path, "foot", "de")
+    feed(coord, position(*pt(0, 0)))
+    m = coord.missions[NODE]
+    # the route runs through the via to the stop, the message names the stop
+    assert abs(m.route.length_m - 400) < 3
+    assert sent_texts(coord)[-1] == "#Z 280m NE ~5min R: E200m Row0str L200m Col2 Z"
+    feed(coord, position(*pt(1, 0)))
+    feed(coord, position(*pt(1.7, 0)))  # 30 m before the turn at the via
+    assert sent_texts(coord)[-1] == "R: L200m Col2 Z"
+    n = len(sent_texts(coord))
+    feed(coord, position(*pt(2.1, 0.1)))  # past the via: silently done, same route
+    assert m.index == 1 and len(sent_texts(coord)) == n
+    assert [e["kind"] for e in m.events if e["kind"] == "via"] == ["via"]
+    assert abs(m.route.length_m - 400) < 3  # not rebuilt at the via
+
+
+def test_essential_messages_beat_the_rate_limit(coord, monkeypatch):
+    from meshplay.mapapp.coord import missions
+
+    monkeypatch.setattr(missions, "PRIORITY_GAP_S", 30)
+    coord.settings["min_gap_s"] = 120
+    coord.assign(NODE, [{"name": "Z", "lat": north(300)[0], "lon": HOME[1]}], "foot", "de")
+    assert sent_texts(coord) == ["#Z zugewiesen, keine Position von dir"]
+    feed(coord, position(*HOME))  # a second later: the real assignment still goes out
+    assert sent_texts(coord)[-1] == "#Z 300m N ~4min"
+    for d in (60, 120, 180):  # walking away: the warning is rate-limited (30 s gap)
+        feed(coord, position(*north(-d)))
+    m = coord.missions[NODE]
+    assert not any(t.startswith("!KURS") for t in sent_texts(coord))
+    assert any(e["kind"] == "skipped" and e["what"] == "offcourse" for e in m.events)
+    feed(coord, position(*north(290)))  # arrival is essential
+    assert m.state == ARRIVED and sent_texts(coord)[-1].startswith("#Z erreicht")
+
+
+def test_hold_over_on_a_shortened_path(coord):
+    coord.settings["min_gap_s"] = 0
+    path = [
+        {"name": "B", "lat": north(200)[0], "lon": HOME[1], "hold_until": "+1"},
+        {"name": "C", "lat": north(600)[0], "lon": HOME[1]},
+    ]
+    coord.assign(NODE, path, "foot", "de")
+    feed(coord, position(*HOME))
+    feed(coord, position(*north(195)))
+    m = coord.missions[NODE]
+    assert m.state == HOLDING
+    # C removed; B re-sent as the page would (its time as hh:mm): still the same leg
+    kept = {**path[0], "hold_until": time.strftime("%H:%M", time.localtime(m.stop.hold_until))}
+    coord.api("POST", ["missions", NODE, "path"], {}, {"path": [kept]})
+    assert m.state == HOLDING and m.events[-1]["changed"] is False
+    m.stop.hold_until = time.time() - 1
+    coord._tick(time.time())
+    assert m.state == ARRIVED and m.index == 0
+    coord._tick(time.time())  # a second tick is harmless
+    feed(coord, position(*north(250)))
+    assert coord.layer_features()  # the layer still renders
 
 
 def test_api_dispatch_and_targets(coord):

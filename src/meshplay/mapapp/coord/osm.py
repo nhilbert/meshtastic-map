@@ -180,9 +180,12 @@ def build_graph(ways, bbox=None, source: str = "overpass") -> dict:
 
 
 def write_graph(graph: dict, path: Path) -> None:
+    """Written to a temporary file first: the coordinator may load the graph at any time."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with gzip.open(path, "wt", encoding="utf-8") as f:
+    tmp = path.with_name(path.name + ".tmp")
+    with gzip.open(tmp, "wt", encoding="utf-8") as f:
         json.dump(graph, f, separators=(",", ":"))
+    tmp.replace(path)
 
 
 def graph_files(ctx: Context) -> list[Path]:
