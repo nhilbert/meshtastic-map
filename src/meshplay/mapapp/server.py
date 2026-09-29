@@ -31,7 +31,7 @@ from urllib.parse import parse_qsl, urlparse
 
 from meshplay.config import DEFAULT_PRESET
 from meshplay.mapapp import sites_store
-from meshplay.mapapp.device import DeviceLink
+from meshplay.mapapp.device import DeviceLink, Simulation
 from meshplay.mapapp.i18n import _, set_lang
 from meshplay.mapapp.jobs import JobManager
 from meshplay.mapapp.layers import ALL, BY_ID
@@ -329,10 +329,20 @@ def run(
     force_export: bool = False,
     device: str | None = None,
     log_packets: bool = True,
+    simulate: tuple[Path | None, float] | None = None,
 ) -> None:
-    """device: None = don't connect at start, "auto" = find the port, else a port like COM8."""
+    """device: None = don't connect at start, "auto" = find the port, else a port like COM8.
+    simulate: (GPX track or None, speed factor) replaces the device by a simulated radio."""
     ctx = Context()
-    ctx.device = DeviceLink(ctx.data_dir, log_packets)
+    sim = None
+    if simulate is not None:
+        home = ctx.settings.home
+        if not home and ctx.sites:
+            s = next(iter(ctx.sites.values()))
+            home = (s["lat"], s["lon"])
+        sim = Simulation(home or (50.7374, 7.0982), *simulate)
+        device = "auto"
+    ctx.device = DeviceLink(ctx.data_dir, log_packets, sim)
     ctx.jobs = JobManager(ctx)
     if device:
         ctx.device.connect(None if device == "auto" else device)
@@ -341,6 +351,8 @@ def run(
         print("No scene in data/sim/scene: the 3D view and the link tool are unavailable.")
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(ctx, scene_dir))
     url = f"http://localhost:{port}/"
+    if sim:
+        print("Simulated radio: nothing is transmitted; the fake tracker is !fa4e0001.")
     print(f"Map app on {url} (Ctrl+C to stop)")
     if open_browser:
         webbrowser.open(url)

@@ -74,8 +74,9 @@ lives in `data/` and `.env`, which are git-ignored: packet and probe logs, GPX t
 **Radio.** Sending on the mesh reaches other people's devices. Never transmit (send_text,
 traceroutes, starting a probe task, changing device config) without the owner's explicit OK
 for that action. Test probe and messaging logic with a fake interface (`tests/test_mapapp_jobs.py`,
-`tests/test_mapapp_messages.py`); for the page, run the server with a simulated radio instead
-of the real device. Sending a text from the messaging pane is the owner's own action.
+`tests/test_mapapp_messages.py`); for the page, run the server with the simulated radio
+(`python scripts/mapapp.py --simulate [track.gpx]`, see docs/mapapp.md) instead of the real
+device. Sending a text from the messaging pane is the owner's own action.
 Walk traffic goes on a private channel with hop limit 0.
 
 **Modem preset.** The owner's mesh runs **ShortSlow**; `DEFAULT_PRESET` in `config.py` is the

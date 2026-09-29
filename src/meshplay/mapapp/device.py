@@ -5,6 +5,9 @@ provides the device's node database (live node layer) and appends every received
 data/packets/<date>.jsonl in the same format as scripts/listen.py, so a walk can be recorded
 with the map app open (only one program can hold the serial port). It also feeds the messaging
 pane: received texts and recent packets go to a MessageStore, texts are sent from here.
+
+With a Simulation (scripts/mapapp.py --simulate) connect() builds a FakeInterface instead of
+opening a serial port: nothing is transmitted, and the messages go to a separate store.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ import json
 import logging
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -24,10 +28,22 @@ log = logging.getLogger(__name__)
 BROADCAST = 0xFFFFFFFF  # "to" of a message for everyone on the channel
 
 
+@dataclass(frozen=True)
+class Simulation:
+    """Settings of the simulated radio: where the fake tracker starts and what it walks."""
+
+    home: tuple[float, float]
+    track: Path | None = None
+    speed: float = 1.0
+
+
 class DeviceLink:
-    def __init__(self, data_dir: Path, log_packets: bool = True):
+    def __init__(
+        self, data_dir: Path, log_packets: bool = True, simulate: Simulation | None = None
+    ):
         self.data_dir = data_dir
-        self.log_packets = log_packets
+        self.simulate = simulate
+        self.log_packets = log_packets and simulate is None  # fake packets stay out of the logs
         self.iface = None
         self.port: str | None = None
         self.state = "getrennt"  # getrennt, verbinde, verbunden, Fehler
@@ -36,7 +52,8 @@ class DeviceLink:
         self.last_packet: float | None = None
         self._lock = threading.Lock()
         self._subscribed = False
-        self.messages = MessageStore(data_dir / "messages.jsonl")
+        name = "messages-sim.jsonl" if simulate else "messages.jsonl"
+        self.messages = MessageStore(data_dir / name)
 
     # ------------------------------------------------------------ connection
     def connect(self, port: str | None = None) -> None:
@@ -53,16 +70,25 @@ class DeviceLink:
         from meshplay.device import find_port
 
         try:
-            from meshtastic.serial_interface import SerialInterface
-
-            port = port or find_port()
-            if not port:
-                raise RuntimeError(L("kein Meshtastic-Gerät gefunden (MESHTASTIC_PORT in .env?)"))
             if not self._subscribed:
                 pub.subscribe(self._on_receive, "meshtastic.receive")
                 pub.subscribe(self._on_lost, "meshtastic.connection.lost")
                 self._subscribed = True
-            iface = SerialInterface(devPath=port)
+            if self.simulate is not None:
+                from meshplay.mapapp.fake_device import FakeInterface, load_track
+
+                sim = self.simulate
+                port = "sim"
+                iface = FakeInterface(sim.home, load_track(sim.track), sim.speed)
+            else:
+                from meshtastic.serial_interface import SerialInterface
+
+                port = port or find_port()
+                if not port:
+                    raise RuntimeError(
+                        L("kein Meshtastic-Gerät gefunden (MESHTASTIC_PORT in .env?)")
+                    )
+                iface = SerialInterface(devPath=port)
             with self._lock:
                 self.iface, self.port, self.state = iface, port, "verbunden"
             log.info("Device connected on %s", port)

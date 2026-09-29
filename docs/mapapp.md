@@ -117,6 +117,21 @@ Only one program can use the serial port. If the web client (Edge, Web Serial), 
 another script is connected, the sidebar shows "Zugriff verweigert"; disconnect the other
 program and press **Verbinden** again.
 
+### Simulated radio
+
+```powershell
+python scripts/mapapp.py --open --simulate                      # fake tracker near home
+python scripts/mapapp.py --open --simulate data/tracks/walk.gpx --sim-speed 4
+```
+
+`--simulate` replaces the device by a fake one (`mapapp/fake_device.py`): nothing is
+transmitted. Its node list has a fake tracker `!fa4e0001` (a favourite) that walks the given
+GPX track at `--sim-speed` times its pace, or reports the same position near home every 30 s.
+Sent messages are acknowledged after half a second, traceroutes are answered, and a direct
+message to the tracker that starts with `>` is spoken by the tracker: `>?` arrives as `?` from
+it. Messages go to `data/messages-sim.jsonl`, packets are not logged. This is how the messaging
+pane and the coordination mode are tried without touching the mesh.
+
 ## Layers
 
 | Layer | Source | Settings |

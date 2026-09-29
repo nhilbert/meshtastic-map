@@ -293,7 +293,7 @@ async function deviceStatus(action) {
   const since = d.last_packet ? ", " + t("letztes vor {s} s", { s: Math.round(Date.now() / 1000 - d.last_packet) }) : "";
   // Device states are German codes: t("getrennt") t("verbinde") t("verbunden") t("Fehler")
   $("#devText").textContent = d.state === "verbunden"
-    ? t("{name} auf {port} · {n} Pakete", { name: d.me ? d.me.name : t("verbunden"), port: d.port, n: d.packets }) + since + (d.logging ? " · " + t("Log an") : "")
+    ? t("{name} auf {port} · {n} Pakete", { name: d.me ? d.me.name : t("verbunden"), port: d.port === "sim" ? t("Simulation") : d.port, n: d.packets }) + since + (d.logging ? " · " + t("Log an") : "")
     : d.state === "Fehler" ? t("Fehler: {error}", { error: d.error }) : t(d.state);
   const connected = d.state === "verbunden" || d.state === "verbinde";
   $("#devBtn").textContent = connected ? t("Trennen") : t("Verbinden");
