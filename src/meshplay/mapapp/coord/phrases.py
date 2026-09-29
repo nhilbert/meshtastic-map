@@ -41,7 +41,11 @@ PHRASES = {
         "halt_ok": "HALT ok",
         "resume": "Weiter #{target} {dist} {dir}",
         "aborted": "#{target} abgebrochen",
-        "help": "? Status ?R Route ?Z Ziel ?P Pfad HALT GO X",
+        "help": "? Status ?R Weg ?Z Ziel ?P Pfad ?L Legende HALT GO X=Abbruch",
+        "legend": (
+            "Legende: #Ziel Entfernung Richtung(N/E/S/W) ~Minuten. R: Weg: E20m=20m nach Ost, "
+            "L/R=links/rechts, U=umkehren, Z=Ziel. Antworte ? fuer Status, ?H Hilfe"
+        ),
     },
     "en": {
         "assign": "#{target} {dist} {dir} {eta}",
@@ -70,7 +74,11 @@ PHRASES = {
         "halt_ok": "HALT ok",
         "resume": "Next #{target} {dist} {dir}",
         "aborted": "#{target} aborted",
-        "help": "? status ?R route ?Z target ?P path HALT GO X",
+        "help": "? status ?R route ?Z target ?P path ?L legend HALT GO X=abort",
+        "legend": (
+            "Legend: #target distance direction(N/E/S/W) ~minutes. R: route: E20m=20m east, "
+            "L/R=turn left/right, U=turn back, Z=target. Reply ? for status, ?H help"
+        ),
     },
 }
 
@@ -80,6 +88,7 @@ COMMANDS = {
     "?z": "target",
     "?p": "path",
     "?h": "help",
+    "?l": "legend",
     "ok": "ok",
     "halt": "halt",
     "go": "go",

@@ -119,8 +119,16 @@ simulated radio first.
   changed (`#C neu 600m NE ~8min`). A path can be saved as a template (*Als Vorlage
   speichern …*, without times) and loaded again under *Wegpunkt hinzufügen*.
 - **The field node** answers with `?` (status), `?r` (route), `?z` (target), `?p` (path), `?h`
-  (help), `halt`/`go` (pause the guidance) and `x` (abort). Nodes without a mission are never
-  answered.
+  (help), `?l` (legend), `halt`/`go` (pause the guidance) and `x` (abort). Nodes without a
+  mission are never answered.
+- **Reading the messages.** `#KKR 210m N ~6min` is the target, the straight-line distance,
+  the compass direction (N, NE, E, SE, S, SW, W, NW, English in every language) and the
+  expected walking time. `R: E20m L150m L10m Z` is the way along the streets: the first leg
+  as a compass direction, then `L`/`R` turn left/right, `U` turn back, each with the metres
+  to the next turn and a short street name when there is one; `Z` is the stop. `!KURS` warns
+  off course, `!SPAET`/`!FRUEH` about the schedule, `!SPERR` about a restricted area, `i` is a
+  note about a place. With the first real assignment the node gets a legend saying this in
+  one message (setting *Legende*, off if the people know the codes).
 - **Layer "Koordination"** draws the waypoints (flags, numbered), the node's trail and the line
   to the current stop, coloured by mission state.
 - Files: `data/coord/` (settings, targets, missions, `events-<date>.jsonl`).

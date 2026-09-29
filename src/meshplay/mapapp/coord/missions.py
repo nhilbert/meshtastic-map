@@ -85,6 +85,7 @@ class Mission:
         self.retry: tuple[float, str, str] | None = None  # (when, kind, text)
         self.awaiting_position = False  # assigned without a position: the leg follows the first
         self.offcourse_from_m = 0.0  # distance to the stop when the off-course warning went out
+        self.legend_sent = False  # the legend of the codes goes out once per mission
         self.route: Route | None = None  # from the last position to the current stop
         self.route_ahead: list[list] = []  # coordinates of the later segments, for the map
         self.off_count = 0  # positions in a row off the route
@@ -142,6 +143,7 @@ class Mission:
             "messages": list(self.messages),
             "last_proactive": self.last_proactive,
             "awaiting_position": self.awaiting_position,
+            "legend_sent": self.legend_sent,
             "offcourse_from_m": self.offcourse_from_m,
             "route": self.route.to_json() if self.route else None,
             "route_ahead": self.route_ahead,
@@ -173,6 +175,7 @@ class Mission:
             "metrics",
             "last_proactive",
             "awaiting_position",
+            "legend_sent",
             "offcourse_from_m",
         ):
             if k in d:
@@ -547,6 +550,8 @@ class Coordinator:
         self._update_metrics(m, now)
         m.awaiting_position = m.last is None
         self._send(m, "assign", self._leg_text(m, "assign"))
+        if not m.awaiting_position:
+            self._send_legend(m)
         self._save(force=True)
         return m
 
@@ -799,8 +804,16 @@ class Coordinator:
         if m.awaiting_position:  # the assignment could not say where to go: now it can
             m.awaiting_position = False
             self._send(m, "assign", self._leg_text(m, "assign"), must=True)
+            self._send_legend(m)
         self._decide(m, now)
         self._dirty = True
+
+    def _send_legend(self, m: Mission) -> None:
+        """Once per mission, right after the first real assignment: what the codes mean."""
+        if m.legend_sent or not self.settings.get("send_legend", True):
+            return
+        m.legend_sent = True
+        self._send(m, "legend", phrases.phrase(m.lang, "legend"), reply=True)
 
     def _update_metrics(self, m: Mission, now: float) -> None:
         last = m.last
@@ -1060,6 +1073,14 @@ class Coordinator:
         if "offcourse" in m.flags and off < limit / 2:
             m.flags.discard("offcourse")
             self._event(m.node, "oncourse", off=off)
+        if m.metrics["route_left_m"] <= 15 and m.metrics["dist_m"] > m.guide.radius_m:
+            # the route is used up but the stop is not reached (the node cut across, the
+            # road ends short of the point): a fresh route from here
+            self._event(m.node, "route_exhausted", dist=m.metrics["dist_m"])
+            self._route_for(m)
+            self._update_metrics(m, now)
+            if m.route is None:
+                return
         mode = self.settings["instructions"]
         legs = m.route.legs(m.metrics["along_m"])
         if mode == "turns" and len(legs) >= 2 and legs[0].dist_m <= TURN_AHEAD_M:
@@ -1186,6 +1207,8 @@ class Coordinator:
             self._send(m, "path", self._path_text(m), reply=True)
         elif cmd == "help":
             self._send(m, "help", phrases.phrase(m.lang, "help"), reply=True)
+        elif cmd == "legend":
+            self._send(m, "legend", phrases.phrase(m.lang, "legend"), reply=True)
         elif cmd == "halt":
             m.held = True
             self._send(m, "halt", phrases.phrase(m.lang, "halt_ok"), reply=True)

@@ -77,7 +77,8 @@ def test_phrases_stay_short_in_both_languages():
         for key in phrases.PHRASES[lang]:
             text = phrases.phrase(lang, key, **params("X" * 12))  # names longer than advised
             assert "{" not in text and "  " not in text
-            assert phrases.fits(text, phrases.TARGET_BYTES) or key == "path", (lang, key, text)
+            long_ok = key in ("path", "legend")  # listings, sent once or on request
+            assert phrases.fits(text, phrases.TARGET_BYTES) or long_ok, (lang, key, text)
             assert phrases.fits(phrases.phrase(lang, key, **params("X" * 24))), (lang, key)
     assert set(phrases.PHRASES["en"]) == set(phrases.PHRASES["de"])
 
@@ -214,7 +215,7 @@ def test_commands_halt_go_abort_and_strangers(coord):
     feed(coord, position(*HOME))
     n = len(sent_texts(coord))
     feed(coord, text("?h"))
-    assert sent_texts(coord)[-1] == "? status ?R route ?Z target ?P path HALT GO X"
+    assert sent_texts(coord)[-1] == "? status ?R route ?Z target ?P path ?L legend HALT GO X=abort"
     feed(coord, text("?z"))
     assert sent_texts(coord)[-1] == "#Z 500m N"
     feed(coord, text("?r"))
@@ -475,6 +476,44 @@ def test_hold_over_on_a_shortened_path(coord):
     coord._tick(time.time())  # a second tick is harmless
     feed(coord, position(*north(250)))
     assert coord.layer_features()  # the layer still renders
+
+
+def test_legend_once_and_on_request(coord):
+    coord.settings["send_legend"] = True
+    coord.assign(NODE, [{"name": "Z", "lat": north(300)[0], "lon": HOME[1]}], "foot", "de")
+    assert sent_texts(coord) == ["#Z zugewiesen, keine Position von dir"]  # nothing to explain yet
+    feed(coord, position(*HOME))
+    texts = sent_texts(coord)
+    assert texts[-2] == "#Z 300m N ~4min" and texts[-1].startswith("Legende: #Ziel")
+    assert len(texts[-1].encode()) <= 200
+    feed(coord, text("?l"))
+    assert sent_texts(coord)[-1].startswith("Legende:")
+    feed(coord, text("?h"))
+    assert "?L Legende" in sent_texts(coord)[-1]
+    m = coord.missions[NODE]
+    assert m.legend_sent
+    # a new mission for the same node explains again only if the setting says so
+    coord.settings["send_legend"] = False
+    coord.assign(NODE, [{"name": "Y", "lat": north(400)[0], "lon": HOME[1]}], "foot", "en")
+    assert sent_texts(coord)[-1] == "#Y 400m N ~5min"
+
+
+def test_exhausted_route_is_rebuilt(coord, tmp_path):
+    from meshplay.mapapp.coord import osm
+    from tests.test_coord_routing import grid_ways, pt
+
+    osm.write_graph(osm.build_graph(grid_ways()), tmp_path / "osm" / "roads.json.gz")
+    coord.settings["min_gap_s"] = 0
+    # the stop is 60 m off the end of the road grid: the route ends at its snap point
+    target = pt(4, 0)[0], pt(4.6, 0)[1]
+    coord.assign(NODE, [{"name": "Z", "lat": target[0], "lon": target[1]}], "foot", "de")
+    feed(coord, position(*pt(3, 0)))
+    m = coord.missions[NODE]
+    assert m.route is not None and abs(m.route.length_m - 100) < 3
+    feed(coord, position(*pt(4, 0)))  # at the end of the route, 60 m from the stop
+    assert m.state == UNDERWAY
+    assert any(e["kind"] == "route_exhausted" for e in m.events)
+    assert m.metrics["dist_m"] == pytest.approx(60, abs=2)
 
 
 def test_api_dispatch_and_targets(coord):

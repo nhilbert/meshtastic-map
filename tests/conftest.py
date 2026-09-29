@@ -27,5 +27,6 @@ def coord(tmp_path, monkeypatch):
     c = Coordinator(ctx)
     c.set_enabled(True)
     c.settings["min_gap_s"] = 120
+    c.settings["send_legend"] = False  # the legend test switches it on
     yield c
     c.shutdown()

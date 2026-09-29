@@ -9,7 +9,8 @@ import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 // Mission states are German codes: t("zugewiesen") t("unterwegs") t("wartet") t("erreicht")
 // t("abgebrochen") t("beendet"); message kinds: t("assign") t("status") t("route") t("target")
 // t("path") t("help") t("halt") t("resume") t("aborted") t("ended") t("offcourse") t("late")
-// t("early") t("confirm") t("reached") t("next") t("changed"); speed sources: t("gemessen") t("Standard")
+// t("early") t("confirm") t("reached") t("next") t("changed") t("legend") t("nogo") t("notice") t("place");
+// speed sources: t("gemessen") t("Standard")
 const ACTIVE = ["zugewiesen", "unterwegs", "wartet"];
 const STATE_CLASS = { zugewiesen: "wait", unterwegs: "run", wartet: "wait", erreicht: "ok", abgebrochen: "bad", beendet: "off" };
 const C = {

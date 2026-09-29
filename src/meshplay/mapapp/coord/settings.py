@@ -25,6 +25,7 @@ DEFAULTS = {
     "speed_bike_kmh": 15,
     "speed_car_kmh": 30,
     "end_message": True,
+    "send_legend": True,
 }
 
 
@@ -191,6 +192,13 @@ def declarations(
             _("Beim Beenden eines Einsatzes den Knoten benachrichtigen"),
             "bool",
             DEFAULTS["end_message"],
+        ),
+        Setting(
+            "send_legend",
+            _("Mit der ersten Zuweisung eine Legende der Kürzel schicken"),
+            "bool",
+            DEFAULTS["send_legend"],
+            help=_("Ein zweiter Funkspruch; der Knoten bekommt sie auch mit ?L"),
         ),
     ]
 
