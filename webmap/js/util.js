@@ -34,8 +34,10 @@ export function grade(p) {
 export function featureHTML(props, withActions = true) {
   const rows = Object.entries(props._fields || {})
     .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
-  const acts = withActions && props._endpoint
-    ? `<div class="acts"><button class="btn small" data-set="a">als A</button><button class="btn small" data-set="b">als B</button></div>` : "";
+  const buttons = [];
+  if (withActions && props._endpoint) buttons.push(`<button class="btn small" data-set="a">als A</button><button class="btn small" data-set="b">als B</button>`);
+  if (withActions && props._node_id && !(props._icon && props._icon.own)) buttons.push(`<button class="btn small" data-set="msg">Nachricht</button>`);
+  const acts = buttons.length ? `<div class="acts">${buttons.join("")}</div>` : "";
   return `<div class="pop"><h3>${esc(props._title || "")}</h3><table>${rows}</table>${acts}</div>`;
 }
 

@@ -16,7 +16,8 @@ area you touch: [README.md](README.md) (setup, scripts, walks), [docs/mapapp.md]
    scene (NRW laser scan), scored against measurements.
 
 The **map app** (`src/meshplay/mapapp/` server + `webmap/` page) brings them together: layers,
-link calculator, background tasks (walks, simulations), sites editor. Solo project of the owner;
+link calculator, background tasks (walks, simulations), sites editor, messaging pane and node
+list. Solo project of the owner;
 public on GitHub.
 
 ## Environment and commands
@@ -49,9 +50,11 @@ src/meshplay/sim/           itu.py, p1812.py (verbatim ITU port), models.py, sce
                             predictor.py, compare.py, walkcompare.py, sites.py, view3d.py
 src/meshplay/mapapp/        server.py (HTTP + API), registry.py (Layer, Setting, Context),
                             layers/ (one module per layer), tools/link.py, jobs.py (background
-                            tasks), sites_store.py (sites.json editing), device.py (live USB link)
-webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, panels.js,
-                            map2d.js (Leaflet), map3d.js (three.js), util.js, icons.js
+                            tasks), sites_store.py (sites.json editing), device.py (live USB link,
+                            sending texts), messages.py (message store for the pane)
+webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, messages.js,
+                            nodelist.js, panels.js, map2d.js (Leaflet), map3d.js (three.js),
+                            util.js, icons.js
 tests/                      pytest; markers `hardware` and `data` are opt-in
 data/                       local only, never committed (see below)
 ```
@@ -70,7 +73,9 @@ lives in `data/` and `.env`, which are git-ignored: packet and probe logs, GPX t
 
 **Radio.** Sending on the mesh reaches other people's devices. Never transmit (send_text,
 traceroutes, starting a probe task, changing device config) without the owner's explicit OK
-for that action. Test probe logic with a fake interface (see `tests/test_mapapp_jobs.py`).
+for that action. Test probe and messaging logic with a fake interface (`tests/test_mapapp_jobs.py`,
+`tests/test_mapapp_messages.py`); for the page, run the server with a simulated radio instead
+of the real device. Sending a text from the messaging pane is the owner's own action.
 Walk traffic goes on a private channel with hop limit 0.
 
 **Modem preset.** The owner's mesh runs **ShortSlow**; `DEFAULT_PRESET` in `config.py` is the

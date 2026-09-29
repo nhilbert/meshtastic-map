@@ -10,6 +10,7 @@ export class Map2D {
       maxZoom: 19, attribution: "© OpenStreetMap-Mitwirkende",
     }).addTo(this.map);
     this.layers = {};
+    this.nodeMarkers = {};  // node ID -> marker, for the node list
     this.linkGroup = L.layerGroup().addTo(this.map);
     this.map.on("click", e => this.h.onClick(e.latlng.lat, e.latlng.lng));
     this.popupOpen = false;  // live layers skip their refresh while a popup is open
@@ -51,6 +52,7 @@ export class Map2D {
         },
         onEachFeature: (f, lyr) => {
           const p = f.properties;
+          if (p._node_id) this.nodeMarkers[p._node_id] = lyr;
           if (p._label) lyr.bindTooltip(p._label, { permanent: true, direction: "right", className: "lbl", offset: [6, 0] });
           if (p._title || p._fields) {
             lyr.bindPopup(featureHTML(p));
@@ -76,6 +78,14 @@ export class Map2D {
       }).addTo(this.linkGroup);
     }
     if (a && b) this.line = L.polyline([[a.lat, a.lon], [b.lat, b.lon]], { color: "#00707f", weight: 3, dashArray: "4 6" }).addTo(this.linkGroup);
+  }
+  // Show a node from the node list: centre it and open its popup. False if it isn't drawn.
+  focusNode(id) {
+    const m = this.nodeMarkers[id];
+    if (!m || !this.map.hasLayer(m)) return false;
+    this.map.setView(m.getLatLng(), Math.max(this.map.getZoom(), 16));
+    m.openPopup();
+    return true;
   }
   // Marker for a position that is being placed (new site), null removes it.
   setTemp(lat, lon) {

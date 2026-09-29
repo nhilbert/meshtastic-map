@@ -85,12 +85,10 @@ class NodesLayer(Layer):
         if values["source"] == LIVE:
             extra["refresh_s"] = values["refresh_s"]
         now = time.time()
-        features, without_pos = [], 0
+        features, rows, without_pos = [], [], 0
         for node in nodes.values():
             pos = node.get("position") or {}
-            if "latitude" not in pos or "longitude" not in pos:
-                without_pos += 1
-                continue
+            has_pos = "latitude" in pos and "longitude" in pos
             last = node.get("lastHeard")
             own = me is not None and node.get("num") == me
             if (
@@ -100,6 +98,11 @@ class NodesLayer(Layer):
             ):
                 continue
             user = node.get("user", {})
+            # the page's node list shows every node of the source, with or without position
+            rows.append(node_row(node, own, pos if has_pos else None))
+            if not has_pos:
+                without_pos += 1
+                continue
             hops = node.get("hopsAway")
             if own:
                 color = OWN
@@ -150,6 +153,7 @@ class NodesLayer(Layer):
                         "weight": 2 if own else 1,
                     },
                     _z=3.0,
+                    _node_id=user.get("id"),
                     _endpoint={
                         "name": user.get("shortName", "Knoten"),
                         "height_m": [1.5, 3.0],
@@ -171,4 +175,24 @@ class NodesLayer(Layer):
         if me is not None:
             legend["items"].append([OWN, "eigenes Gerät"])
         note = f"{len(features)} Knoten mit Position, {without_pos} ohne"
-        return collection(features, legend, note=note, **extra)
+        return collection(features, legend, note=note, nodes=rows, **extra)
+
+
+def node_row(node: dict, own: bool, pos: dict | None) -> dict:
+    """One node for the page's node list (plain values, the page formats them)."""
+    user = node.get("user", {})
+    metrics = node.get("deviceMetrics", {})
+    return {
+        "id": user.get("id") or f"!{node.get('num', 0):08x}",
+        "short": user.get("shortName", ""),
+        "long": user.get("longName", ""),
+        "hw": user.get("hwModel", ""),
+        "role": user.get("role", "CLIENT"),
+        "hops": node.get("hopsAway"),
+        "snr": node.get("snr"),
+        "last": node.get("lastHeard"),
+        "battery": metrics.get("batteryLevel"),
+        "lat": pos["latitude"] if pos else None,
+        "lon": pos["longitude"] if pos else None,
+        "own": own,
+    }

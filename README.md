@@ -13,7 +13,8 @@ What you can do with it:
   home node was reachable, with the signal quality in both directions.
 - **Use the map app** (browser, 2D OpenStreetMap or 3D laser scan): layers for your sites, the
   live node list, walks and simulated coverage; a link calculator between any two points;
-  start walks and simulations as background tasks; edit your sites.
+  start walks and simulations as background tasks; edit your sites; send and read messages on
+  your channels or directly to a node picked on the map, and watch the packet traffic.
 - **Simulate coverage** with ITU-R propagation models over a 3D scene built from open
   laser-scan data, and score the models against your measurements.
 
@@ -214,8 +215,10 @@ python scripts/mapapp.py --open            # add --device to connect to the node
 
 One map, switchable between 2D (OpenStreetMap) and 3D (laser-scan scene), with layers: a
 direct-link calculator, your sites (editable), the Meshtastic nodes (live from the device or from
-an export), walks, simulated coverage and the scene extent. Long jobs — a traceroute walk, a
-coverage simulation — run as background tasks, started and followed in the browser. The
+an export, also as a list), walks, simulated coverage and the scene extent. A messaging pane
+under the map sends and shows texts on your channels and to single nodes, and lists the packet
+traffic. Long jobs — a traceroute walk, a coverage simulation — run as background tasks, started
+and followed in the browser. The
 interface is in German. Tour, all features, and how to add layers or tasks:
 [docs/mapapp.md](docs/mapapp.md).
 
@@ -391,6 +394,7 @@ data/                  everything local (not committed, see below)
 | `data/maps/` | walk maps from `coverage_map.py` |
 | `data/exports/` | node list exports |
 | `data/sim/` | sites, laser-scan tiles, scene, predictions, coverage grids ([details](docs/simulation.md#data-not-committed)) |
+| `data/messages.jsonl` | messages sent and received in the map app |
 | `data/mapapp/` | map app: 3D export, caches, background task logs, layer defaults |
 
 ## Troubleshooting

@@ -21,6 +21,8 @@
     <button class="btn on" id="view2d" aria-pressed="true">2D Karte</button>
     <button class="btn" id="view3d" aria-pressed="false">3D Laserscan</button>
   </span>
+  <button class="btn" id="btnMsg" aria-pressed="false" aria-controls="msgpane"
+    title="Nachrichten und Paketverkehr des verbundenen Geräts">Nachrichten</button>
   <button class="btn" id="btnJobs" title="Hintergrundaufgaben: Rundgang, Simulation">Aufgaben</button>
   <button class="btn" id="btnInsp" aria-pressed="false" aria-controls="right" disabled
     title="Detailbereich ein-/ausblenden">Details</button>
@@ -59,6 +61,7 @@
   </aside>
 
   <section id="view">
+  <div id="mapbox">
     <div id="map2d"></div>
     <div id="pickBanner" class="banner" hidden role="status"><span id="pickText"></span>
       <button class="btn small" id="pickCancel">Abbrechen (Esc)</button></div>
@@ -72,6 +75,28 @@
       <div class="ov" id="readout">—</div>
       <div id="loading"><div id="loadingMsg">Laserscan wird aufgebaut …</div><div class="bar"><b></b></div></div>
     </div>
+  </div>
+  <div id="msgpane" aria-label="Nachrichten">
+    <div class="mhd" id="msgHead">
+      <strong id="msgTitle">Nachrichten</strong><span class="state" id="msgState">—</span>
+      <button class="btn small" id="msgConnect" hidden>Verbinden</button>
+      <span class="spacer"></span>
+      <button class="btn small" id="msgFold" aria-label="Nachrichten ausklappen">▴</button>
+    </div>
+    <div class="mbody">
+      <nav class="convs" id="msgConvs" aria-label="Unterhaltungen"></nav>
+      <section class="chat">
+        <div class="to" id="msgTo"></div>
+        <div class="list" id="msgList" aria-live="polite"></div>
+        <div class="compose" id="msgCompose">
+          <textarea id="msgText" rows="2" aria-label="Nachricht"></textarea>
+          <div class="cmeta"><span id="msgBytes">0/200 Bytes</span>
+            <button class="btn on" id="msgSend">Senden</button></div>
+        </div>
+        <div class="msg" id="msgErr" role="alert"></div>
+      </section>
+    </div>
+  </div>
   </section>
 
   <section id="right" hidden>
@@ -83,6 +108,7 @@
       <div class="tabbody" id="t_link" hidden></div>
       <div class="tabbody" id="t_models" hidden></div>
       <div class="tabbody" id="t_walk" hidden></div>
+      <div class="tabbody" id="t_nodes" hidden></div>
       <div class="tabbody" id="t_job" hidden></div>
     </div>
   </section>

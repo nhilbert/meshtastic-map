@@ -3,6 +3,8 @@
 import { Map2D } from "./map2d.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
 import { bindInputs, initialValues, inputsHTML } from "./forms.js";
+import { initMessages, openConversation } from "./messages.js";
+import { initNodeList, renderNodeList } from "./nodelist.js";
 import { renderLink, renderWalk } from "./panels.js";
 import { initSites, renderSites } from "./sites.js";
 import { initTasks, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
@@ -191,6 +193,7 @@ const TABS = [
   ["link", "Strecke", () => !!S.res],
   ["models", "Modelle", () => !!S.res],
   ["walk", "Rundgang", () => !!S.walk],
+  ["nodes", "Knoten", () => !!(S.layers.nodes && S.layers.nodes.enabled && S.layers.nodes.data)],
   ["job", "Aufgabe", () => !!selectedJob()],
 ];
 function updateInspector() {
@@ -256,7 +259,11 @@ function summaryHTML(d) {
 async function refresh(desc, auto = false, user = false) {
   const st = S.layers[desc.id];
   clearTimeout(st.timer);
-  if (!st.enabled) { map2d.clear(desc.id); in3d(() => map3d.clear(desc.id)); showExtras(desc); setWalk(desc.id, null); return; }
+  if (!st.enabled) {
+    map2d.clear(desc.id); in3d(() => map3d.clear(desc.id)); showExtras(desc); setWalk(desc.id, null);
+    if (desc.id === "nodes") nodesChanged();
+    return;
+  }
   const q = new URLSearchParams(Object.entries(st.values).map(([k, v]) => [k, String(v ?? "")]));
   if (!auto) status(`lade ${desc.name} …`);
   try {
@@ -267,6 +274,7 @@ async function refresh(desc, auto = false, user = false) {
   showExtras(desc);
   const scored = st.data && st.data.summary && st.data.summary.models && Object.keys(st.data.summary.models).length;
   setWalk(desc.id, scored ? st.data : null, user);
+  if (desc.id === "nodes") nodesChanged();
   // Live layers ask to be refreshed; skip a round while a popup is open so it doesn't close.
   if (st.data && st.data.refresh_s) {
     const again = () => (map2d.popupOpen ? (st.timer = setTimeout(again, 3000)) : refresh(desc, true));
@@ -309,6 +317,21 @@ function initLayers() {
     renderLayer(desc);
   }
   for (const desc of S.app.layers) refresh(desc);
+}
+
+// ---------------------------------------------------------------- nodes and messages
+// The inspector's node list follows the node layer (same data, same settings).
+function nodesChanged() {
+  const st = S.layers.nodes;
+  if (st && st.enabled && st.data) renderNodeList(st.data);
+  updateInspector();
+}
+// Show a node on the 2D map (switching from 3D) and open its popup.
+function focusNode(id) {
+  const st = S.layers.nodes;
+  if (!st || !st.enabled) { toast("Die Ebene „Meshtastic-Knoten“ ist aus."); return; }
+  if (document.body.classList.contains("is3d")) setView("2d");
+  if (!map2d.focusNode(id)) toast(`${id} hat keine Position auf der Karte.`);
 }
 
 // ---------------------------------------------------------------- map pick, toasts
@@ -460,7 +483,11 @@ function bindUI() {
   const center = S.app.home || { lat: 50.7374, lon: 7.0982 };
   map2d = new Map2D($("#map2d"), center, {
     onClick: (lat, lon) => mapClick(lat, lon),
-    onFeatureAction: (f, which) => { if (!S.link.on) setLinkOn(true); setEndpoint(which, endpointFromFeature(f)); },
+    onFeatureAction: (f, which) => {
+      if (which === "msg") { openConversation("dm:" + f.properties._node_id); return; }
+      if (!S.link.on) setLinkOn(true);
+      setEndpoint(which, endpointFromFeature(f));
+    },
   });
   map3d = new Map3D($("#c"), {
     onPick: (lat, lon) => mapClick(lat, lon),
@@ -481,6 +508,8 @@ function bindUI() {
     $("#loading .bar").hidden = true;
   }
   initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast });
+  initNodeList({ store, focusNode, message: id => openConversation("dm:" + id) });
+  initMessages({ store, toast, connect: () => deviceStatus("connect"), focusNode });
   initTasks({ store, toast, openInspector, updateInspector, onTransition: taskTransition, actions: taskActions });
   initLayers();
   S.devState = null;

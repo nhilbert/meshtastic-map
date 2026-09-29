@@ -9,6 +9,8 @@ A layer returns one of two payloads from data():
             _z         height above ground in the 3D view [m] (default 2)
             _icon      badge marker instead of a circle: {"text", "symbol" (router, tracker,
                        client, sensor, home), "color", "own", "faded", "hint"}
+            _node_id   Meshtastic node ID ("!abcd1234"): the popup offers "Nachricht", the node
+                       list in the inspector finds the marker
             _endpoint  makes the feature usable as start/end of the link tool:
                        {"height_m": [lo, hi], "clutter_m", "indoor", "device", "measured": {...}}
   raster  {"type": "raster", "image": <PNG data URL>, "bounds": [[south, west], [north, east]]}

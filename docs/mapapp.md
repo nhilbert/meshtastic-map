@@ -16,8 +16,9 @@ in German.
 
 ## Using it
 
-- **Header**: 2D / 3D view, **Aufgaben** (background tasks, shows how many run), **Details**
-  (the right panel; greyed out while there is nothing to show), light/dark.
+- **Header**: 2D / 3D view, **Nachrichten** (messaging pane, shows unread messages),
+  **Aufgaben** (background tasks, shows how many run), **Details** (the right panel; greyed out
+  while there is nothing to show), light/dark.
 - **Left column**: *Ebenen* (layers), *Aufgaben*, *3D-Darstellung* (only in 3D), *Gerät (USB)*.
   Sections fold and remember their state.
 - **Ebenen**: each layer has a checkbox and a ⚙ with its settings and legend. Settings are
@@ -30,10 +31,39 @@ in German.
   height around it; the link is recomputed on every change. Preset default: ShortSlow.
 - **Right panel (Details)** shows only tabs with content: *Strecke* and *Modelle* after a link
   (verdict, levels, height profile with Fresnel zone, all model families, methodology folded at
-  the bottom), *Rundgang* when the walk layer compares with the models, *Aufgabe* for the log of a
-  background task. ✕ closes it, **Details** brings it back.
+  the bottom), *Rundgang* when the walk layer compares with the models, *Knoten* (the node list,
+  see below) while the node layer is on, *Aufgabe* for the log of a background task. ✕ closes it,
+  **Details** brings it back.
 - **3D**: drag rotates, right button or Shift+drag pans (the ground follows the cursor), wheel
   zooms; *Übersicht* and *Strecke zeigen* sit in the top right corner of the 3D view.
+
+## Messages and node list
+
+A comfort add-on for simple messaging and watching the traffic while using the map; for anything
+more, use a Meshtastic app. Needs the device connected (**Verbinden** under *Gerät (USB)*, in the
+pane's bar, or `--device`).
+
+- **Messaging pane** under the map (**Nachrichten** in the header, or click its bar). Left the
+  conversations: the device's channels (`0 · Primär`, `1 · Privat`, …), direct conversations with
+  nodes, and *Alle Pakete*. Right the messages of the selected one and the input: **Enter** sends,
+  Shift+Enter starts a new line; the counter shows the bytes (at most 200).
+- **Sent messages** show their state: *gesendet*, then *zugestellt* (a direct message the recipient
+  confirmed), *im Netz* (a channel message another node was heard relaying) or *nicht zugestellt*
+  with the firmware's reason. Received ones show sender, time, SNR and hops; the sender's name
+  shows the node on the map.
+- **Direct messages** go to a node with channel 0 (the firmware encrypts them for the recipient
+  when it knows its key). Start one with **Nachricht** in a node's popup on the map or ✉ in the node
+  list. A new direct message pops up as a notice; unread counts are in the header, the pane's bar
+  and the conversation list.
+- **Alle Pakete** lists the packets received since the map app started (time, sender, recipient,
+  type, channel, SNR, hops): the traffic around your node.
+- Messages are kept in `data/messages.jsonl`; the traffic list only in memory.
+
+The **Knoten** tab in the right panel lists the same nodes as the layer *Meshtastic-Knoten* (same
+source, live or export, and the same age filter), including those without a position: short and
+long name, ID, hardware, battery, hops, SNR, last heard. Filter by name or ID, sort by last heard,
+hops, SNR or name. A click on a node with a position centres it on the map and opens its popup;
+✉ opens a direct conversation.
 
 ## Background tasks (Aufgaben)
 
@@ -109,10 +139,12 @@ a second per packet; results are cached in `data/mapapp/cache/walk/`.
 ```
 src/meshplay/mapapp/
   server.py        HTTP server: page, /scene/* (3D data), /api/app, /api/layers/<id>,
-                   /api/tools/<name>, /api/device, /api/jobs, /api/sites, /api/tracks
+                   /api/tools/<name>, /api/device, /api/jobs, /api/sites, /api/tracks,
+                   /api/messages
   device.py        live USB connection: node list, packet logging
   jobs.py          background tasks: manager, task kinds (traceroute walk, coverage simulation)
   sites_store.py   editing data/sim/sites.json
+  messages.py      message store for the messaging pane (data/messages.jsonl, traffic list)
   registry.py      Layer base class, Setting, Context (paths, scene, sites), GeoJSON helpers
   style.py         colour scales, PNG encoding
   layers/          one module per data layer, registered in layers/__init__.py
@@ -123,6 +155,8 @@ webmap/
   js/forms.js      forms built from the server's Setting declarations (layers, tasks)
   js/tasks.js      task forms, list, log view
   js/sites.js      sites editor
+  js/messages.js   messaging pane
+  js/nodelist.js   node list (inspector tab Knoten)
   js/map2d.js      Leaflet view
   js/map3d.js      three.js view (terrain, bodies, draped layers, link, picking)
   js/panels.js     result panel

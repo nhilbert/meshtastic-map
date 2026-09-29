@@ -13,6 +13,8 @@ POST /api/jobs                {"kind", "params"} starts a task; /api/jobs/<id>/c
 GET  /api/sites               own sites for the editor; /api/sites/suggest?lat=&lon= clutter
 POST /api/sites/<action>      add, update, rename, delete (data/sim/sites.json)
 POST /api/tracks?name=x.gpx   upload a GPX track (raw body) to data/tracks/
+GET  /api/messages?rev=N      messages (and with traffic=1 recent packets) newer than revision N
+POST /api/messages            {"text", "to": "!id" or "^all", "channel"} sends a text
 """
 
 from __future__ import annotations
@@ -105,6 +107,25 @@ def edit_sites(ctx: Context, action: str, body: dict) -> dict:
         raise KeyError(f"unbekannte Aktion {action!r}")
     ctx.reload_sites()
     return cfg
+
+
+def messages_since(ctx: Context, rev: int, traffic: str | None) -> dict:
+    """Everything the messaging pane needs that changed after revision `rev`."""
+    dev = ctx.device
+    store = dev.messages
+    messages = store.since(rev)
+    packets = store.traffic_since(rev) if traffic else []
+    ids = {m["from"] for m in messages + packets} | {m["to"] for m in messages + packets}
+    status = dev.status()
+    return {
+        "rev": store.rev,
+        "state": status["state"],
+        "me": status.get("me"),
+        "channels": dev.channels(),
+        "messages": messages,
+        "traffic": packets,
+        "names": dev.names(ids),
+    }
 
 
 def save_track(ctx: Context, name: str, data: bytes) -> dict:
@@ -214,6 +235,9 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                     self.send_json({"kinds": ctx.jobs.describe_kinds()})
                 elif parts[:2] == ["api", "jobs"] and len(parts) == 3:
                     self.send_json(ctx.jobs.get(parts[2]).to_json(with_log=True))
+                elif parts == ["api", "messages"]:
+                    q = dict(parse_qsl(url.query))
+                    self.send_json(messages_since(ctx, int(q.get("rev", 0)), q.get("traffic")))
                 elif parts == ["api", "sites"]:
                     cfg = sites_store.load_raw(ctx.sites_path)
                     self.send_json({"sites": sites_store.site_list(cfg)})
@@ -260,6 +284,12 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                             raise ValueError("Ein Traceroute-Rundgang läuft: erst stoppen")
                         ctx.device.disconnect()
                     self.send_json(ctx.device.status())
+                    return
+                if parts == ["api", "messages"]:
+                    msg = ctx.device.send_text(
+                        body.get("text", ""), body.get("to") or "^all", body.get("channel", 0)
+                    )
+                    self.send_json(msg, 201)
                     return
                 if parts == ["api", "jobs"]:
                     job = ctx.jobs.create(body.get("kind", ""), body.get("params") or {})
