@@ -5,6 +5,7 @@
 // map; anything more is better done in a Meshtastic app.
 import { locale, t } from "./i18n.js";
 import { $, esc, getJSON, postJSON } from "./util.js";
+import { setRail } from "./workspace.js";
 
 const MAX_BYTES = 200;  // same limit as the server (meshplay.mapapp.messages.MAX_TEXT_BYTES)
 const TRAFFIC = "traffic";
@@ -41,10 +42,13 @@ export function openConversation(key) {
 }
 
 function setOpen(open) {
+  if (open) { setRail(false, false); M.api.onOpen?.(); }
   M.open = open; M.api.store.set("msg.open", open);
   $("#msgpane").classList.toggle("open", open);
   $("#msgFold").textContent = open ? "▾" : "▴";
   $("#msgFold").setAttribute("aria-label", open ? t("Nachrichten einklappen") : t("Nachrichten ausklappen"));
+  $("#msgFold").setAttribute("aria-expanded", String(open));
+  $("#msgFold").setAttribute("aria-controls", "msgBody");
   $("#btnMsg").setAttribute("aria-pressed", String(open));
   if (open) markSeen();
   render();

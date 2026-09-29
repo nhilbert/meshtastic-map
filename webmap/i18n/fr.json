@@ -1,4 +1,7 @@
 {
+  "Bedienfeld": "Commandes",
+  "Einstellungen für {name}": "Paramètres de {name}",
+  "Server nicht erreichbar": "Serveur inaccessible",
   "!{id} ({n} Positionen)": "!{id} ({n} positions)",
   "!{id} ({n} Traceroutes)": "!{id} ({n} traceroutes)",
   "(wartet auf die laufende Aufgabe)": "(attend la tâche en cours)",

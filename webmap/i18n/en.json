@@ -1,4 +1,7 @@
 {
+  "Bedienfeld": "Controls",
+  "Einstellungen für {name}": "Settings for {name}",
+  "Server nicht erreichbar": "Server unreachable",
   "!{id} ({n} Positionen)": "!{id} ({n} positions)",
   "!{id} ({n} Traceroutes)": "!{id} ({n} traceroutes)",
   "(wartet auf die laufende Aufgabe)": "(waiting for the running task)",

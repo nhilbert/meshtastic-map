@@ -4,6 +4,7 @@
 import { bindInputs, initialValues, inputsHTML } from "./forms.js";
 import { locale, t } from "./i18n.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
+import { showSection } from "./workspace.js";
 
 const ACTIVE = ["läuft", "wartet"];
 const STATE_CLASS = { "läuft": "run", wartet: "wait", fertig: "ok", Fehler: "bad", abgebrochen: "off" };
@@ -16,7 +17,7 @@ const T = { jobs: [], kinds: [], form: null, sel: null, timer: null, api: null, 
 export function initTasks(api) {
   T.api = api;
   $("#btnJobs").addEventListener("click", () => {
-    const sec = $("details[data-sec=jobs]"); sec.open = true; sec.scrollIntoView({ behavior: "smooth", block: "start" });
+    showSection("jobs");
   });
   loadKinds().then(renderStart).catch(e => { $("#jobStart").innerHTML = `<p class="msg">${esc(e.message)}</p>`; });
   poll();
@@ -36,7 +37,7 @@ function renderStart() {
 // Other parts of the page start a task kind through its form (the coordination mode's road
 // graph download).
 export function openTaskForm(kindId) {
-  const sec = $("details[data-sec=jobs]"); sec.open = true;
+  showSection("jobs");
   openForm(kindId);
 }
 async function openForm(kindId) {

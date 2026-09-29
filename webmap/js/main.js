@@ -11,6 +11,7 @@ import { renderLink, renderWalk } from "./panels.js";
 import { initSites, renderSites } from "./sites.js";
 import { initTasks, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
 import { $, css, esc, fmt, getJSON, grade, legendHTML, postJSON } from "./util.js";
+import { initWorkspace, setRail } from "./workspace.js";
 
 const status = (msg, bad) => { const s = $("#status"); s.textContent = msg; s.style.color = bad ? "var(--bad)" : ""; };
 const store = {
@@ -26,7 +27,7 @@ const S = {
   link: { on: false, open: false, ...store.get("layer.link", {}) }, a: null, b: null, pick: "", res: null,
   mapPick: null,  // one-off map click for another tool: { label, cb }
   walk: null, walkId: null,  // layer data with a model summary (walk layer, colored by residual)
-  insp: { open: store.get("insp.open", true), tab: null },
+  insp: { open: store.get("insp.open", !matchMedia("(max-width: 700px)").matches), tab: null },
 };
 let map2d, map3d;
 const E_tempMarker = (lat, lon) => map2d && map2d.setTemp(lat, lon);
@@ -73,7 +74,7 @@ function renderLinkLayer() {
   }
   el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${L.on ? "checked" : ""} aria-label="${t("Strecke A → B")}">
       <span class="nm">${t("Strecke A → B")}</span><span class="grp">${t("Simulation")}</span>
-      <button class="btn small" data-open title="${t("Einstellungen")}" aria-expanded="${L.open}">⚙</button></div>
+      <button class="btn small" data-open aria-label="${t("Einstellungen")}" title="${t("Einstellungen")}" aria-expanded="${L.open}">⚙</button></div>
     <div class="bd" ${L.open ? "" : "hidden"}>
       <div class="note" style="margin:0">${t("Direktstrecke zwischen zwei Punkten, mit allen Modellfamilien über den Laserscan gerechnet. Ergebnis rechts unter „Details“.")}</div>
       <div class="pickrow"><span>${t("Klick in die Karte setzt")}</span>
@@ -96,10 +97,13 @@ function renderLinkLayer() {
     if (e.target.checked && !L.open) { L.open = true; renderLinkLayer(); }  // switching on shows its settings
     setLinkOn(e.target.checked);
   });
-  el.querySelector("[data-open]").addEventListener("click", () => { L.open = !L.open; persistLink(); renderLinkLayer(); });
+  el.querySelector("[data-open]").addEventListener("click", () => {
+    L.open = !L.open; persistLink(); renderLinkLayer(); el.querySelector("[data-open]").focus();
+  });
   el.querySelectorAll("[data-pick]").forEach(b => b.addEventListener("click", () => {
     if (!L.on) setLinkOn(true);
     setPick(b.dataset.pick);
+    if (b.dataset.pick && matchMedia("(max-width: 700px)").matches) setRail(false);
   }));
   $("#preset").addEventListener("change", () => { store.set("link.preset", $("#preset").value); compute(); });
   $("#leaf").addEventListener("change", () => { store.set("leaf", $("#leaf").value); compute(); });
@@ -198,6 +202,7 @@ const TABS = [
   ["coord", () => t("Einsatz"), () => !!selectedMission()],
 ];
 function updateInspector() {
+  const focusedTab = $("#tabs").contains(document.activeElement) ? document.activeElement.dataset.tab : null;
   const avail = TABS.filter(([, , has]) => has());
   if (!avail.some(([id]) => id === S.insp.tab)) S.insp.tab = avail.length ? avail[0][0] : null;
   const show = S.insp.open && avail.length > 0, btn = $("#btnInsp");
@@ -207,9 +212,16 @@ function updateInspector() {
   const wasShown = !$("#right").hidden;
   $("#right").hidden = !show; $("main").classList.toggle("noinsp", !show);
   $("#tabs").innerHTML = avail.map(([id, label]) =>
-    `<button class="tab" role="tab" aria-selected="${id === S.insp.tab}" data-tab="${id}">${label()}</button>`).join("");
+    `<button class="tab" id="tab_${id}" role="tab" aria-controls="t_${id}" tabindex="${id === S.insp.tab ? 0 : -1}" aria-selected="${id === S.insp.tab}" data-tab="${id}">${label()}</button>`).join("");
   $("#tabs").querySelectorAll("[data-tab]").forEach(t => t.addEventListener("click", () => { S.insp.tab = t.dataset.tab; updateInspector(); }));
-  for (const [id] of TABS) $("#t_" + id).hidden = !(show && id === S.insp.tab);
+  for (const [id] of TABS) {
+    const panel = $("#t_" + id);
+    panel.hidden = !(show && id === S.insp.tab);
+    panel.setAttribute("role", "tabpanel"); panel.tabIndex = 0;
+    if (avail.some(([key]) => key === id)) panel.setAttribute("aria-labelledby", "tab_" + id);
+    else panel.removeAttribute("aria-labelledby");
+  }
+  if (focusedTab && show) $("#tab_" + S.insp.tab)?.focus();
   if (wasShown !== show && map3d && document.body.classList.contains("is3d")) map3d.resize();
   if (show && S.insp.tab === "job") renderDetailIfShown();
   if (show && S.insp.tab === "coord") renderMissionDetail();
@@ -219,8 +231,16 @@ function refreshLayer(id) {
   const desc = S.app && S.app.layers.find(l => l.id === id);
   if (desc && S.layers[id] && S.layers[id].enabled) refresh(desc, true);
 }
-function openInspector(tab) { S.insp.open = true; S.insp.tab = tab; store.set("insp.open", true); updateInspector(); }
-function toggleInspector(open) { S.insp.open = open; store.set("insp.open", open); updateInspector(); }
+function openInspector(tab) {
+  setRail(false, false);
+  S.insp.open = true; S.insp.tab = tab; store.set("insp.open", true); updateInspector();
+  $("#tab_" + S.insp.tab)?.focus();
+}
+function toggleInspector(open) {
+  S.insp.open = open; store.set("insp.open", open); updateInspector();
+  if (open) { setRail(false, false); $("#tab_" + S.insp.tab)?.focus(); }
+  else $("#btnInsp").focus();
+}
 
 // ---------------------------------------------------------------- layers
 function renderLayer(desc) {
@@ -228,13 +248,15 @@ function renderLayer(desc) {
   const el = document.getElementById("lyr_" + desc.id);
   el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${st.enabled ? "checked" : ""} aria-label="${esc(desc.name)}">
       <span class="nm">${esc(desc.name)}</span><span class="grp">${esc(desc.group)}</span>
-      <button class="btn small" data-open title="${t("Einstellungen")}">⚙</button></div>
+      <button class="btn small" data-open aria-label="${esc(t("Einstellungen für {name}", { name: desc.name }))}" aria-expanded="${st.open}" title="${t("Einstellungen")}">⚙</button></div>
     <div class="bd" ${st.open ? "" : "hidden"}><div class="note" style="margin:0">${esc(desc.description)}</div>
       ${inputsHTML(desc.settings, st.values, desc.id)}
       <div class="msg"></div><div class="lg"></div><div class="summary"></div>
       ${desc.id === "sites" ? `<div class="sitemgr"></div>` : ""}</div>`;
   el.querySelector("[data-on]").addEventListener("change", e => { st.enabled = e.target.checked; persist(desc.id); refresh(desc, false, true); });
-  el.querySelector("[data-open]").addEventListener("click", () => { st.open = !st.open; persist(desc.id); renderLayer(desc); showExtras(desc); });
+  el.querySelector("[data-open]").addEventListener("click", () => {
+    st.open = !st.open; persist(desc.id); renderLayer(desc); showExtras(desc); el.querySelector("[data-open]").focus();
+  });
   bindInputs(el, desc.settings, st.values, () => { persist(desc.id); renderLayer(desc); refresh(desc, false, true); });
   if (desc.id === "sites" && st.open) renderSites(el.querySelector(".sitemgr"));
 }
@@ -295,9 +317,18 @@ async function deviceStatus(action) {
   try {
     d = action ? await postJSON(`api/device/${action}`, { port: $("#devPort").value.trim() })
       : await getJSON("api/device");
-  } catch (e) { $("#devText").textContent = e.message; return; }
+  } catch (e) {
+    $("#devText").textContent = e.message;
+    $("#headerDevText").textContent = action ? t("Fehler") : t("Server nicht erreichbar");
+    $("#headerDevDot").style.background = "var(--bad)";
+    $("#btnDevice").title = e.message;
+    return;
+  }
   const colors = { verbunden: "var(--ok)", verbinde: "var(--warn)", Fehler: "var(--bad)" };
   $("#devDot").style.background = colors[d.state] || "var(--line)";
+  $("#headerDevDot").style.background = colors[d.state] || "var(--ink3)";
+  $("#headerDevText").textContent = d.state === "verbunden" && d.port === "sim" ? t("Simulation") : t(d.state);
+  $("#btnDevice").title = d.state === "Fehler" ? d.error : t("Gerät (USB)");
   const since = d.last_packet ? ", " + t("letztes vor {s} s", { s: Math.round(Date.now() / 1000 - d.last_packet) }) : "";
   // Device states are German codes: t("getrennt") t("verbinde") t("verbunden") t("Fehler")
   $("#devText").textContent = d.state === "verbunden"
@@ -346,20 +377,26 @@ function focusNode(id) {
 // A one-off click on the map for another tool (placing a site); it wins over the link layer.
 // With multi: clicks collect points until "Fertig" (cb gets the list) or Esc (nothing).
 function pickOnMap(label, cb, { multi = false } = {}) {
-  S.mapPick = { label, cb, multi, points: [] };
+  const fromRail = document.body.classList.contains("rail-open") && matchMedia("(max-width: 700px)").matches;
+  const finish = (...args) => { if (fromRail) setRail(true); cb(...args); };
+  S.mapPick = { label, cb: finish, multi, points: [], fromRail };
+  setRail(false, false);
   $("#pickBanner").hidden = false;
   $("#pickText").textContent = t("Klick in die Karte: {label}", { label });
   $("#pickDone").hidden = !multi;
   document.body.classList.add("picking");
+  $("#pickCancel").focus();
 }
-function clearMapPick() {
+function clearMapPick(restore = true) {
+  const fromRail = S.mapPick?.fromRail;
   S.mapPick = null; $("#pickBanner").hidden = true;
   E_tempMarker(null); if (map2d) map2d.setTempPath(null);
   document.body.classList.toggle("picking", !!S.pick);
+  if (restore && fromRail) setRail(true);
 }
 function finishMapPick() {
   const pick = S.mapPick; if (!pick) return;
-  clearMapPick();
+  clearMapPick(false);
   if (pick.multi) pick.cb(pick.points);
 }
 function mapClick(lat, lon) {
@@ -370,7 +407,7 @@ function mapClick(lat, lon) {
       $("#pickText").textContent = t("Klick in die Karte: {label} ({n} Punkte)", { label: pick.label, n: pick.points.length });
       return true;
     }
-    clearMapPick(); pick.cb(lat, lon); return true;
+    clearMapPick(false); pick.cb(lat, lon); return true;
   }
   if (S.pick) { setEndpoint(S.pick, endpointAt(lat, lon, S.pick)); return true; }
   return false;
@@ -471,6 +508,16 @@ function setView(mode) {
 }
 
 function bindUI() {
+  initWorkspace();
+  $("#tabs").addEventListener("keydown", e => {
+    const tabs = [...$("#tabs").querySelectorAll("[data-tab]")];
+    const index = tabs.indexOf(document.activeElement);
+    if (index < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    const next = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1
+      : (index + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    S.insp.tab = tabs[next].dataset.tab; updateInspector();
+  });
   // language switch: the page reloads in the chosen language
   $("#langSeg").innerHTML = LANGS.map(l => `<button class="btn ${l === lang ? "on" : ""}" data-lang="${l}" aria-pressed="${l === lang}">${l.toUpperCase()}</button>`).join("");
   $("#langSeg").querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => { if (b.dataset.lang !== lang) setLang(b.dataset.lang); }));
@@ -484,8 +531,10 @@ function bindUI() {
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (S.mapPick) clearMapPick(); else if (S.pick) setPick("");
+    else if (document.body.classList.contains("rail-open")) setRail(false);
+    else if (!$("#right").hidden) toggleInspector(false);
   });
-  $("#pickCancel").addEventListener("click", clearMapPick);
+  $("#pickCancel").addEventListener("click", () => clearMapPick());
   $("#pickDone").addEventListener("click", finishMapPick);
   // rail sections remember whether they are open
   document.querySelectorAll("details[data-sec]").forEach(d => {
@@ -500,16 +549,24 @@ function bindUI() {
   $("#themeBtn").addEventListener("click", () => {
     const r = document.documentElement;
     const now = r.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    r.setAttribute("data-theme", now === "dark" ? "light" : "dark"); map3d.applyTheme();
+    const theme = now === "dark" ? "light" : "dark";
+    r.setAttribute("data-theme", theme); store.set("theme", theme); in3d(() => map3d.applyTheme());
   });
 }
 
 (async function main() {
+  const theme = store.get("theme", null);
+  if (theme === "light" || theme === "dark") document.documentElement.setAttribute("data-theme", theme);
   await loadCatalogue();
   translateStatic();
   try {
     S.app = await getJSON("api/app");
-  } catch (e) { status(t("Server nicht erreichbar: {error}", { error: e.message }), true); return; }
+  } catch (e) {
+    status(t("Server nicht erreichbar: {error}", { error: e.message }), true);
+    $("#headerDevText").textContent = t("Server nicht erreichbar");
+    $("#headerDevDot").style.background = "var(--bad)";
+    return;
+  }
   const center = S.app.home || { lat: 50.7374, lon: 7.0982 };
   map2d = new Map2D($("#map2d"), center, {
     onClick: (lat, lon) => mapClick(lat, lon),
@@ -546,7 +603,9 @@ function bindUI() {
     sites: () => ((S.layers.sites && S.layers.sites.data && S.layers.sites.data.features) || [])
       .map(f => ({ name: f.properties._title, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] })),
   });
-  initMessages({ store, toast, connect: () => deviceStatus("connect"), focusNode });
+  initMessages({ store, toast, connect: () => deviceStatus("connect"), focusNode,
+    onOpen: () => { if (matchMedia("(max-width: 700px)").matches && !$("#right").hidden) toggleInspector(false); },
+  });
   initTasks({ store, toast, openInspector, updateInspector, onTransition: taskTransition, actions: taskActions });
   initLayers();
   S.devState = null;

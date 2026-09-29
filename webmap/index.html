@@ -15,8 +15,12 @@
 <body>
 <div id="app">
 <header>
+  <button class="btn" id="btnRail" aria-expanded="false" aria-controls="rail" data-i18n>Bedienfeld</button>
   <h1 data-i18n>Meshtastic — Karten</h1>
-  <span class="sub" id="status" data-i18n>lädt …</span>
+  <span class="sub" id="status" role="status" data-i18n>lädt …</span>
+  <button class="btn device-status" id="btnDevice" aria-controls="rail" title="Gerät (USB)" data-i18n-title="Gerät (USB)">
+    <span class="dot" id="headerDevDot" aria-hidden="true"></span><span id="headerDevText" data-i18n>lädt …</span>
+  </button>
   <span class="spacer"></span>
   <span class="seg" role="group" aria-label="Ansicht" data-i18n-aria-label="Ansicht">
     <button class="btn on" id="view2d" aria-pressed="true" data-i18n>2D Karte</button>
@@ -32,23 +36,24 @@
   <button class="btn" id="btnInsp" aria-pressed="false" aria-controls="right" disabled
     title="Detailbereich ein-/ausblenden" data-i18n-title="Detailbereich ein-/ausblenden" data-i18n>Details</button>
   <span class="seg" role="group" id="langSeg" aria-label="Sprache" data-i18n-aria-label="Sprache"></span>
-  <button class="btn" id="themeBtn" title="Hell/Dunkel" data-i18n-title="Hell/Dunkel">◐</button>
+  <button class="btn" id="themeBtn" title="Hell/Dunkel" aria-label="Hell/Dunkel" data-i18n-title="Hell/Dunkel" data-i18n-aria-label="Hell/Dunkel">◐</button>
 </header>
 
 <main class="noinsp">
   <aside id="rail">
+    <div class="rail-head"><strong data-i18n>Bedienfeld</strong><button class="btn" id="btnCloseRail" aria-label="Schließen" data-i18n-aria-label="Schließen">✕</button></div>
     <details class="sec" data-sec="layers" open>
       <summary><h2 data-i18n>Ebenen</h2></summary>
       <div class="lyr" id="lyr_link"></div>
       <div id="layers"></div>
     </details>
-    <details class="sec" data-sec="jobs" open>
+    <details class="sec" data-sec="jobs">
       <summary><h2 data-i18n>Aufgaben</h2></summary>
       <div class="jobstart" id="jobStart"></div>
       <div class="jobform" id="jobForm" hidden></div>
       <div class="joblist" id="jobList"></div>
     </details>
-    <details class="sec" data-sec="coord" open>
+    <details class="sec" data-sec="coord">
       <summary><h2 data-i18n>Koordination</h2><span class="dot" id="coordDot"></span></summary>
       <div class="stack" id="coordBox"></div>
     </details>
@@ -64,11 +69,12 @@
       <summary><h2 data-i18n>Gerät (USB)</h2><span class="dot" id="devDot"></span></summary>
       <div class="dev"><span id="devText">—</span></div>
       <div class="row2">
-        <input type="text" id="devPort" placeholder="Port (leer = automatisch)" data-i18n-placeholder="Port (leer = automatisch)">
+        <input type="text" id="devPort" aria-label="Port (leer = automatisch)" data-i18n-aria-label="Port (leer = automatisch)" placeholder="Port (leer = automatisch)" data-i18n-placeholder="Port (leer = automatisch)">
         <button class="btn" id="devBtn" data-i18n>Verbinden</button>
       </div>
     </details>
   </aside>
+  <button id="railBackdrop" hidden tabindex="-1" aria-label="Schließen" data-i18n-aria-label="Schließen"></button>
 
   <section id="view">
   <div id="mapbox">
@@ -94,7 +100,7 @@
       <span class="spacer"></span>
       <button class="btn small" id="msgFold" aria-label="Nachrichten ausklappen" data-i18n-aria-label="Nachrichten ausklappen">▴</button>
     </div>
-    <div class="mbody">
+    <div class="mbody" id="msgBody">
       <nav class="convs" id="msgConvs" aria-label="Unterhaltungen" data-i18n-aria-label="Unterhaltungen"></nav>
       <section class="chat">
         <div class="to" id="msgTo"></div>

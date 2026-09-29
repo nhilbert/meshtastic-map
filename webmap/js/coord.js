@@ -5,6 +5,7 @@ import { bindInputs, initialValues, inputsHTML } from "./forms.js";
 import { locale, t } from "./i18n.js";
 import { openTaskForm } from "./tasks.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
+import { showSection } from "./workspace.js";
 
 // Mission states are German codes: t("zugewiesen") t("unterwegs") t("wartet") t("erreicht")
 // t("abgebrochen") t("beendet"); message kinds: t("assign") t("status") t("route") t("target")
@@ -33,7 +34,7 @@ export function initCoord(api) {
   C.targets = api.store.get("coord.targets", false);
   C.areas = api.store.get("coord.areas", false);
   $("#btnCoord").addEventListener("click", () => {
-    const sec = $("details[data-sec=coord]"); sec.open = true; sec.scrollIntoView({ behavior: "smooth", block: "start" });
+    showSection("coord");
   });
   poll();
 }
@@ -43,7 +44,7 @@ export function pollSoon() { clearTimeout(C.timer); C.timer = setTimeout(poll, 2
 // "Ziel zuweisen" from a node popup or the node list: the mission form with the node preset.
 export function assignTo(nodeId) {
   openForm(nodeId);
-  const sec = $("details[data-sec=coord]"); sec.open = true;
+  showSection("coord");
   $("#coordBox").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 

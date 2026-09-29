@@ -21,7 +21,11 @@ in German, English and French (see [Languages](#languages)).
   **Aufgaben** (background tasks, shows how many run), **Details** (the right panel; greyed out
   while there is nothing to show), light/dark.
 - **Left column**: *Ebenen* (layers), *Aufgaben*, *3D-Darstellung* (only in 3D), *Gerät (USB)*.
-  Sections fold and remember their state.
+  Sections fold and remember their state; tasks and coordination start folded. On phones,
+  **Bedienfeld** opens the controls as a drawer, leaving the map available at full height.
+  Header shortcuts open the relevant section. The device status in the header also identifies
+  simulation mode and opens the connection controls. Escape closes the drawer or details;
+  map picking returns to the originating drawer form. The light/dark choice is remembered.
 - **Ebenen**: each layer has a checkbox and a ⚙ with its settings and legend. Settings are
   remembered per browser.
 - **Strecke A → B** (first layer) is the direct-link calculator. While it is on, a click in the
@@ -35,6 +39,8 @@ in German, English and French (see [Languages](#languages)).
   the bottom), *Rundgang* when the walk layer compares with the models, *Knoten* (the node list,
   see below) while the node layer is on, *Aufgabe* for the log of a background task. ✕ closes it,
   **Details** brings it back.
+  Tabs support Left/Right, Home and End keys. On phones, details appear over the lower map;
+  opening messages dismisses that overlay so the conversation is accessible.
 - **3D**: drag rotates, right button or Shift+drag pans (the ground follows the cursor), wheel
   zooms; *Übersicht* and *Strecke zeigen* sit in the top right corner of the 3D view.
 
