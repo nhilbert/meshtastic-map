@@ -12,6 +12,10 @@ const PATHS = {
   sensor: '<path d="M8 2.5a1.5 1.5 0 0 1 1.5 1.5v6a2.6 2.6 0 1 1-3 0V4A1.5 1.5 0 0 1 8 2.5z"/><path d="M8 7v4.5"/>',
   // house
   home: '<path d="M2.5 7.5 8 3l5.5 4.5M4 6.5V13.5h8V6.5M6.8 13.5v-3.5h2.4v3.5"/>',
+  // flag: a stop of a coordination path
+  target: '<path d="M4 14.5V2.5M4 3h8l-2.5 3L12 9H4"/>',
+  // small ring: a via point
+  via: '<circle cx="8" cy="8" r="3.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/>',
 };
 
 export function symbolSVG(name) {

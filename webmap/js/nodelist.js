@@ -12,7 +12,7 @@ const SORTS = {
 };
 const L = { api: null, data: null, filter: "", sort: "last", built: false };
 
-// api: { store, focusNode(id), message(id) }
+// api: { store, focusNode(id), message(id), assign(id) }
 export function initNodeList(api) {
   L.api = api;
   L.sort = api.store.get("nodes.sort", "last");
@@ -31,7 +31,7 @@ function build() {
         <label class="inline">${t("Sortieren")}<select id="nlSort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}">${l()}</option>`).join("")}</select></label></div>
       <p class="note nl-count" style="margin:6px 0 4px"></p>
       <div class="wrap nl-body"></div>
-      <p class="note">${t("Gleiche Quelle und Filter wie die Ebene „Meshtastic-Knoten“ (⚙ dort). Klick auf einen Knoten mit Position zeigt ihn auf der Karte, ✉ schreibt ihm direkt.")}</p></div>`;
+      <p class="note">${t("Gleiche Quelle und Filter wie die Ebene „Meshtastic-Knoten“ (⚙ dort). Klick auf einen Knoten mit Position zeigt ihn auf der Karte, ✉ schreibt ihm direkt, ⚑ weist ihm ein Ziel zu.")}</p></div>`;
   $("#nlFilter").value = L.filter;
   $("#nlSort").value = L.sort;
   $("#nlFilter").addEventListener("input", e => { L.filter = e.target.value; fill(); });
@@ -63,8 +63,10 @@ function fill() {
         <span class="sn">${esc(n.short || n.id.slice(-4))}</span> ${esc(n.long || n.id)}</button>
         <div class="sub">${esc(n.id)}${n.hw ? " · " + esc(n.hw) : ""}${n.battery != null ? " · " + t("Akku {n} %", { n: n.battery }) : ""}${n.own ? " · " + t("eigenes Gerät") : ""}</div></td>
       <td class="n">${n.hops ?? "–"}</td><td class="n">${n.snr != null ? fmt(n.snr, 1) : "–"}</td><td class="n">${age(n.last)}</td>
-      <td>${n.own ? "" : `<button class="btn small" data-msg="${esc(n.id)}" aria-label="${esc(t("{name} direkt schreiben", { name: n.long || n.id }))}" title="${t("Direktnachricht")}">✉</button>`}</td></tr>`).join("")}
+      <td class="acts">${n.own ? "" : `<button class="btn small" data-msg="${esc(n.id)}" aria-label="${esc(t("{name} direkt schreiben", { name: n.long || n.id }))}" title="${t("Direktnachricht")}">✉</button>
+        <button class="btn small" data-assign="${esc(n.id)}" aria-label="${esc(t("{name} ein Ziel zuweisen", { name: n.long || n.id }))}" title="${t("Ziel zuweisen")}">⚑</button>`}</td></tr>`).join("")}
     </table>` : `<p class="note">${nodes.length ? t("Kein Knoten passt zum Filter.") : esc((L.data && L.data.note) || t("Keine Knoten."))}</p>`;
   body.querySelectorAll("[data-focus]").forEach(b => b.addEventListener("click", () => L.api.focusNode(b.dataset.focus)));
   body.querySelectorAll("[data-msg]").forEach(b => b.addEventListener("click", () => L.api.message(b.dataset.msg)));
+  body.querySelectorAll("[data-assign]").forEach(b => b.addEventListener("click", () => L.api.assign(b.dataset.assign)));
 }

@@ -15,6 +15,7 @@ POST /api/sites/<action>      add, update, rename, delete (data/sim/sites.json)
 POST /api/tracks?name=x.gpx   upload a GPX track (raw body) to data/tracks/
 GET  /api/messages?rev=N      messages (and with traffic=1 recent packets) newer than revision N
 POST /api/messages            {"text", "to": "!id" or "^all", "channel"} sends a text
+GET/POST /api/coord/...       coordination mode (dispatched in coord/missions.py)
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from urllib.parse import parse_qsl, urlparse
 
 from meshplay.config import DEFAULT_PRESET
 from meshplay.mapapp import sites_store
+from meshplay.mapapp.coord.missions import Coordinator
 from meshplay.mapapp.device import DeviceLink, Simulation
 from meshplay.mapapp.i18n import _, set_lang
 from meshplay.mapapp.jobs import JobManager
@@ -240,6 +242,9 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                 elif parts == ["api", "messages"]:
                     q = dict(parse_qsl(url.query))
                     self.send_json(messages_since(ctx, int(q.get("rev", 0)), q.get("traffic")))
+                elif parts[:2] == ["api", "coord"]:
+                    q = dict(parse_qsl(url.query))
+                    self.send_json(ctx.coord.api("GET", parts[2:], q, {}))
                 elif parts == ["api", "sites"]:
                     cfg = sites_store.load_raw(ctx.sites_path)
                     self.send_json({"sites": sites_store.site_list(cfg)})
@@ -287,6 +292,9 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                             raise ValueError(_("Ein Traceroute-Rundgang läuft: erst stoppen"))
                         ctx.device.disconnect()
                     self.send_json(ctx.device.status())
+                    return
+                if parts[:2] == ["api", "coord"]:
+                    self.send_json(ctx.coord.api("POST", parts[2:], {}, body))
                     return
                 if parts == ["api", "messages"]:
                     msg = ctx.device.send_text(
@@ -344,6 +352,7 @@ def run(
         device = "auto"
     ctx.device = DeviceLink(ctx.data_dir, log_packets, sim)
     ctx.jobs = JobManager(ctx)
+    ctx.coord = Coordinator(ctx)
     if device:
         ctx.device.connect(None if device == "auto" else device)
     scene_dir = ensure_scene_export(ctx, force_export)
@@ -362,5 +371,6 @@ def run(
         pass
     finally:
         ctx.jobs.shutdown()  # stops walks and ends simulation processes
+        ctx.coord.shutdown()
         ctx.device.disconnect()
         server.server_close()

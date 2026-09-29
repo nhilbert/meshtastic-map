@@ -258,7 +258,8 @@ suggests ≤ 8 because the name goes into every message. Ad-hoc clicks get `P1`,
 `profile`, `arrive_radius_m` 30 (default for new waypoints), `off_route_m` 75, `min_gap_s`
 120, `instructions` (request/turns/interval), `legs_per_message` 3, `confirm_every_min` 0,
 `late_warn_min` 3, `stale_min` 5, `min_precision_bits` 24, `speed_kmh` per profile,
-`end_message` on/off. Channel 0 and the device's hop limit are fixed, like the pane's DMs.
+`end_message` on/off, `channel` (the device channel the direct messages use; default 1, the
+private channel, so the public mesh sees nothing). The hop limit is the device's.
 
 ## 8. Server side
 

@@ -39,7 +39,8 @@ export function featureHTML(props, withActions = true) {
     .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
   const buttons = [];
   if (withActions && props._endpoint) buttons.push(`<button class="btn small" data-set="a">${t("als A")}</button><button class="btn small" data-set="b">${t("als B")}</button>`);
-  if (withActions && props._node_id && !(props._icon && props._icon.own)) buttons.push(`<button class="btn small" data-set="msg">${t("Nachricht")}</button>`);
+  if (withActions && props._node_id && !(props._icon && props._icon.own))
+    buttons.push(`<button class="btn small" data-set="msg">${t("Nachricht")}</button><button class="btn small" data-set="coord">${t("Ziel zuweisen")}</button>`);
   const acts = buttons.length ? `<div class="acts">${buttons.join("")}</div>` : "";
   return `<div class="pop"><h3>${esc(props._title || "")}</h3><table>${rows}</table>${acts}</div>`;
 }

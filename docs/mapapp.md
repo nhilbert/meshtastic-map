@@ -89,6 +89,41 @@ when a task ends or fails.
   `coverage-<site>-<preset>-<placement>-<radius>m-<step>m[-winter].npz`, and carries it as
   metadata, which the layer *Simulierte Abdeckung* shows in its selection.
 
+## Coordination mode (Koordination)
+
+The server node guides field nodes to targets by short direct messages: the coordinator
+assigns a node a *path* (one target, or waypoints with times), the server tells the node
+where to go, keeps distance, speed, ETA and schedule, warns when it strays, answers its
+questions and confirms every stop. Design and radio protocol:
+[coordination-design.md](coordination-design.md). Needs the connected device; try it with the
+simulated radio first.
+
+- **Rail section "Koordination"** (header button **Koordination**): the mode switch. *On* means
+  the server may message nodes with a mission on its own; *off* sends nothing, missions can
+  still be created. ⚙ has the settings (channel of the messages, their language, travel
+  profile, arrival radius, minimum gap between unrequested messages, …), **Ziele** the editor
+  for named targets.
+- **＋ Einsatz** (also *Ziel zuweisen* in a node's popup or ⚑ in the node list): pick the node
+  (favourites first) and build the path: waypoints from the targets, the own sites or map
+  clicks, each a *Halt* (announced, confirmed, may carry *Ankunft bis* and *Warten bis* as
+  `12:55` or `+15`) or a *Durchgang* (routing only). **Zuweisen** sends the first leg, e.g.
+  `#ALPHA 850m NE ~11min`; without a known position the leg follows the first position packet.
+- **Mission cards** show the current stop, distance and compass direction, ETA, speed, the age
+  of the last position, the last message with its delivery state, and buttons *Status senden*,
+  *Route senden*, *Nächster Halt*, *Beenden*, *Details* (inspector tab **Einsatz** with all
+  metrics, the path, every message and the event log).
+- **The field node** answers with `?` (status), `?r` (route), `?z` (target), `?p` (path), `?h`
+  (help), `halt`/`go` (pause the guidance) and `x` (abort). Nodes without a mission are never
+  answered.
+- **Layer "Koordination"** draws the waypoints (flags, numbered), the node's trail and the line
+  to the current stop, coloured by mission state.
+- Files: `data/coord/` (settings, targets, missions, `events-<date>.jsonl`).
+
+The tracker must share its position on a channel the server node has, with *precise location*
+and a short interval (30 s); positions coarser than the setting *Mindestgenauigkeit* are
+ignored. Guidance is straight-line (compass direction and distance) until the road graph of
+the next steps exists.
+
 ## Own sites (Eigene Standorte)
 
 The ⚙ of the layer *Eigene Standorte* has an editor for `data/sim/sites.json`: **＋ Neuer
@@ -156,8 +191,11 @@ a second per packet; results are cached in `data/mapapp/cache/walk/`.
 src/meshplay/mapapp/
   server.py        HTTP server: page, /scene/* (3D data), /api/app, /api/layers/<id>,
                    /api/tools/<name>, /api/device, /api/jobs, /api/sites, /api/tracks,
-                   /api/messages
-  device.py        live USB connection: node list, packet logging
+                   /api/messages, /api/coord/*
+  device.py        live USB connection: node list, packet logging, packet listeners
+  fake_device.py   simulated radio (--simulate)
+  coord/           coordination mode: missions.py (Coordinator, decisions, API), phrases.py
+                   (radio texts, commands), paths.py, settings.py, store.py, geo.py
   jobs.py          background tasks: manager, task kinds (traceroute walk, coverage simulation)
   sites_store.py   editing data/sim/sites.json
   messages.py      message store for the messaging pane (data/messages.jsonl, traffic list)
@@ -171,6 +209,7 @@ webmap/
   js/main.js       wiring: layer panel, link layer, inspector, notices, map picks
   js/forms.js      forms built from the server's Setting declarations (layers, tasks)
   js/tasks.js      task forms, list, log view
+  js/coord.js      coordination mode: section, mission form, cards, targets, inspector tab
   js/sites.js      sites editor
   js/messages.js   messaging pane
   js/nodelist.js   node list (inspector tab Knoten)

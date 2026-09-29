@@ -27,6 +27,8 @@
     data-i18n-title="Nachrichten und Paketverkehr des verbundenen Geräts" data-i18n>Nachrichten</button>
   <button class="btn" id="btnJobs" title="Hintergrundaufgaben: Rundgang, Simulation"
     data-i18n-title="Hintergrundaufgaben: Rundgang, Simulation" data-i18n>Aufgaben</button>
+  <button class="btn" id="btnCoord" title="Koordinationsmodus: Knoten zu Zielen führen"
+    data-i18n-title="Koordinationsmodus: Knoten zu Zielen führen" data-i18n>Koordination</button>
   <button class="btn" id="btnInsp" aria-pressed="false" aria-controls="right" disabled
     title="Detailbereich ein-/ausblenden" data-i18n-title="Detailbereich ein-/ausblenden" data-i18n>Details</button>
   <span class="seg" role="group" id="langSeg" aria-label="Sprache" data-i18n-aria-label="Sprache"></span>
@@ -45,6 +47,10 @@
       <div class="jobstart" id="jobStart"></div>
       <div class="jobform" id="jobForm" hidden></div>
       <div class="joblist" id="jobList"></div>
+    </details>
+    <details class="sec" data-sec="coord" open>
+      <summary><h2 data-i18n>Koordination</h2><span class="dot" id="coordDot"></span></summary>
+      <div class="stack" id="coordBox"></div>
     </details>
     <details class="sec" data-sec="3d" id="sec3d" open>
       <summary><h2 data-i18n>3D-Darstellung</h2></summary>
@@ -115,6 +121,7 @@
       <div class="tabbody" id="t_walk" hidden></div>
       <div class="tabbody" id="t_nodes" hidden></div>
       <div class="tabbody" id="t_job" hidden></div>
+      <div class="tabbody" id="t_coord" hidden></div>
     </div>
   </section>
 </main>

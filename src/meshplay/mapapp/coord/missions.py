@@ -1,0 +1,885 @@
+"""The Coordinator: one mission per field node, decisions on every position, the API.
+
+Packets arrive on the serial reader thread and are only queued; a worker thread updates the
+missions and sends (through DeviceLink.send_text, so every message is in the pane). A tick
+thread handles the time-based parts: hold times, stale positions, retries, saving.
+Nothing is sent while the mode is off. See docs/coordination-design.md §4 and §5.
+"""
+
+from __future__ import annotations
+
+import logging
+import queue
+import statistics
+import threading
+import time
+from collections import deque
+
+from meshplay.mapapp.coord import phrases
+from meshplay.mapapp.coord.geo import (
+    bearing_deg,
+    compass,
+    distance_m,
+    fmt_dist,
+    fmt_eta,
+    hhmm,
+)
+from meshplay.mapapp.coord.paths import Waypoint, parse_path, stops
+from meshplay.mapapp.coord.settings import DEFAULTS, clean, declarations, default_speed_ms
+from meshplay.mapapp.coord.store import CoordStore
+from meshplay.mapapp.i18n import _
+from meshplay.mapapp.sites_store import NAME_RE
+
+log = logging.getLogger(__name__)
+
+ASSIGNED, UNDERWAY, HOLDING, ARRIVED, ABORTED, ENDED = (
+    "zugewiesen",
+    "unterwegs",
+    "wartet",
+    "erreicht",
+    "abgebrochen",
+    "beendet",
+)
+ACTIVE = (ASSIGNED, UNDERWAY, HOLDING)
+PRIORITY_GAP_S = 30  # warnings and arrivals may follow each other this closely
+RETRY_S = 60  # an undelivered assignment / arrival / next-leg message is sent once more
+RETRY_KINDS = ("assign", "reached", "next", "changed")
+MOVE_MIN_M = 15  # smaller steps are GPS noise: not counted, not used for the speed
+SPEED_DT_S = (20, 300)  # a leg between two positions counts for the speed only in this range
+OFF_STEP_M = 50  # straight-line off-course: the distance grew by this on three positions in a row
+
+
+class Mission:
+    def __init__(self, node: str, path: list[Waypoint], profile: str, lang: str, now: float):
+        self.node = node
+        self.path = path
+        self.profile = profile
+        self.lang = lang
+        self.index = 0  # current waypoint
+        self.state = ASSIGNED
+        self.held = False
+        self.created = now
+        self.assigned_at = now
+        self.arrived_at: float | None = None
+        self.hold_arrived_at: float | None = None
+        self.positions: deque[dict] = deque(maxlen=50)
+        self.travelled_m = 0.0
+        self.metrics: dict = {}
+        self.sent: dict[str, float] = {}  # last send per kind
+        self.last_proactive = 0.0
+        self.flags: set[str] = set()  # armed warnings: "offcourse", "late", "early"
+        self.messages: deque[dict] = deque(maxlen=50)
+        self.events: deque[dict] = deque(maxlen=200)
+        self.retry: tuple[float, str, str] | None = None  # (when, kind, text)
+        self.awaiting_position = False  # assigned without a position: the leg follows the first
+        self.offcourse_from_m = 0.0  # distance to the stop when the off-course warning went out
+
+    @property
+    def stop(self) -> Waypoint:
+        return self.path[self.index]
+
+    @property
+    def active(self) -> bool:
+        return self.state in ACTIVE
+
+    @property
+    def last(self) -> dict | None:
+        return self.positions[-1] if self.positions else None
+
+    def to_json(self, with_events: bool = False) -> dict:
+        out = {
+            "node": self.node,
+            "path": [w.to_json() for w in self.path],
+            "profile": self.profile,
+            "lang": self.lang,
+            "index": self.index,
+            "state": self.state,
+            "held": self.held,
+            "created": self.created,
+            "assigned_at": self.assigned_at,
+            "arrived_at": self.arrived_at,
+            "hold_arrived_at": self.hold_arrived_at,
+            "positions": list(self.positions),
+            "travelled_m": round(self.travelled_m),
+            "metrics": self.metrics,
+            "flags": sorted(self.flags),
+            "messages": list(self.messages),
+            "last_proactive": self.last_proactive,
+            "awaiting_position": self.awaiting_position,
+            "offcourse_from_m": self.offcourse_from_m,
+        }
+        if with_events:
+            out["events"] = list(self.events)
+        return out
+
+    @classmethod
+    def from_json(cls, d: dict) -> Mission:
+        m = cls(
+            d["node"],
+            [Waypoint.from_json(w) for w in d["path"]],
+            d.get("profile", "foot"),
+            d.get("lang", "de"),
+            d.get("created", time.time()),
+        )
+        for k in (
+            "index",
+            "state",
+            "held",
+            "assigned_at",
+            "arrived_at",
+            "hold_arrived_at",
+            "travelled_m",
+            "metrics",
+            "last_proactive",
+            "awaiting_position",
+            "offcourse_from_m",
+        ):
+            if k in d:
+                setattr(m, k, d[k])
+        m.positions.extend(d.get("positions", []))
+        m.flags = set(d.get("flags", []))
+        m.messages.extend(d.get("messages", []))
+        return m
+
+
+class Coordinator:
+    def __init__(self, ctx):
+        self.ctx = ctx
+        self.store = CoordStore(ctx.data_dir / "coord")
+        saved = self.store.read("settings", {})
+        self.enabled = bool(saved.pop("enabled", False))
+        self.settings = {**DEFAULTS, **saved}
+        self.targets: dict[str, dict] = self.store.read("targets", {})
+        self.missions: dict[str, Mission] = {}
+        for d in self.store.read("missions", []):
+            try:
+                self.missions[d["node"]] = Mission.from_json(d)
+            except (KeyError, TypeError, ValueError) as e:
+                log.warning("Skipping a stored mission: %s", e)
+        self._lock = threading.RLock()
+        self._queue: queue.Queue = queue.Queue()
+        self._dirty = False
+        self._stop = threading.Event()
+        self._my_num: int | None = None
+        if ctx.device is not None:
+            ctx.device.listeners.append(self._on_packet)
+        threading.Thread(target=self._worker, daemon=True, name="coord-worker").start()
+        threading.Thread(target=self._ticker, daemon=True, name="coord-tick").start()
+
+    def shutdown(self) -> None:
+        self._stop.set()
+        self._save(force=True)
+
+    # ------------------------------------------------------------ API
+    def api(self, method: str, parts: list[str], query: dict, body: dict) -> dict:
+        """/api/coord/<parts...>: everything the page needs, one dispatch instead of handler
+        branches. Raises ValueError/KeyError with a sentence for the page."""
+        with self._lock:
+            if method == "GET" and not parts:
+                return self.snapshot()
+            if method == "GET" and parts[:1] == ["missions"] and len(parts) == 2:
+                return self._mission(parts[1]).to_json(with_events=True)
+            if method != "POST":
+                raise KeyError(_("unbekannte Aktion {action}", action="/".join(parts)))
+            if parts == ["mode"]:
+                self.set_enabled(bool(body.get("on")))
+            elif parts == ["settings"]:
+                dev = self.ctx.device
+                self.settings = clean({**self.settings, **body}, dev.channels() if dev else [])
+                self._save_settings()
+            elif parts[:1] == ["targets"] and len(parts) == 2:
+                self.edit_target(parts[1], body)
+            elif parts == ["missions"]:
+                m = self.assign(
+                    str(body.get("node", "")),
+                    body.get("path") or [],
+                    body.get("profile") or self.settings["profile"],
+                    body.get("lang") or self.settings["lang"],
+                )
+                return m.to_json()
+            elif parts[:1] == ["missions"] and len(parts) == 3:
+                return self.mission_action(parts[1], parts[2], body).to_json()
+            else:
+                raise KeyError(_("unbekannte Aktion {action}", action="/".join(parts)))
+            return self.snapshot()
+
+    def snapshot(self) -> dict:
+        dev = self.ctx.device
+        return {
+            "enabled": self.enabled,
+            "device_state": dev.state if dev else "getrennt",
+            "settings": self.settings,
+            "declarations": [s.to_json() for s in declarations(dev.channels() if dev else [])],
+            "missions": [m.to_json() for m in self.missions.values()],
+            "targets": self.targets,
+        }
+
+    def set_enabled(self, on: bool) -> None:
+        dev = self.ctx.device
+        if on and (dev is None or dev.state != "verbunden"):
+            raise ValueError(_("Gerät nicht verbunden: der Koordinationsmodus braucht es"))
+        self.enabled = on
+        self._save_settings()
+        self._event("*", "mode", on=on)
+
+    def edit_target(self, action: str, body: dict) -> None:
+        name = str(body.get("name") or "").strip()
+        if action == "delete":
+            if name not in self.targets:
+                raise KeyError(_("Ziel {name} gibt es nicht", name=name))
+            del self.targets[name]
+        elif action in ("add", "update"):
+            if not NAME_RE.match(name):
+                raise ValueError(_("Name: 1–24 Zeichen, nur Buchstaben, Ziffern, _ und -"))
+            if action == "add" and name in self.targets:
+                raise ValueError(_("Ein Ziel {name} gibt es schon", name=name))
+            if action == "update" and name not in self.targets:
+                raise KeyError(_("Ziel {name} gibt es nicht", name=name))
+            old = self.targets.get(name, {})
+            lat = float(body.get("lat", old.get("lat")))
+            lon = float(body.get("lon", old.get("lon")))
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise ValueError(_("Ungültige Position"))
+            radius = float(body.get("radius_m") or old.get("radius_m") or 0)
+            self.targets[name] = {
+                "lat": round(lat, 7),
+                "lon": round(lon, 7),
+                "radius_m": radius or None,
+                "note": str(body.get("note", old.get("note", "")))[:100],
+            }
+        else:
+            raise KeyError(_("unbekannte Aktion {action}", action=action))
+        self.store.write("targets", self.targets)
+
+    def assign(self, node: str, raw_path: list[dict], profile: str, lang: str) -> Mission:
+        """A new mission for the node (replacing its old one); sends the first leg."""
+        node = node.strip().lower()
+        if not (node.startswith("!") and len(node) == 9):
+            raise ValueError(_("Knoten: Node-ID wie !abcd1234"))
+        if profile not in ("foot", "bike", "car"):
+            raise ValueError(_("Fortbewegung: zu Fuß, Fahrrad oder Auto"))
+        if lang not in phrases.LANGS:
+            raise ValueError(_("Sprache der Funksprüche: de oder en"))
+        now = time.time()
+        path = parse_path(raw_path, now, float(self.settings["arrive_radius_m"]))
+        m = Mission(node, path, profile, lang, now)
+        old = self.missions.get(node)
+        if old is not None and old.last is not None and now - old.last["time"] < 3600:
+            m.positions.append(old.last)  # keep the node's last known position
+        else:
+            pos = self._db_position(node)
+            if pos is not None:
+                m.positions.append(pos)
+        self.missions[node] = m
+        self._event(node, "assign", path=[w.name for w in path], profile=profile)
+        self._update_metrics(m, now)
+        m.awaiting_position = m.last is None
+        self._send(m, "assign", self._leg_text(m, "assign"))
+        self._save(force=True)
+        return m
+
+    def mission_action(self, node: str, action: str, body: dict) -> Mission:
+        m = self._mission(node)
+        if action == "status":
+            self._require_active(m)
+            self._send(m, "status", self._status_text(m), reply=True)
+        elif action == "route":
+            self._require_active(m)
+            self._send(m, "route", self._route_text(m), reply=True)
+        elif action == "next":
+            self._require_active(m)
+            if m.index >= len(m.path) - 1:
+                raise ValueError(_("{name} ist schon der letzte Halt", name=m.stop.name))
+            self._advance(m, time.time(), skipped=True)
+        elif action == "end":
+            if m.active and self.settings["end_message"] and body.get("notify", True):
+                self._send(
+                    m, "ended", phrases.phrase(m.lang, "ended", target=m.stop.name), priority=True
+                )
+            m.state = ENDED
+            self._event(node, "end")
+        elif action == "remove":
+            if m.active:
+                raise ValueError(_("Einen laufenden Einsatz erst beenden"))
+            del self.missions[node]
+            self._save(force=True)
+            return m
+        else:
+            raise KeyError(_("unbekannte Aktion {action}", action=action))
+        self._save(force=True)
+        return m
+
+    def _mission(self, node: str) -> Mission:
+        if node not in self.missions:
+            raise KeyError(_("Kein Einsatz für {node}", node=node))
+        return self.missions[node]
+
+    @staticmethod
+    def _require_active(m: Mission) -> None:
+        if not m.active:
+            raise ValueError(_("Der Einsatz von {node} ist nicht mehr aktiv", node=m.node))
+
+    # ------------------------------------------------------------ layer
+    def layer_features(self) -> list[dict]:
+        """Map features for layers/coord.py: stops, trails, the line to the current stop."""
+        from meshplay.mapapp.registry import feature, line
+
+        out = []
+        with self._lock:
+            for name, t in self.targets.items():
+                out.append(
+                    feature(
+                        t["lon"],
+                        t["lat"],
+                        _title=name,
+                        _icon={
+                            "text": name,
+                            "symbol": "target",
+                            "color": "#6b7f8c",
+                            "hint": t.get("note", ""),
+                        },
+                        _fields={_("Ziel"): name, _("Notiz"): t.get("note", "")},
+                        _target=name,
+                        _z=2.0,
+                    )
+                )
+            for m in self.missions.values():
+                color = STATE_COLORS.get(m.state, "#6b7f8c")
+                for i, w in enumerate(m.path):
+                    current = m.active and i == m.index
+                    out.append(
+                        feature(
+                            w.lon,
+                            w.lat,
+                            _title=f"{w.name} · {m.node}",
+                            _icon={
+                                "text": w.name,
+                                "symbol": "target" if w.kind == "stop" else "via",
+                                "color": color if i >= m.index else "#9aa6ae",
+                                "own": current,
+                                "hint": _("Wegpunkt {n} von {total}", n=i + 1, total=len(m.path)),
+                            },
+                            _fields={
+                                _("Einsatz"): m.node,
+                                _("Art"): _("Halt") if w.kind == "stop" else _("Durchgang"),
+                                _("Radius"): f"{w.radius_m:g} m",
+                                _("Ankunft bis"): hhmm(w.arrive_by) if w.arrive_by else "–",
+                                _("Warten bis"): hhmm(w.hold_until) if w.hold_until else "–",
+                            },
+                            _style={"color": color, "fillColor": color, "radius": 7},
+                            _z=2.0,
+                        )
+                    )
+                pts = [(p["lon"], p["lat"]) for p in m.positions]
+                if len(pts) > 1:
+                    out.append(line(pts, _style={"color": color, "weight": 3, "opacity": 0.8}))
+                if m.active and m.last is not None:
+                    out.append(
+                        line(
+                            [(m.last["lon"], m.last["lat"]), (m.stop.lon, m.stop.lat)],
+                            _style={"color": color, "weight": 2, "dash": "4 6", "opacity": 0.7},
+                        )
+                    )
+        return out
+
+    # ------------------------------------------------------------ packets
+    def _on_packet(self, p: dict) -> None:
+        """Reader thread: keep only what concerns a mission node, hand it to the worker."""
+        sender = p.get("fromId") or f"!{p.get('from', 0):08x}"
+        if sender not in self.missions:
+            return
+        decoded = p.get("decoded", {})
+        port = decoded.get("portnum")
+        if port == "POSITION_APP" and "latitude" in decoded.get("position", {}):
+            self._queue.put(("position", sender, p))
+        elif port == "TEXT_MESSAGE_APP" and decoded.get("text"):
+            my = self._own_num()
+            if my is None or p.get("to") == my:
+                self._queue.put(("text", sender, p))
+
+    def _own_num(self) -> int | None:
+        if self._my_num is None:
+            dev = self.ctx.device
+            iface = getattr(dev, "iface", None)
+            self._my_num = getattr(getattr(iface, "myInfo", None), "my_node_num", None)
+        return self._my_num
+
+    def _worker(self) -> None:
+        while not self._stop.is_set():
+            try:
+                kind, node, p = self._queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            try:
+                with self._lock:
+                    m = self.missions.get(node)
+                    if m is None:
+                        continue
+                    if kind == "position":
+                        self._on_position(m, p)
+                    else:
+                        self._on_text(m, p["decoded"]["text"])
+            except Exception as e:  # one bad packet must not stop the coordination
+                log.exception("Coordination worker failed: %s", e)
+
+    def _ticker(self) -> None:
+        while not self._stop.wait(5.0):
+            try:
+                with self._lock:
+                    self._tick(time.time())
+                self._save()
+            except Exception as e:
+                log.exception("Coordination tick failed: %s", e)
+
+    # ------------------------------------------------------------ positions
+    def _on_position(self, m: Mission, p: dict) -> None:
+        pos = p["decoded"]["position"]
+        now = time.time()
+        bits = pos.get("precisionBits", 32)
+        if bits < int(self.settings["min_precision_bits"]):
+            m.metrics["precision_bits"] = bits
+            self._event(m.node, "position_ignored", bits=bits)
+            return
+        rec = {
+            "time": round(now, 1),
+            "lat": pos["latitude"],
+            "lon": pos["longitude"],
+            "bits": bits,
+            "snr": p.get("rxSnr"),
+            "rssi": p.get("rxRssi"),
+            "hops": (p.get("hopStart") or 0) - (p.get("hopLimit") or 0)
+            if p.get("hopStart") is not None
+            else None,
+            "speed": pos.get("groundSpeed"),
+        }
+        prev = m.last
+        if prev is not None:
+            step = distance_m((prev["lat"], prev["lon"]), (rec["lat"], rec["lon"]))
+            if step >= MOVE_MIN_M:
+                m.travelled_m += step
+        m.positions.append(rec)
+        self._event(m.node, "position", lat=rec["lat"], lon=rec["lon"], snr=rec["snr"])
+        if not m.active:
+            self._update_metrics(m, now)
+            return
+        if m.state == ASSIGNED:
+            m.state = UNDERWAY
+        self._update_metrics(m, now)
+        if m.awaiting_position:  # the assignment could not say where to go: now it can
+            m.awaiting_position = False
+            self._send(m, "assign", self._leg_text(m, "assign"), priority=True)
+        self._decide(m, now)
+        self._dirty = True
+
+    def _update_metrics(self, m: Mission, now: float) -> None:
+        last = m.last
+        stop = m.stop
+        out = {
+            "position_age_s": None if last is None else round(now - last["time"]),
+            "precision_bits": None if last is None else last["bits"],
+            "snr": None if last is None else last["snr"],
+            "hops": None if last is None else last["hops"],
+            "travelled_m": round(m.travelled_m),
+            "elapsed_s": round(now - m.assigned_at),
+            "stale": last is not None and now - last["time"] > self.settings["stale_min"] * 60,
+            "mode": "line",
+        }
+        if last is not None:
+            d = distance_m((last["lat"], last["lon"]), stop.pos)
+            speed, source = self._speed(m)
+            out.update(
+                dist_m=round(d),
+                bearing=round(bearing_deg((last["lat"], last["lon"]), stop.pos)),
+                compass=compass(bearing_deg((last["lat"], last["lon"]), stop.pos)),
+                speed_kmh=round(speed * 3.6, 1),
+                speed_source=source,
+                eta_s=round(d / speed) if speed > 0 else None,
+            )
+            if stop.arrive_by and out["eta_s"] is not None:
+                out["margin_min"] = round((stop.arrive_by - (now + out["eta_s"])) / 60)
+        m.metrics = out
+
+    def _speed(self, m: Mission) -> tuple[float, str]:
+        """m/s: median of the last three usable legs (or reported ground speeds), else the
+        profile's default."""
+        samples = []
+        pts = list(m.positions)
+        for a, b in zip(pts[-6:-1], pts[-5:], strict=False):
+            dt = b["time"] - a["time"]
+            d = distance_m((a["lat"], a["lon"]), (b["lat"], b["lon"]))
+            if SPEED_DT_S[0] <= dt <= SPEED_DT_S[1] and d >= MOVE_MIN_M:
+                samples.append(d / dt)
+        reported = [p["speed"] for p in pts[-3:] if p.get("speed") and p["speed"] > 0.3]
+        samples = (samples + reported)[-3:]
+        if samples:
+            return statistics.median(samples), "gemessen"
+        return default_speed_ms(self.settings, m.profile), "Standard"
+
+    # ------------------------------------------------------------ decisions
+    def _decide(self, m: Mission, now: float) -> None:
+        d = m.metrics["dist_m"]
+        stop = m.stop
+        if d <= stop.radius_m:
+            if m.state == HOLDING:
+                m.flags.discard("early")  # back at the stop: a new early departure warns again
+            elif stop.kind == "via" or m.index >= len(m.path) - 1 or not stop.hold_until:
+                self._advance(m, now)
+            else:
+                self._hold(m, now)
+            return
+        if m.state == HOLDING:
+            if stop.hold_until and now < stop.hold_until and "early" not in m.flags:
+                m.flags.add("early")
+                self._send(
+                    m,
+                    "early",
+                    phrases.phrase(m.lang, "early", target=stop.name, time=hhmm(stop.hold_until)),
+                    priority=True,
+                )
+            return
+        if m.held:
+            return
+        # off course without a road graph: the distance grew three times in a row
+        dists = [distance_m((p["lat"], p["lon"]), stop.pos) for p in list(m.positions)[-3:]]
+        growing = len(dists) == 3 and all(
+            b - a > OFF_STEP_M for a, b in zip(dists, dists[1:], strict=False)
+        )
+        if growing and "offcourse" not in m.flags:
+            m.flags.add("offcourse")
+            m.offcourse_from_m = dists[0]
+            self._event(m.node, "offcourse", dist=d)
+            self._send(
+                m,
+                "offcourse",
+                phrases.phrase(
+                    m.lang,
+                    "offcourse",
+                    off=fmt_dist(d - dists[0]),
+                    dir=m.metrics["compass"],
+                    dist=fmt_dist(d),
+                ),
+                priority=True,
+            )
+        elif "offcourse" in m.flags and d < m.offcourse_from_m - OFF_STEP_M:
+            m.flags.discard("offcourse")
+            self._event(m.node, "oncourse", dist=d)
+        if stop.arrive_by and m.metrics.get("eta_s") is not None:
+            late_s = now + m.metrics["eta_s"] - stop.arrive_by
+            if late_s > self.settings["late_warn_min"] * 60 and "late" not in m.flags:
+                m.flags.add("late")
+                self._send(
+                    m,
+                    "late",
+                    phrases.phrase(
+                        m.lang,
+                        "late",
+                        target=stop.name,
+                        eta_time=hhmm(now + m.metrics["eta_s"]),
+                        time=hhmm(stop.arrive_by),
+                    ),
+                    priority=True,
+                )
+            elif late_s <= 0 and "late" in m.flags:
+                m.flags.discard("late")
+        every = self.settings["confirm_every_min"]
+        if every and now - m.sent.get("confirm", m.assigned_at) >= every * 60:
+            self._send(
+                m,
+                "confirm",
+                phrases.phrase(
+                    m.lang,
+                    "confirm",
+                    target=stop.name,
+                    dist=fmt_dist(d),
+                    eta=fmt_eta(m.metrics.get("eta_s")),
+                ),
+            )
+
+    def _advance(self, m: Mission, now: float, skipped: bool = False) -> None:
+        """The current waypoint is done: next one, or the mission is over."""
+        stop = m.stop
+        m.flags.clear()
+        if stop.kind == "via" and m.index < len(m.path) - 1:
+            m.index += 1
+            self._event(m.node, "via", name=stop.name)
+            self._update_metrics(m, now)
+            return
+        reached_at = hhmm(now)
+        self._event(m.node, "skipped" if skipped else "reached", name=stop.name)
+        if m.index >= len(m.path) - 1:
+            m.state, m.arrived_at = ARRIVED, now
+            self._send(
+                m,
+                "reached",
+                phrases.phrase(
+                    m.lang,
+                    "reached_final",
+                    target=stop.name,
+                    time=reached_at,
+                    travelled=fmt_dist(m.travelled_m),
+                    duration=fmt_eta(now - m.assigned_at)[1:],
+                ),
+                priority=True,
+            )
+            return
+        m.index += 1
+        m.state = UNDERWAY
+        self._update_metrics(m, now)
+        if skipped:
+            self._send(m, "next", self._leg_text(m, "next"), priority=True)
+        else:
+            self._send(
+                m,
+                "reached",
+                phrases.phrase(
+                    m.lang,
+                    "reached_next",
+                    target=stop.name,
+                    time=reached_at,
+                    next=m.stop.name,
+                    dist=fmt_dist(m.metrics["dist_m"]),
+                    dir=m.metrics["compass"],
+                    eta=fmt_eta(m.metrics.get("eta_s")),
+                ),
+                priority=True,
+            )
+
+    def _hold(self, m: Mission, now: float) -> None:
+        stop = m.stop
+        m.state, m.hold_arrived_at = HOLDING, now
+        m.flags.clear()
+        self._event(m.node, "hold", name=stop.name, until=stop.hold_until)
+        self._send(
+            m,
+            "reached",
+            phrases.phrase(
+                m.lang,
+                "reached_hold",
+                target=stop.name,
+                time=hhmm(now),
+                travelled=fmt_dist(m.travelled_m),
+                duration=fmt_eta(now - m.assigned_at)[1:],
+                until=hhmm(stop.hold_until),
+            ),
+            priority=True,
+        )
+
+    def _tick(self, now: float) -> None:
+        for m in self.missions.values():
+            if m.retry and now >= m.retry[0]:
+                _, kind, text = m.retry
+                m.retry = None
+                if m.active:
+                    self._event(m.node, "retry", what=kind)
+                    self._send(m, kind, text, priority=True, retried=True)
+            if not m.active:
+                continue
+            self._update_metrics(m, now)
+            if m.state == HOLDING and m.stop.hold_until and now >= m.stop.hold_until:
+                self._event(m.node, "hold_over", name=m.stop.name)
+                m.index += 1
+                m.state = UNDERWAY
+                m.flags.clear()
+                self._update_metrics(m, now)
+                self._send(m, "next", self._leg_text(m, "next"), priority=True)
+                self._dirty = True
+
+    # ------------------------------------------------------------ commands
+    def _on_text(self, m: Mission, text: str) -> None:
+        cmd = phrases.parse_command(text)
+        if cmd is None or not m.active:
+            return
+        self._event(m.node, "command", command=cmd, text=text)
+        if cmd == "status":
+            self._send(m, "status", self._status_text(m), reply=True)
+        elif cmd == "route":
+            self._send(m, "route", self._route_text(m), reply=True)
+        elif cmd == "target":
+            self._send(m, "target", self._target_text(m), reply=True)
+        elif cmd == "path":
+            self._send(m, "path", self._path_text(m), reply=True)
+        elif cmd == "help":
+            self._send(m, "help", phrases.phrase(m.lang, "help"), reply=True)
+        elif cmd == "halt":
+            m.held = True
+            self._send(m, "halt", phrases.phrase(m.lang, "halt_ok"), reply=True)
+        elif cmd == "go":
+            m.held = False
+            self._send(m, "resume", self._leg_text(m, "resume"), reply=True)
+        elif cmd == "abort":
+            m.state = ABORTED
+            self._send(
+                m, "aborted", phrases.phrase(m.lang, "aborted", target=m.stop.name), reply=True
+            )
+        self._dirty = True
+
+    # ------------------------------------------------------------ texts
+    def _leg_text(self, m: Mission, key: str) -> str:
+        """assign / next / changed / resume: the current stop with distance, direction, ETA."""
+        mt = m.metrics
+        if "dist_m" not in mt:
+            return phrases.phrase(m.lang, "assign_nopos", target=m.stop.name)
+        params = dict(
+            target=m.stop.name,
+            dist=fmt_dist(mt["dist_m"]),
+            dir=mt["compass"],
+            eta=fmt_eta(mt.get("eta_s")),
+        )
+        if key == "assign" and m.stop.arrive_by:
+            key = "assign_by"
+            params.update(time=hhmm(m.stop.arrive_by), margin=_margin(mt.get("margin_min")))
+        return phrases.phrase(m.lang, key, **params)
+
+    def _status_text(self, m: Mission) -> str:
+        mt = m.metrics
+        if "dist_m" not in mt:
+            return phrases.phrase(m.lang, "assign_nopos", target=m.stop.name)
+        params = dict(
+            target=m.stop.name,
+            dist=fmt_dist(mt["dist_m"]),
+            dir=mt["compass"],
+            eta=fmt_eta(mt.get("eta_s")),
+            speed=f"{mt['speed_kmh']:g}km/h",
+        )
+        if m.stop.arrive_by:
+            return phrases.phrase(
+                m.lang,
+                "status_by",
+                time=hhmm(m.stop.arrive_by),
+                margin=_margin(mt.get("margin_min")),
+                **params,
+            )
+        return phrases.phrase(m.lang, "status", **params)
+
+    def _route_text(self, m: Mission) -> str:
+        mt = m.metrics
+        if "dist_m" not in mt:
+            return phrases.phrase(m.lang, "assign_nopos", target=m.stop.name)
+        legs = f"{mt['compass']}{fmt_dist(mt['dist_m'])} Z"  # straight line until step 5
+        return phrases.phrase(m.lang, "route", legs=legs)
+
+    def _target_text(self, m: Mission) -> str:
+        mt = m.metrics
+        if "dist_m" not in mt:
+            return phrases.phrase(m.lang, "assign_nopos", target=m.stop.name)
+        return phrases.phrase(
+            m.lang, "target", target=m.stop.name, dist=fmt_dist(mt["dist_m"]), dir=mt["compass"]
+        )
+
+    def _path_text(self, m: Mission) -> str:
+        parts = []
+        for w in stops(m.path):
+            s = w.name
+            if w.arrive_by:
+                s += " " + hhmm(w.arrive_by)
+            parts.append(s)
+        return phrases.phrase(m.lang, "path", stops=" > ".join(parts))
+
+    # ------------------------------------------------------------ sending
+    def _send(
+        self,
+        m: Mission,
+        kind: str,
+        text: str,
+        priority: bool = False,
+        reply: bool = False,
+        retried: bool = False,
+    ) -> bool:
+        """Send if the mode is on and the rate limit allows; every outcome is an event."""
+        now = time.time()
+        if not self.enabled:
+            self._event(m.node, "suppressed", what=kind, text=text, why="mode off")
+            return False
+        if not reply:
+            gap = now - m.last_proactive
+            limit = PRIORITY_GAP_S if priority else float(self.settings["min_gap_s"])
+            if gap < limit:
+                self._event(m.node, "skipped", what=kind, text=text, gap=round(gap))
+                return False
+        dev = self.ctx.device
+        rec = {"time": round(now, 1), "kind": kind, "text": text, "id": None, "status": "gesendet"}
+
+        def on_status(status: str) -> None:
+            rec["status"] = status
+            self._event(m.node, "delivery", what=kind, status=status)
+            if status.startswith("nicht") and kind in RETRY_KINDS and not retried:
+                with self._lock:
+                    m.retry = (time.time() + RETRY_S, kind, text)
+            self._dirty = True
+
+        try:
+            sent = dev.send_text(
+                text, m.node, int(self.settings.get("channel", 0)), on_status=on_status, tag="coord"
+            )
+            rec["id"] = sent["id"]
+        except Exception as e:  # not connected, text too long: shown in the mission
+            rec["status"] = f"nicht gesendet: {e}"
+            self._event(m.node, "send_failed", what=kind, text=text, error=str(e))
+            m.messages.append(rec)
+            return False
+        m.messages.append(rec)
+        m.sent[kind] = now
+        if not reply:
+            m.last_proactive = now
+        self._event(m.node, "sent", what=kind, text=text)
+        self._dirty = True
+        return True
+
+    # ------------------------------------------------------------ helpers
+    def _db_position(self, node: str) -> dict | None:
+        """Last known position of a node from the device's node database, if recent."""
+        dev = self.ctx.device
+        if dev is None or dev.iface is None:
+            return None
+        try:
+            nodes, _me = dev.nodes()
+        except RuntimeError:
+            return None
+        n = nodes.get(node)
+        if not n:
+            return None
+        pos = n.get("position") or {}
+        last = n.get("lastHeard") or 0
+        if "latitude" not in pos or time.time() - last > self.settings["stale_min"] * 60:
+            return None
+        return {
+            "time": float(last),
+            "lat": pos["latitude"],
+            "lon": pos["longitude"],
+            "bits": pos.get("precisionBits", 32),
+            "snr": n.get("snr"),
+            "hops": n.get("hopsAway"),
+            "speed": None,
+        }
+
+    def _event(self, node: str, event: str, **fields) -> None:
+        rec = self.store.log_event(node, event, **fields)
+        m = self.missions.get(node)
+        if m is not None:
+            m.events.append(rec)
+
+    def _save_settings(self) -> None:
+        self.store.write("settings", {**self.settings, "enabled": self.enabled})
+
+    def _save(self, force: bool = False) -> None:
+        if not (force or self._dirty):
+            return
+        with self._lock:
+            self._dirty = False
+            self.store.write("missions", [m.to_json() for m in self.missions.values()])
+
+
+def _margin(minutes: int | None) -> str:
+    if minutes is None:
+        return "?"
+    return f"{-minutes:+d}"  # "+2" = two minutes late, "-3" = early
+
+
+STATE_COLORS = {
+    ASSIGNED: "#b4740e",
+    UNDERWAY: "#00707f",
+    HOLDING: "#7b3294",
+    ARRIVED: "#2e7d53",
+    ABORTED: "#b3392f",
+    ENDED: "#6b7f8c",
+}

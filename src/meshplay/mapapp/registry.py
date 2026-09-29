@@ -8,7 +8,7 @@ A layer returns one of two payloads from data():
             _fields    {label: value} shown in the popup
             _z         height above ground in the 3D view [m] (default 2)
             _icon      badge marker instead of a circle: {"text", "symbol" (router, tracker,
-                       client, sensor, home), "color", "own", "faded", "hint"}
+                       client, sensor, home, target, via), "color", "own", "faded", "hint"}
             _node_id   Meshtastic node ID ("!abcd1234"): the popup offers "Nachricht", the node
                        list in the inspector finds the marker
             _endpoint  makes the feature usable as start/end of the link tool:
@@ -69,6 +69,7 @@ class Context:
         self.cache_dir = self.app_dir / "cache"
         self.device = None  # meshplay.mapapp.device.DeviceLink, set by the server
         self.jobs = None  # meshplay.mapapp.jobs.JobManager, set by the server
+        self.coord = None  # meshplay.mapapp.coord.missions.Coordinator, set by the server
 
     @cached_property
     def scene(self):

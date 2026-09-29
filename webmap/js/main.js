@@ -2,6 +2,7 @@
 // endpoints, computed in the browser session), the inspector on the right.
 import { Map2D } from "./map2d.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
+import { assignTo, initCoord, renderMissionDetail, selectedMission } from "./coord.js";
 import { bindInputs, initialValues, inputsHTML } from "./forms.js";
 import { initMessages, openConversation } from "./messages.js";
 import { initNodeList, renderNodeList } from "./nodelist.js";
@@ -194,6 +195,7 @@ const TABS = [
   ["walk", () => t("Rundgang"), () => !!S.walk],
   ["nodes", () => t("Knoten"), () => !!(S.layers.nodes && S.layers.nodes.enabled && S.layers.nodes.data)],
   ["job", () => t("Aufgabe"), () => !!selectedJob()],
+  ["coord", () => t("Einsatz"), () => !!selectedMission()],
 ];
 function updateInspector() {
   const avail = TABS.filter(([, , has]) => has());
@@ -210,6 +212,12 @@ function updateInspector() {
   for (const [id] of TABS) $("#t_" + id).hidden = !(show && id === S.insp.tab);
   if (wasShown !== show && map3d && document.body.classList.contains("is3d")) map3d.resize();
   if (show && S.insp.tab === "job") renderDetailIfShown();
+  if (show && S.insp.tab === "coord") renderMissionDetail();
+}
+// Redraw one server layer (after the coordination mode changed something on the map).
+function refreshLayer(id) {
+  const desc = S.app && S.app.layers.find(l => l.id === id);
+  if (desc && S.layers[id] && S.layers[id].enabled) refresh(desc, true);
 }
 function openInspector(tab) { S.insp.open = true; S.insp.tab = tab; store.set("insp.open", true); updateInspector(); }
 function toggleInspector(open) { S.insp.open = open; store.set("insp.open", open); updateInspector(); }
@@ -490,6 +498,7 @@ function bindUI() {
     onClick: (lat, lon) => mapClick(lat, lon),
     onFeatureAction: (f, which) => {
       if (which === "msg") { openConversation("dm:" + f.properties._node_id); return; }
+      if (which === "coord") { assignTo(f.properties._node_id); return; }
       if (!S.link.on) setLinkOn(true);
       setEndpoint(which, endpointFromFeature(f));
     },
@@ -513,7 +522,13 @@ function bindUI() {
     $("#loading .bar").hidden = true;
   }
   initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast });
-  initNodeList({ store, focusNode, message: id => openConversation("dm:" + id) });
+  initNodeList({ store, focusNode, message: id => openConversation("dm:" + id), assign: assignTo });
+  initCoord({
+    store, toast, openInspector, updateInspector, pickOnMap, tempMarker: E_tempMarker, focusNode, refreshLayer,
+    nodes: () => (S.layers.nodes && S.layers.nodes.data && S.layers.nodes.data.nodes) || [],
+    sites: () => ((S.layers.sites && S.layers.sites.data && S.layers.sites.data.features) || [])
+      .map(f => ({ name: f.properties._title, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] })),
+  });
   initMessages({ store, toast, connect: () => deviceStatus("connect"), focusNode });
   initTasks({ store, toast, openInspector, updateInspector, onTransition: taskTransition, actions: taskActions });
   initLayers();
