@@ -1,4 +1,5 @@
 // 2D view: Leaflet with OpenStreetMap. Draws layer payloads and the current link.
+import { t } from "./i18n.js";
 import { badgeHTML } from "./icons.js";
 import { featureHTML } from "./util.js";
 
@@ -7,7 +8,7 @@ export class Map2D {
     this.h = handlers;          // { onClick(lat, lon), onFeatureAction(feature, "a"|"b") }
     this.map = L.map(el, { zoomControl: true }).setView([center.lat, center.lon], 15);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: "© OpenStreetMap-Mitwirkende",
+      maxZoom: 19, attribution: t("© OpenStreetMap-Mitwirkende"),
     }).addTo(this.map);
     this.layers = {};
     this.nodeMarkers = {};  // node ID -> marker, for the node list

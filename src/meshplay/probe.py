@@ -122,13 +122,3 @@ def run_probes(
         next_at += interval
         stop.wait(max(0.0, next_at - time.monotonic()))
     return ok, total
-
-
-def describe(record: dict) -> str:
-    """One line per probe for logs: time, result and, if answered, both SNRs."""
-    line = f"{record['sentAt'][11:19]} {record['result']:<8}"
-    if record["result"] == "ok":
-        line += (
-            f"  hin {record['snrTowards']} dB, zurück {record['snrBack']} dB, {record['rttS']} s"
-        )
-    return line

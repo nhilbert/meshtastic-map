@@ -1,6 +1,7 @@
 // Editor for the own sites, inside the "Eigene Standorte" layer settings: add (click on the map),
 // move, edit, rename, delete. The server writes data/sim/sites.json (with a backup) and refuses
 // to delete a site that variants, scenarios or the corridor still use.
+import { t } from "./i18n.js";
 import { esc, fmt, getJSON, postJSON } from "./util.js";
 
 const E = { sites: [], edit: null, msg: "", api: null, box: null };
@@ -17,12 +18,12 @@ export async function renderSites(box) {
 function draw() {
   const box = E.box; if (!box || !box.isConnected) return;
   const ed = E.edit;
-  box.innerHTML = `<div class="hd2">Standorte bearbeiten</div>
+  box.innerHTML = `<div class="hd2">${t("Standorte bearbeiten")}</div>
     <div class="sitelist">${E.sites.map(s => ed && !ed.isNew && ed.orig === s.name ? formHTML(ed) : rowHTML(s)).join("")
-      || `<p class="note" style="margin:0">Noch keine Standorte.</p>`}</div>
+      || `<p class="note" style="margin:0">${t("Noch keine Standorte.")}</p>`}</div>
     ${ed && ed.isNew ? formHTML(ed) : ""}
     <div class="msg" role="alert">${esc(E.msg)}</div>
-    ${ed ? "" : `<button class="btn small" data-add>＋ Neuer Standort</button>`}`;
+    ${ed ? "" : `<button class="btn small" data-add>＋ ${t("Neuer Standort")}</button>`}`;
   box.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => startEdit(b.dataset.edit)));
   box.querySelectorAll("[data-move]").forEach(b => b.addEventListener("click", () => move(b.dataset.move)));
   box.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => remove(b.dataset.del)));
@@ -32,24 +33,25 @@ function draw() {
 }
 
 function rowHTML(s) {
-  const sub = s.same_as ? `Variante von ${esc(s.same_as)}, ${fmt(s.height_m[0], 1)}–${fmt(s.height_m[1], 1)} m`
-    : `${fmt(s.height_m[0], 1)}–${fmt(s.height_m[1], 1)} m ü. Grund`;
+  const range = `${fmt(s.height_m[0], 1)}–${fmt(s.height_m[1], 1)}`;
+  const sub = esc(s.same_as ? t("Variante von {site}, {range} m", { site: s.same_as, range })
+    : t("{range} m ü. Grund", { range }));
   const n = esc(s.name);
   return `<div class="site"><div class="txt"><span class="nm">${n}</span><span class="sub" title="${esc(s.description)}">${sub}</span></div>
-    <button class="btn small" data-edit="${n}" aria-label="${n} bearbeiten" title="Bearbeiten">✎</button>
-    ${s.same_as ? "" : `<button class="btn small" data-move="${n}" aria-label="${n} verschieben" title="Verschieben: Klick in die Karte">⌖</button>`}
-    <button class="btn small" data-del="${n}" aria-label="${n} löschen" title="${s.refs.length ? "Wird verwendet: " + esc(s.refs.join(", ")) : "Löschen"}">✕</button></div>`;
+    <button class="btn small" data-edit="${n}" aria-label="${esc(t("{name} bearbeiten", { name: s.name }))}" title="${t("Bearbeiten")}">✎</button>
+    ${s.same_as ? "" : `<button class="btn small" data-move="${n}" aria-label="${esc(t("{name} verschieben", { name: s.name }))}" title="${t("Verschieben: Klick in die Karte")}">⌖</button>`}
+    <button class="btn small" data-del="${n}" aria-label="${esc(t("{name} löschen", { name: s.name }))}" title="${esc(s.refs.length ? t("Wird verwendet: {refs}", { refs: s.refs.join(", ") }) : t("Löschen"))}">✕</button></div>`;
 }
 
 function formHTML(ed) {
   const num = (k, label, step) => `<label>${label}<input type="number" step="${step}" data-f="${k}" value="${ed[k] ?? ""}"></label>`;
   return `<div class="siteform">
-    <label>Name<input type="text" data-f="name" value="${esc(ed.name)}" maxlength="24" placeholder="z. B. DACH_NORD"></label>
-    <label>Beschreibung<input type="text" data-f="description" value="${esc(ed.description)}" maxlength="200"></label>
-    <div class="row2">${num("h0", "Höhe min [m]", 0.1)}${num("h1", "Höhe max [m]", 0.1)}</div>
-    ${ed.variant ? "" : `<div class="row2">${num("clutter", "Umgebung [m]", 0.5)}<div class="note pos">${fmt(ed.lat, 5)}, ${fmt(ed.lon, 5)}</div></div>`}
+    <label>${t("Name")}<input type="text" data-f="name" value="${esc(ed.name)}" maxlength="24" placeholder="${t("z. B. DACH_NORD")}"></label>
+    <label>${t("Beschreibung")}<input type="text" data-f="description" value="${esc(ed.description)}" maxlength="200"></label>
+    <div class="row2">${num("h0", t("Höhe min [m]"), 0.1)}${num("h1", t("Höhe max [m]"), 0.1)}</div>
+    ${ed.variant ? "" : `<div class="row2">${num("clutter", t("Umgebung [m]"), 0.5)}<div class="note pos">${fmt(ed.lat, 5)}, ${fmt(ed.lon, 5)}</div></div>`}
     ${ed.hint ? `<p class="note" style="margin:0">${esc(ed.hint)}</p>` : ""}
-    <div class="row2"><button class="btn small" data-cancel>Abbrechen</button><button class="btn small on" data-save>Speichern</button></div></div>`;
+    <div class="row2"><button class="btn small" data-cancel>${t("Abbrechen")}</button><button class="btn small on" data-save>${t("Speichern")}</button></div></div>`;
 }
 
 function readForm() {
@@ -61,12 +63,12 @@ function readForm() {
 
 function startAdd() {
   E.msg = "";
-  E.api.pickOnMap("Position des neuen Standorts", async (lat, lon) => {
+  E.api.pickOnMap(t("Position des neuen Standorts"), async (lat, lon) => {
     let sug = { clutter_m: 12, in_scene: false };
     try { sug = await getJSON(`api/sites/suggest?lat=${lat}&lon=${lon}`); } catch (_) { }
     E.edit = { isNew: true, name: "", description: "", h0: 2, h1: 4, clutter: sug.clutter_m, lat, lon,
-      hint: sug.in_scene ? `Umgebung aus dem Laserscan: höchste Oberfläche im Umkreis von 10 m (${fmt(sug.clutter_m, 1)} m).`
-        : "Außerhalb des Laserscans: Umgebung bitte schätzen (Dach- oder Baumhöhe rundum)." };
+      hint: sug.in_scene ? t("Umgebung aus dem Laserscan: höchste Oberfläche im Umkreis von 10 m ({height} m).", { height: fmt(sug.clutter_m, 1) })
+        : t("Außerhalb des Laserscans: Umgebung bitte schätzen (Dach- oder Baumhöhe rundum).") };
     E.api.tempMarker(lat, lon);
     draw();
     const name = E.box.querySelector("[data-f=name]"); if (name) name.focus();
@@ -88,14 +90,14 @@ async function saveEdit() {
     if (ed.isNew) {
       await postJSON("api/sites/add", { name: ed.name, lat: ed.lat, lon: ed.lon, height_m: [ed.h0, ed.h1],
         clutter_m: ed.clutter, description: ed.description });
-      E.api.toast(`Standort ${ed.name} angelegt`);
+      E.api.toast(t("Standort {name} angelegt", { name: ed.name }));
     } else {
       let name = ed.orig;
       if (ed.name !== ed.orig) { await postJSON("api/sites/rename", { name, new_name: ed.name }); name = ed.name; }
       const fields = { description: ed.description, height_m: [ed.h0, ed.h1] };
       if (!ed.variant) fields.clutter_m = ed.clutter;
       await postJSON("api/sites/update", { name, fields });
-      E.api.toast(`Standort ${name} gespeichert`);
+      E.api.toast(t("Standort {name} gespeichert", { name }));
     }
     E.edit = null; E.msg = ""; E.api.tempMarker(null);
     E.api.changed();
@@ -111,10 +113,10 @@ function readBack(box, ed) {
 
 function move(name) {
   E.msg = "";
-  E.api.pickOnMap(`Neue Position für ${name}`, async (lat, lon) => {
+  E.api.pickOnMap(t("Neue Position für {name}", { name }), async (lat, lon) => {
     try {
       await postJSON("api/sites/update", { name, fields: { lat, lon } });
-      E.api.toast(`${name} verschoben`);
+      E.api.toast(t("{name} verschoben", { name }));
       E.api.changed();
     } catch (e) { E.msg = e.message; draw(); }
   });
@@ -122,11 +124,11 @@ function move(name) {
 
 async function remove(name) {
   const s = E.sites.find(x => x.name === name);
-  if (s && s.refs.length) { E.msg = `${name} wird noch verwendet: ${s.refs.join(", ")}. Erst dort ändern.`; draw(); return; }
-  if (!confirm(`Standort ${name} löschen? (Eine Sicherung bleibt als sites.json.bak.)`)) return;
+  if (s && s.refs.length) { E.msg = t("{name} wird noch verwendet: {refs}. Erst dort ändern.", { name, refs: s.refs.join(", ") }); draw(); return; }
+  if (!confirm(t("Standort {name} löschen? (Eine Sicherung bleibt als sites.json.bak.)", { name }))) return;
   try {
     await postJSON("api/sites/delete", { name });
-    E.api.toast(`Standort ${name} gelöscht`);
+    E.api.toast(t("Standort {name} gelöscht", { name }));
     E.api.changed();
   } catch (e) { E.msg = e.message; draw(); }
 }

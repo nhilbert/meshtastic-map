@@ -146,7 +146,7 @@ def test_job_error_and_validation(ctx):
     jobs = manager(ctx)
     job = jobs.create("sleep", {"ticks": 1, "fail": True})
     wait_for(lambda: job.state == FAILED)
-    assert job.error == "RuntimeError: kaputt"
+    assert job.error == "kaputt"
     with pytest.raises(ValueError, match="höchstens"):
         jobs.create("sleep", {"ticks": 5000})
     with pytest.raises(KeyError):
@@ -182,7 +182,7 @@ def test_interrupted_jobs_are_marked_after_restart(ctx):
     wait_for(lambda: job.state == RUNNING)
     again = manager(ctx)  # as if the server had been restarted meanwhile
     assert again.get(job.id).state == CANCELLED
-    assert again.get(job.id).error == "Server wurde beendet"
+    assert str(again.get(job.id).error) == "Server wurde beendet"
     jobs.cancel(job.id)
 
 
@@ -271,3 +271,24 @@ def test_probe_walk_needs_a_device_and_valid_ids(ctx):
     job = jobs.create("probe", {"to": "!abcd1234", "interval": 60, "timeout": 20})
     wait_for(lambda: job.state == FAILED)
     assert "Port belegt" in job.error
+
+
+def test_tasks_stored_before_translation_become_translatable(ctx):
+    from meshplay.mapapp.i18n import L
+
+    jobs_dir = ctx.app_dir / "jobs"
+    jobs_dir.mkdir(parents=True)
+    old = {
+        "id": "old",
+        "kind": "sleep",
+        "title": "Schlafen (alt)",
+        "params": {"ticks": 1},
+        "state": "fertig",
+        "created": 1.0,
+        "detail": "fertig: x.npz",
+        "error": "",
+    }
+    (jobs_dir / "old.json").write_text(json.dumps(old), encoding="utf-8")
+    job = manager(ctx).get("old")
+    assert isinstance(job.title, L) and str(job.title) == "Schlafen"
+    assert isinstance(job.detail, L) and str(job.detail) == "fertig: x.npz"

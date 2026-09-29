@@ -108,9 +108,14 @@ until the tab is closed.
   (`LICENSE-ITU-P1812.txt`), which asks that every change be noted with date and nature in the
   file header.
 - Code, comments, docs and commit messages are English.
-- **UI language:** the page is German today. English and German (maybe more) are planned, so
-  keep user-facing strings (page and server messages meant for the page) simple, complete
-  sentences that are easy to extract for translation; don't build sentences from fragments.
+- **UI languages: German (source), English, French.** Every user-facing text is written in
+  German and marked: `t("…")` in the page, `_("…")` / `N_("…")` / `L("…")` on the server (see
+  docs/mapapp.md, Languages), then added to `webmap/i18n/en.json` and `fr.json`.
+  `tests/test_i18n.py` fails on any unmarked-but-listed, missing, stale or placeholder-mismatched
+  text. Use whole sentences with `{placeholders}` as keys, never sentences built from fragments;
+  keep markup out of the keys; pass the literal string directly to the marker (the test can't
+  see `t(cond ? "a" : "b")` — write two calls). State codes stay German and are translated only
+  for display. Terminal output and log records stay English.
 - Server errors meant for the user: raise `ValueError`/`KeyError` with a plain message; the
   server sends it as is (HTTP 400). Other exceptions are 500 with the type name.
 

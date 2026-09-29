@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from meshplay.config import DEFAULT_PRESET
+from meshplay.mapapp.i18n import _
 from meshplay.mapapp.registry import Context
 
 
@@ -11,8 +12,10 @@ def run(ctx: Context, body: dict) -> dict:
     EPSG:25832), height_m [lo, hi], clutter_m, indoor (null/"open"/"trad"/"lowe"), device."""
     if not ctx.has_scene:
         raise ValueError(
-            "Keine Laserscan-Szene: die Streckenberechnung braucht sie "
-            "(README, Abschnitt „3D laser-scan data“)."
+            _(
+                "Keine Laserscan-Szene: die Streckenberechnung braucht sie "
+                "(README, Abschnitt „3D laser-scan data“)."
+            )
         )
     from meshplay.sim.link import Endpoint, predict_link
     from meshplay.sim.sites import to_lonlat, to_utm

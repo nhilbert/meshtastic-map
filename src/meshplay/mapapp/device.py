@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from meshplay.mapapp.i18n import L, _
 from meshplay.mapapp.messages import MessageStore, check_text, now
 from meshplay.packets import to_plain
 
@@ -56,7 +57,7 @@ class DeviceLink:
 
             port = port or find_port()
             if not port:
-                raise RuntimeError("kein Meshtastic-Gerät gefunden (MESHTASTIC_PORT in .env?)")
+                raise RuntimeError(L("kein Meshtastic-Gerät gefunden (MESHTASTIC_PORT in .env?)"))
             if not self._subscribed:
                 pub.subscribe(self._on_receive, "meshtastic.receive")
                 pub.subscribe(self._on_lost, "meshtastic.connection.lost")
@@ -82,7 +83,7 @@ class DeviceLink:
     def _on_lost(self, interface=None, **_):
         with self._lock:
             if interface is self.iface:
-                self.iface, self.state, self.error = None, "Fehler", "Verbindung verloren"
+                self.iface, self.state, self.error = None, "Fehler", L("Verbindung verloren")
 
     # ------------------------------------------------------------ packets
     def _on_receive(self, packet, interface=None):
@@ -121,7 +122,7 @@ class DeviceLink:
             "rssi": p.get("rxRssi"),
             "hops": hop_start - hop_limit if hop_start is not None else None,
         }
-        port = decoded.get("portnum", "verschlüsselt")
+        port = decoded.get("portnum", "ENCRYPTED")  # no key for it: shown as "verschlüsselt"
         self.messages.add_traffic({**base, "port": port, "text": decoded.get("text")})
         if port == "TEXT_MESSAGE_APP" and decoded.get("text"):
             self.messages.add({**base, "id": p.get("id"), "dir": "in", "text": decoded["text"]})
@@ -137,13 +138,13 @@ class DeviceLink:
         text = check_text(text)
         iface = self.iface
         if iface is None or self.state != "verbunden":
-            raise ValueError("Gerät nicht verbunden: oben unter „Gerät (USB)“ verbinden")
+            raise ValueError(_("Gerät nicht verbunden: oben unter „Gerät (USB)“ verbinden"))
         channel = int(channel)
         if channel not in {c["index"] for c in self.channels()}:
-            raise ValueError(f"Kanal {channel} gibt es auf dem Gerät nicht")
+            raise ValueError(_("Kanal {n} gibt es auf dem Gerät nicht", n=channel))
         direct = to not in ("", "^all", None)
         if direct and not (to.startswith("!") and len(to) == 9):
-            raise ValueError("Empfänger: Node-ID wie !abcd1234")
+            raise ValueError(_("Empfänger: Node-ID wie !abcd1234"))
         dest_num = int(to[1:], 16) if direct else None
         # The acknowledgement can arrive on the reader thread before sendData returns; it
         # waits for this lock, which is released once the message is stored.
@@ -229,7 +230,7 @@ class DeviceLink:
         return dict(
             state=self.state,
             port=self.port,
-            error=self.error,
+            error=str(self.error),
             packets=self.packets,
             last_packet=self.last_packet,
             logging=self.log_packets,
@@ -240,7 +241,7 @@ class DeviceLink:
         """Snapshot of the node database (plain dicts) and the own node number."""
         iface = self.iface
         if iface is None:
-            raise RuntimeError("Gerät nicht verbunden")
+            raise RuntimeError(_("Gerät nicht verbunden"))
         nodes = to_plain(dict(iface.nodes or {}))
         my_num = getattr(getattr(iface, "myInfo", None), "my_node_num", None)
         return nodes, my_num

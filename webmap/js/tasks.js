@@ -2,10 +2,13 @@
 // the log view in the inspector, and notifications when a task ends. The server runs the tasks;
 // the page only polls /api/jobs (every 2 s while one is active, else every 8 s).
 import { bindInputs, initialValues, inputsHTML } from "./forms.js";
+import { locale, t } from "./i18n.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 
 const ACTIVE = ["läuft", "wartet"];
 const STATE_CLASS = { "läuft": "run", wartet: "wait", fertig: "ok", Fehler: "bad", abgebrochen: "off" };
+// States are stored as German codes and translated for display:
+// t("läuft") t("wartet") t("fertig") t("Fehler") t("abgebrochen")
 const T = { jobs: [], kinds: [], form: null, sel: null, timer: null, api: null, prev: null, detail: null };
 
 // api: { store, toast(msg, opts), openInspector(tab), updateInspector(), onTransition(job, prev),
@@ -46,7 +49,7 @@ function renderForm() {
     <p class="note" style="margin:0">${esc(kind.description)}</p>
     ${inputsHTML(kind.settings, values, "job")}
     <div class="msg" id="jobMsg" role="alert"></div>
-    <div class="row2"><button class="btn" data-cancel>Abbrechen</button><button class="btn on" data-start>Starten</button></div>`;
+    <div class="row2"><button class="btn" data-cancel>${t("Abbrechen")}</button><button class="btn on" data-start>${t("Starten")}</button></div>`;
   bindInputs(box, kind.settings, values, (_, rerender) => { if (rerender) renderForm(); });
   box.querySelector("[data-cancel]").addEventListener("click", () => { T.form = null; renderForm(); });
   box.querySelector("[data-start]").addEventListener("click", start);
@@ -59,7 +62,7 @@ async function start() {
     T.api.store.set("job." + kind.id, values);
     T.form = null; renderForm();
     T.sel = job.id;
-    T.api.toast(`Gestartet: ${job.title}` + (job.state === "wartet" ? " (wartet auf die laufende Aufgabe)" : ""));
+    T.api.toast(t("Gestartet: {title}", { title: job.title }) + (job.state === "wartet" ? " " + t("(wartet auf die laufende Aufgabe)") : ""));
     pollSoon();
   } catch (e) {
     $("#jobMsg").textContent = e.message; btn.disabled = false;
@@ -78,14 +81,14 @@ async function poll() {
     renderList(); renderBadge();
     if (T.sel && !$("#t_job").hidden) await refreshDetail();
   } catch (e) {
-    $("#jobList").innerHTML = `<p class="msg">Aufgaben nicht abrufbar: ${esc(e.message)}</p>`;
+    $("#jobList").innerHTML = `<p class="msg">${esc(t("Aufgaben nicht abrufbar: {error}", { error: e.message }))}</p>`;
   }
   T.timer = setTimeout(poll, T.jobs.some(j => ACTIVE.includes(j.state)) ? 2000 : 8000);
 }
 
 // ---------------------------------------------------------------- list
-const clock = t => t ? new Date(t * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "";
-const day = t => new Date(t * 1000).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+const clock = ts => ts ? new Date(ts * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) : "";
+const day = ts => new Date(ts * 1000).toLocaleDateString(locale, { day: "2-digit", month: "2-digit" });
 function duration(j) {
   if (!j.started) return "";
   const s = Math.max(0, Math.round((j.ended || Date.now() / 1000) - j.started));
@@ -100,9 +103,9 @@ function progressHTML(j) {
 function buttons(j) {
   const kind = T.kinds.find(k => k.id === j.kind);
   const b = [];
-  if (ACTIVE.includes(j.state)) b.push(["stop", j.state === "wartet" ? "Abbrechen" : (kind ? kind.stop_label : "Abbrechen")]);
-  b.push(["log", "Protokoll"]);
-  if (!ACTIVE.includes(j.state)) b.push(["remove", "Entfernen"]);
+  if (ACTIVE.includes(j.state)) b.push(["stop", j.state === "wartet" ? t("Abbrechen") : (kind ? kind.stop_label : t("Abbrechen"))]);
+  b.push(["log", t("Protokoll")]);
+  if (!ACTIVE.includes(j.state)) b.push(["remove", t("Entfernen")]);
   return b;
 }
 function actionsHTML(j) {
@@ -116,12 +119,12 @@ function bindActions(el, j) {
 }
 function renderList() {
   const box = $("#jobList");
-  if (!T.jobs.length) { box.innerHTML = `<p class="note" style="margin:0">Noch keine Aufgaben.</p>`; return; }
+  if (!T.jobs.length) { box.innerHTML = `<p class="note" style="margin:0">${t("Noch keine Aufgaben.")}</p>`; return; }
   const today = new Date().toDateString();
   box.innerHTML = T.jobs.map(j => {
     const when = new Date(j.created * 1000).toDateString() === today ? clock(j.created) : `${day(j.created)} ${clock(j.created)}`;
     return `<div class="job ${T.sel === j.id ? "sel" : ""}" data-id="${j.id}">
-      <div class="hd"><span class="chip ${STATE_CLASS[j.state] || ""}">${esc(j.state)}</span><span class="nm" title="${esc(j.title)}">${esc(j.title)}</span></div>
+      <div class="hd"><span class="chip ${STATE_CLASS[j.state] || ""}">${esc(t(j.state))}</span><span class="nm" title="${esc(j.title)}">${esc(j.title)}</span></div>
       ${progressHTML(j)}
       <div class="det">${esc(j.state === "Fehler" ? j.error : j.detail || j.last || "")}</div>
       <div class="meta">${when}${j.started ? " · " + duration(j) : ""}</div>
@@ -132,7 +135,7 @@ function renderList() {
 function renderBadge() {
   const run = T.jobs.filter(j => j.state === "läuft").length, wait = T.jobs.filter(j => j.state === "wartet").length;
   const b = $("#btnJobs");
-  b.textContent = run ? `Aufgaben · ${run} läuft` : wait ? `Aufgaben · ${wait} wartet` : "Aufgaben";
+  b.textContent = run ? t("Aufgaben · {n} läuft", { n: run }) : wait ? t("Aufgaben · {n} wartet", { n: wait }) : t("Aufgaben");
   b.classList.toggle("busy", run > 0);
 }
 
@@ -141,8 +144,8 @@ async function act(j, a) {
     if (a === "log") { T.sel = j.id; renderList(); T.api.openInspector("job"); await refreshDetail(); return; }
     if (a === "stop") {
       const kind = T.kinds.find(k => k.id === j.kind);
-      if (j.state === "läuft" && !(kind && kind.stop_label === "Stoppen") &&
-          !confirm(`„${j.title}“ abbrechen? Die bisherige Rechenzeit geht verloren.`)) return;
+      if (j.state === "läuft" && !(kind && kind.stop_is_success) &&
+          !confirm(t("„{title}“ abbrechen? Die bisherige Rechenzeit geht verloren.", { title: j.title }))) return;
       await postJSON(`api/jobs/${j.id}/cancel`, {});
     }
     if (a === "remove") {
@@ -162,21 +165,21 @@ async function refreshDetail() {
   const kind = T.kinds.find(k => k.id === d.kind);
   const decl = Object.fromEntries(((kind && kind.settings) || []).map(s => [s.name, s]));
   const shown = (k, v) => {  // option label instead of the raw value (e.g. "Antenne außen" for none)
-    if (typeof v === "boolean") return v ? "ja" : "nein";
+    if (typeof v === "boolean") return v ? t("ja") : t("nein");
     const opt = decl[k] && decl[k].type === "select" && (decl[k].options || []).find(([o]) => String(o) === String(v));
     return opt ? opt[1] : v;
   };
   const params = Object.entries(d.params).map(([k, v]) =>
     `<tr><td>${esc(decl[k] ? decl[k].label : k)}</td><td>${esc(shown(k, v))}</td></tr>`).join("");
   $("#t_job").innerHTML = `<div class="sec">
-      <div class="verdict"><span class="chip ${STATE_CLASS[d.state] || ""}">${esc(d.state)}</span><strong>${esc(d.title)}</strong></div>
+      <div class="verdict"><span class="chip ${STATE_CLASS[d.state] || ""}">${esc(t(d.state))}</span><strong>${esc(d.title)}</strong></div>
       ${progressHTML(d)}
-      <p class="note" style="margin:4px 0 8px">${esc(d.detail || "")}${d.started ? ` · gestartet ${clock(d.started)}, ${duration(d)}` : ""}</p>
+      <p class="note" style="margin:4px 0 8px">${esc(d.detail || "")}${d.started ? " · " + esc(t("gestartet {time}, {duration}", { time: clock(d.started), duration: duration(d) })) : ""}</p>
       ${d.error ? `<p class="msg" role="alert">${esc(d.error)}</p>` : ""}
       <div class="acts">${actionsHTML(d)}</div>
     </div>
-    <div class="sec"><h2>Parameter</h2><div class="wrap"><table>${params}</table></div></div>
-    <div class="sec"><h2>Protokoll</h2><pre class="log">${esc((d.log || []).join("\n")) || "—"}</pre></div>`;
+    <div class="sec"><h2>${t("Parameter")}</h2><div class="wrap"><table>${params}</table></div></div>
+    <div class="sec"><h2>${t("Protokoll")}</h2><pre class="log">${esc((d.log || []).join("\n")) || "—"}</pre></div>`;
   bindActions($("#t_job"), d);
   const p2 = $("#t_job pre");
   if (stick) p2.scrollTop = p2.scrollHeight;

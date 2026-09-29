@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Meshtastic Karten</title>
-<!-- Served by scripts/mapapp.py. 3D view based on the Mesh Bonn session viewer (2026-09-20). -->
+<!-- Served by scripts/mapapp.py. 3D view based on the Mesh Bonn session viewer (2026-09-20).
+     Texts are German source text, translated by js/i18n.js (data-i18n*, catalogues in i18n/). -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -14,48 +15,51 @@
 <body>
 <div id="app">
 <header>
-  <h1>Meshtastic — Karten</h1>
-  <span class="sub" id="status">lädt …</span>
+  <h1 data-i18n>Meshtastic — Karten</h1>
+  <span class="sub" id="status" data-i18n>lädt …</span>
   <span class="spacer"></span>
-  <span class="seg" role="group" aria-label="Ansicht">
-    <button class="btn on" id="view2d" aria-pressed="true">2D Karte</button>
-    <button class="btn" id="view3d" aria-pressed="false">3D Laserscan</button>
+  <span class="seg" role="group" aria-label="Ansicht" data-i18n-aria-label="Ansicht">
+    <button class="btn on" id="view2d" aria-pressed="true" data-i18n>2D Karte</button>
+    <button class="btn" id="view3d" aria-pressed="false" data-i18n>3D Laserscan</button>
   </span>
   <button class="btn" id="btnMsg" aria-pressed="false" aria-controls="msgpane"
-    title="Nachrichten und Paketverkehr des verbundenen Geräts">Nachrichten</button>
-  <button class="btn" id="btnJobs" title="Hintergrundaufgaben: Rundgang, Simulation">Aufgaben</button>
+    title="Nachrichten und Paketverkehr des verbundenen Geräts"
+    data-i18n-title="Nachrichten und Paketverkehr des verbundenen Geräts" data-i18n>Nachrichten</button>
+  <button class="btn" id="btnJobs" title="Hintergrundaufgaben: Rundgang, Simulation"
+    data-i18n-title="Hintergrundaufgaben: Rundgang, Simulation" data-i18n>Aufgaben</button>
   <button class="btn" id="btnInsp" aria-pressed="false" aria-controls="right" disabled
-    title="Detailbereich ein-/ausblenden">Details</button>
-  <button class="btn" id="themeBtn" title="Hell/Dunkel">◐</button>
+    title="Detailbereich ein-/ausblenden" data-i18n-title="Detailbereich ein-/ausblenden" data-i18n>Details</button>
+  <span class="seg" role="group" id="langSeg" aria-label="Sprache" data-i18n-aria-label="Sprache"></span>
+  <button class="btn" id="themeBtn" title="Hell/Dunkel" data-i18n-title="Hell/Dunkel">◐</button>
 </header>
 
 <main class="noinsp">
   <aside id="rail">
     <details class="sec" data-sec="layers" open>
-      <summary><h2>Ebenen</h2></summary>
+      <summary><h2 data-i18n>Ebenen</h2></summary>
       <div class="lyr" id="lyr_link"></div>
       <div id="layers"></div>
     </details>
     <details class="sec" data-sec="jobs" open>
-      <summary><h2>Aufgaben</h2></summary>
+      <summary><h2 data-i18n>Aufgaben</h2></summary>
       <div class="jobstart" id="jobStart"></div>
       <div class="jobform" id="jobForm" hidden></div>
       <div class="joblist" id="jobList"></div>
     </details>
     <details class="sec" data-sec="3d" id="sec3d" open>
-      <summary><h2>3D-Darstellung</h2></summary>
+      <summary><h2 data-i18n>3D-Darstellung</h2></summary>
       <div class="stack" id="layers3d"></div>
-      <label class="tog" for="vex">Höhenüberhöhung <span class="num" id="vexVal">1,0×</span></label>
+      <label class="tog" for="vex"><span data-i18n>Höhenüberhöhung</span> <span class="num" id="vexVal">1,0×</span></label>
       <input class="rng" type="range" id="vex" min="1" max="4" step="0.1" value="1">
-      <label class="tog" for="fres">Fresnelzone <span class="num" id="fresVal">1,0 F</span></label>
+      <label class="tog" for="fres"><span data-i18n>Fresnelzone</span> <span class="num" id="fresVal">1,0 F</span></label>
       <input class="rng" type="range" id="fres" min="0.3" max="1.6" step="0.1" value="1">
     </details>
     <details class="sec" data-sec="device">
-      <summary><h2>Gerät (USB)</h2><span class="dot" id="devDot"></span></summary>
+      <summary><h2 data-i18n>Gerät (USB)</h2><span class="dot" id="devDot"></span></summary>
       <div class="dev"><span id="devText">—</span></div>
       <div class="row2">
-        <input type="text" id="devPort" placeholder="Port (leer = automatisch)">
-        <button class="btn" id="devBtn">Verbinden</button>
+        <input type="text" id="devPort" placeholder="Port (leer = automatisch)" data-i18n-placeholder="Port (leer = automatisch)">
+        <button class="btn" id="devBtn" data-i18n>Verbinden</button>
       </div>
     </details>
   </aside>
@@ -64,34 +68,34 @@
   <div id="mapbox">
     <div id="map2d"></div>
     <div id="pickBanner" class="banner" hidden role="status"><span id="pickText"></span>
-      <button class="btn small" id="pickCancel">Abbrechen (Esc)</button></div>
+      <button class="btn small" id="pickCancel" data-i18n>Abbrechen (Esc)</button></div>
     <div id="viewwrap" hidden>
       <canvas id="c"></canvas>
-      <div class="ov" id="hint">Ziehen dreht · rechte Maustaste oder Umschalt+Ziehen verschiebt · Rad zoomt</div>
+      <div class="ov" id="hint" data-i18n>Ziehen dreht · rechte Maustaste oder Umschalt+Ziehen verschiebt · Rad zoomt</div>
       <div class="ctl3d">
-        <button class="btn" id="btn3dOverview">Übersicht</button>
-        <button class="btn" id="btn3dLink" hidden>Strecke zeigen</button>
+        <button class="btn" id="btn3dOverview" data-i18n>Übersicht</button>
+        <button class="btn" id="btn3dLink" hidden data-i18n>Strecke zeigen</button>
       </div>
       <div class="ov" id="readout">—</div>
-      <div id="loading"><div id="loadingMsg">Laserscan wird aufgebaut …</div><div class="bar"><b></b></div></div>
+      <div id="loading"><div id="loadingMsg" data-i18n>Laserscan wird aufgebaut …</div><div class="bar"><b></b></div></div>
     </div>
   </div>
-  <div id="msgpane" aria-label="Nachrichten">
+  <div id="msgpane" aria-label="Nachrichten" data-i18n-aria-label="Nachrichten">
     <div class="mhd" id="msgHead">
-      <strong id="msgTitle">Nachrichten</strong><span class="state" id="msgState">—</span>
-      <button class="btn small" id="msgConnect" hidden>Verbinden</button>
+      <strong id="msgTitle" data-i18n>Nachrichten</strong><span class="state" id="msgState">—</span>
+      <button class="btn small" id="msgConnect" hidden data-i18n>Verbinden</button>
       <span class="spacer"></span>
-      <button class="btn small" id="msgFold" aria-label="Nachrichten ausklappen">▴</button>
+      <button class="btn small" id="msgFold" aria-label="Nachrichten ausklappen" data-i18n-aria-label="Nachrichten ausklappen">▴</button>
     </div>
     <div class="mbody">
-      <nav class="convs" id="msgConvs" aria-label="Unterhaltungen"></nav>
+      <nav class="convs" id="msgConvs" aria-label="Unterhaltungen" data-i18n-aria-label="Unterhaltungen"></nav>
       <section class="chat">
         <div class="to" id="msgTo"></div>
         <div class="list" id="msgList" aria-live="polite"></div>
         <div class="compose" id="msgCompose">
-          <textarea id="msgText" rows="2" aria-label="Nachricht"></textarea>
+          <textarea id="msgText" rows="2" aria-label="Nachricht" data-i18n-aria-label="Nachricht"></textarea>
           <div class="cmeta"><span id="msgBytes">0/200 Bytes</span>
-            <button class="btn on" id="msgSend">Senden</button></div>
+            <button class="btn on" id="msgSend" data-i18n>Senden</button></div>
         </div>
         <div class="msg" id="msgErr" role="alert"></div>
       </section>
@@ -103,7 +107,8 @@
     <div id="insp">
       <div class="insphd">
         <div class="tabs" role="tablist" id="tabs"></div>
-        <button class="btn small" id="btnCloseInsp" aria-label="Detailbereich schließen" title="Schließen">✕</button>
+        <button class="btn small" id="btnCloseInsp" aria-label="Detailbereich schließen" title="Schließen"
+          data-i18n-aria-label="Detailbereich schließen" data-i18n-title="Schließen">✕</button>
       </div>
       <div class="tabbody" id="t_link" hidden></div>
       <div class="tabbody" id="t_models" hidden></div>

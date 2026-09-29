@@ -1,18 +1,21 @@
 // Shared helpers.
+import { lang, locale, t } from "./i18n.js";
+
 export const $ = s => document.querySelector(s);
 export const fmt = (v, d = 1) => (v === null || v === undefined || !isFinite(v)) ? "–"
-  : Number(v).toLocaleString("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
+  : Number(v).toLocaleString(locale, { minimumFractionDigits: d, maximumFractionDigits: d });
 export const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 export const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// The server answers in the page's language (texts it sends, error messages).
 export async function getJSON(url) {
-  const r = await fetch(url, { cache: "no-store" });
+  const r = await fetch(url, { cache: "no-store", headers: { "X-Lang": lang } });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || `${url}: HTTP ${r.status}`);
   return j;
 }
 export async function postJSON(url, body) {
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Lang": lang }, body: JSON.stringify(body) });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || `${url}: HTTP ${r.status}`);
   return j;
@@ -25,9 +28,9 @@ export const toLonLat = (x, y) => proj4("EPSG:25832", "EPSG:4326", [x, y]);
 
 // Grade of a link by the per-packet delivery probability.
 export function grade(p) {
-  if (p >= 0.9) return ["g-ok", "trägt", "--ok"];
-  if (p >= 0.5) return ["g-warn", "grenzwertig", "--warn"];
-  return ["g-bad", "trägt nicht", "--bad"];
+  if (p >= 0.9) return ["g-ok", t("trägt"), "--ok"];
+  if (p >= 0.5) return ["g-warn", t("grenzwertig"), "--warn"];
+  return ["g-bad", t("trägt nicht"), "--bad"];
 }
 
 // Popup / info HTML for a GeoJSON feature following the layer conventions.
@@ -35,8 +38,8 @@ export function featureHTML(props, withActions = true) {
   const rows = Object.entries(props._fields || {})
     .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
   const buttons = [];
-  if (withActions && props._endpoint) buttons.push(`<button class="btn small" data-set="a">als A</button><button class="btn small" data-set="b">als B</button>`);
-  if (withActions && props._node_id && !(props._icon && props._icon.own)) buttons.push(`<button class="btn small" data-set="msg">Nachricht</button>`);
+  if (withActions && props._endpoint) buttons.push(`<button class="btn small" data-set="a">${t("als A")}</button><button class="btn small" data-set="b">${t("als B")}</button>`);
+  if (withActions && props._node_id && !(props._icon && props._icon.own)) buttons.push(`<button class="btn small" data-set="msg">${t("Nachricht")}</button>`);
   const acts = buttons.length ? `<div class="acts">${buttons.join("")}</div>` : "";
   return `<div class="pop"><h3>${esc(props._title || "")}</h3><table>${rows}</table>${acts}</div>`;
 }

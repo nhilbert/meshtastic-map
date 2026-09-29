@@ -24,6 +24,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from meshplay.config import DEFAULT_PRESET, PROJECT_ROOT
+from meshplay.mapapp.i18n import N_, L, _, get_lang, set_lang
 from meshplay.mapapp.registry import Context, Setting
 
 RUNNING, WAITING, DONE, FAILED, CANCELLED = "läuft", "wartet", "fertig", "Fehler", "abgebrochen"
@@ -34,9 +35,19 @@ class Cancelled(Exception):
     """Raised inside a task when it was asked to stop."""
 
 
+def _text(value, persist: bool):
+    """A task text (L or plain str): source text + parameters to store, translated to show."""
+    if isinstance(value, L):
+        return value.to_json() if persist else str(value)
+    return value
+
+
 class Job:
-    def __init__(self, id: str, kind: str, title: str, params: dict):
+    TEXTS = ("title", "detail", "error")  # L texts, translated when shown
+
+    def __init__(self, id: str, kind: str, title, params: dict):
         self.id, self.kind, self.title, self.params = id, kind, title, params
+        self.lang = get_lang()  # the worker thread logs in the language of its creator
         self.state = WAITING
         self.created = time.time()
         self.started: float | None = None
@@ -61,9 +72,10 @@ class Job:
         if self.stop.is_set():
             raise Cancelled()
 
-    def to_json(self, with_log: bool = False) -> dict:
+    def to_json(self, with_log: bool = False, persist: bool = False) -> dict:
+        """For the page (texts in the request's language) or, with persist, for the file."""
         out = {
-            k: getattr(self, k)
+            k: _text(getattr(self, k), persist) if k in self.TEXTS else getattr(self, k)
             for k in (
                 "id",
                 "kind",
@@ -80,6 +92,8 @@ class Job:
             )
         }
         out["last"] = self.log[-1] if self.log else ""
+        if persist:
+            out["lang"] = self.lang
         if with_log:
             out["log"] = list(self.log)
         return out
@@ -87,9 +101,9 @@ class Job:
 
 class JobKind:
     id = ""
-    name = ""
+    name = ""  # German source texts (N_), translated in describe()
     description = ""
-    stop_label = "Abbrechen"
+    stop_label = N_("Abbrechen")
     stop_is_success = False  # e.g. a walk: stopping it is the normal end
 
     def settings(self, ctx: Context) -> list[Setting]:
@@ -98,8 +112,8 @@ class JobKind:
     def validate(self, ctx: Context, params: dict) -> None:
         """Raise ValueError with a message for the page if the parameters can't work."""
 
-    def title(self, params: dict) -> str:
-        return self.name
+    def title(self, params: dict) -> L:
+        return L(self.name)
 
     def run(self, ctx: Context, job: Job) -> None:
         raise NotImplementedError
@@ -107,9 +121,10 @@ class JobKind:
     def describe(self, ctx: Context) -> dict:
         return dict(
             id=self.id,
-            name=self.name,
-            description=self.description,
-            stop_label=self.stop_label,
+            name=_(self.name),
+            description=_(self.description),
+            stop_label=_(self.stop_label),
+            stop_is_success=self.stop_is_success,
             settings=[s.to_json() for s in self.settings(ctx)],
         )
 
@@ -148,20 +163,20 @@ def run_process(job: Job, args: list[str], on_line=None) -> None:
     job.check_stop()
     if code != 0:
         last = " | ".join(list(tail)[-3:])
-        raise RuntimeError(f"Prozess endete mit Code {code}: {last}")
+        raise RuntimeError(_("Prozess endete mit Code {code}: {last}", code=code, last=last))
 
 
 # ---------------------------------------------------------------- task kinds
 class ProbeWalk(JobKind):
     id = "probe"
-    name = "Traceroute-Rundgang"
-    description = (
+    name = N_("Traceroute-Rundgang")
+    description = N_(
         "Der Heimknoten schickt im festen Abstand direkte Traceroutes (Hop-Limit 0) an den "
         "Tracker und protokolliert Antwort und SNR in beide Richtungen (data/probes/). Läuft "
         "über die USB-Verbindung der Karten-App, bis du ihn stoppst. Die Position kommt aus "
         "der GPX-Spur deines Handys."
     )
-    stop_label = "Stoppen"
+    stop_label = N_("Stoppen")
     stop_is_success = True
 
     def settings(self, ctx: Context) -> list[Setting]:
@@ -172,7 +187,7 @@ class ProbeWalk(JobKind):
             for line in path.open(encoding="utf-8"):
                 to = json.loads(line).get("to")
                 if to:
-                    known.setdefault(to, f"{to} (früher geprobt)")
+                    known.setdefault(to, _("{id} (früher geprobt)", id=to))
                     last = last or to
         channels = [[1, "1"]]
         dev = ctx.device
@@ -185,7 +200,10 @@ class ProbeWalk(JobKind):
                         known.setdefault(u["id"], f"{u['id']} {u.get('longName', '')}".strip())
                 chans = dev.iface.localNode.channels or []
                 channels = [
-                    [c.index, f"{c.index} {c.settings.name or ('primär' if c.index == 0 else '')}"]
+                    [
+                        c.index,
+                        f"{c.index} {c.settings.name or (_('primär') if c.index == 0 else '')}",
+                    ]
                     for c in chans
                     if c.role
                 ] or channels
@@ -194,23 +212,23 @@ class ProbeWalk(JobKind):
         return [
             Setting(
                 "to",
-                "Tracker (Node-ID)",
+                _("Tracker (Node-ID)"),
                 "text",
                 last,
                 options=[[k, v] for k, v in known.items()],
-                help="z. B. !abcd1234; Vorschläge aus früheren Rundgängen und der Knotenliste",
+                help=_("z. B. !abcd1234; Vorschläge aus früheren Rundgängen und der Knotenliste"),
             ),
             Setting(
                 "channel",
-                "Kanal",
+                _("Kanal"),
                 "select",
                 1 if any(c[0] == 1 for c in channels) else channels[0][0],
                 options=channels,
-                help="Privater Kanal, damit das öffentliche Netz nichts mitbekommt",
+                help=_("Privater Kanal, damit das öffentliche Netz nichts mitbekommt"),
             ),
-            Setting("interval", "Abstand [s]", "number", 60, min=15, max=600, step=5),
-            Setting("timeout", "Warten auf Antwort [s]", "number", 20, min=5, max=60, step=1),
-            Setting("count", "Anzahl (0 = bis gestoppt)", "number", 0, min=0, max=10000, step=1),
+            Setting("interval", _("Abstand [s]"), "number", 60, min=15, max=600, step=5),
+            Setting("timeout", _("Warten auf Antwort [s]"), "number", 20, min=5, max=60, step=1),
+            Setting("count", _("Anzahl (0 = bis gestoppt)"), "number", 0, min=0, max=10000, step=1),
         ]
 
     def validate(self, ctx: Context, params: dict) -> None:
@@ -219,27 +237,27 @@ class ProbeWalk(JobKind):
         try:
             parse_node(str(params["to"]).strip())
         except ValueError:
-            raise ValueError("Tracker: Node-ID wie !abcd1234 angeben") from None
+            raise ValueError(_("Tracker: Node-ID wie !abcd1234 angeben")) from None
         if params["timeout"] >= params["interval"]:
-            raise ValueError("Warten auf Antwort muss kürzer sein als der Abstand")
+            raise ValueError(_("Warten auf Antwort muss kürzer sein als der Abstand"))
 
-    def title(self, params: dict) -> str:
-        return f"Traceroute-Rundgang {params['to']}"
+    def title(self, params: dict) -> L:
+        return L("Traceroute-Rundgang {to}", to=params["to"])
 
     def run(self, ctx: Context, job: Job) -> None:
-        from meshplay.probe import describe, run_probes
+        from meshplay.probe import run_probes
 
         dev = ctx.device
         if dev.state != "verbunden":
-            job.detail = "verbinde mit dem Gerät …"
-            job.add_log("Gerät nicht verbunden, verbinde …")
+            job.detail = L("verbinde mit dem Gerät …")
+            job.add_log(_("Gerät nicht verbunden, verbinde …"))
             dev.connect(None)
             deadline = time.time() + 45
             while dev.state == "verbinde" and time.time() < deadline:
                 job.check_stop()
                 time.sleep(0.5)
         if dev.state != "verbunden" or dev.iface is None:
-            raise RuntimeError(f"Gerät nicht verbunden: {dev.error or dev.state}")
+            raise RuntimeError(_("Gerät nicht verbunden: {error}", error=dev.error or dev.state))
         iface = dev.iface
         count = int(job.params["count"]) or None
         stats = {"ok": 0, "total": 0}
@@ -247,8 +265,21 @@ class ProbeWalk(JobKind):
         def on_record(rec: dict) -> None:
             stats["total"] += 1
             stats["ok"] += rec["result"] == "ok"
-            job.add_log(describe(rec))
-            job.detail = f"{stats['ok']}/{stats['total']} beantwortet · zuletzt {rec['result']}"
+            line = f"{rec['sentAt'][11:19]} {rec['result']:<8}"
+            if rec["result"] == "ok":
+                line += "  " + _(
+                    "hin {there} dB, zurück {back} dB, {rtt} s",
+                    there=rec["snrTowards"],
+                    back=rec["snrBack"],
+                    rtt=rec["rttS"],
+                )
+            job.add_log(line)
+            job.detail = L(
+                "{ok}/{total} beantwortet · zuletzt {result}",
+                ok=stats["ok"],
+                total=stats["total"],
+                result=rec["result"],
+            )
             job.progress = stats["total"] / count if count else None
             job.result = {
                 "answered": stats["ok"],
@@ -256,13 +287,18 @@ class ProbeWalk(JobKind):
                 "date": date.today().isoformat(),
             }
             if dev.iface is not iface:
-                raise RuntimeError("Verbindung zum Gerät verloren")
+                raise RuntimeError(_("Verbindung zum Gerät verloren"))
 
         to = str(job.params["to"]).strip()
         job.add_log(
-            f"Probe {to} auf Kanal {job.params['channel']} alle {job.params['interval']:.0f} s"
+            _(
+                "Probe {to} auf Kanal {channel} alle {s} s",
+                to=to,
+                channel=job.params["channel"],
+                s=f"{job.params['interval']:.0f}",
+            )
         )
-        job.detail = "erster Traceroute …"
+        job.detail = L("erster Traceroute …")
         run_probes(
             iface,
             ctx.data_dir,
@@ -276,11 +312,11 @@ class ProbeWalk(JobKind):
         )
 
 
-INDOOR = [
-    ["none", "Antenne außen"],
-    ["open", "Fenster offen"],
-    ["trad", "Fenster zu, Altbau"],
-    ["lowe", "Fenster zu, Wärmeschutz"],
+INDOOR = [  # German source texts, translated where shown
+    ["none", N_("Antenne außen")],
+    ["open", N_("Fenster offen")],
+    ["trad", N_("Fenster zu, Altbau")],
+    ["lowe", N_("Fenster zu, Wärmeschutz")],
 ]
 PRESETS = [
     "ShortTurbo",
@@ -296,8 +332,8 @@ PRESETS = [
 
 class CoverageSim(JobKind):
     id = "coverage"
-    name = "Abdeckung simulieren"
-    description = (
+    name = N_("Abdeckung simulieren")
+    description = N_(
         "Rechnet für jede Rasterzelle um einen Standort die Empfangswahrscheinlichkeit eines "
         "Pakets mit allen Modellfamilien (scripts/sim_coverage_map.py). Ergebnis: Ebene "
         "„Simulierte Abdeckung“. 25-m-Raster über 800 m dauern etwa 10–15 Minuten."
@@ -311,29 +347,42 @@ class CoverageSim(JobKind):
 
             home = nearest_site(ctx.sites, *ctx.settings.home)
         return [
-            Setting("site", "Standort", "select", home, options=sites),
-            Setting("site_indoor", "Antenne steht", "select", "none", options=INDOOR),
+            Setting("site", _("Standort"), "select", home, options=sites),
             Setting(
-                "preset", "Preset", "select", DEFAULT_PRESET, options=[[p, p] for p in PRESETS]
+                "site_indoor",
+                _("Antenne steht"),
+                "select",
+                "none",
+                options=[[v, _(label)] for v, label in INDOOR],
             ),
-            Setting("radius", "Radius [m]", "number", 800, min=100, max=3000, step=50),
-            Setting("step", "Raster [m]", "number", 25, min=5, max=100, step=5),
-            Setting("draws", "Ziehungen je Zelle", "number", 600, min=100, max=4000, step=100),
-            Setting("leafless", "Bäume ohne Laub (Winter)", "bool", False),
+            Setting(
+                "preset", _("Preset"), "select", DEFAULT_PRESET, options=[[p, p] for p in PRESETS]
+            ),
+            Setting("radius", _("Radius [m]"), "number", 800, min=100, max=3000, step=50),
+            Setting("step", _("Raster [m]"), "number", 25, min=5, max=100, step=5),
+            Setting("draws", _("Ziehungen je Zelle"), "number", 600, min=100, max=4000, step=100),
+            Setting("leafless", _("Bäume ohne Laub (Winter)"), "bool", False),
         ]
 
     def validate(self, ctx: Context, params: dict) -> None:
         if not ctx.has_scene:
             raise ValueError(
-                "Keine Laserscan-Szene: die Simulation braucht sie "
-                "(README, Abschnitt „3D laser-scan data“)."
+                _(
+                    "Keine Laserscan-Szene: die Simulation braucht sie "
+                    "(README, Abschnitt „3D laser-scan data“)."
+                )
             )
         if params["site"] not in ctx.sites:
-            raise ValueError(f"Standort {params['site']!r} gibt es nicht")
+            raise ValueError(_("Standort „{name}“ gibt es nicht", name=params["site"]))
 
-    def title(self, params: dict) -> str:
-        indoor = dict(INDOOR)[params["site_indoor"]]
-        return f"Abdeckung {params['site']} · {params['preset']} · {indoor}"
+    def title(self, params: dict) -> L:
+        indoor = L(dict(INDOOR)[params["site_indoor"]])
+        return L(
+            "Abdeckung {site} · {preset} · {placement}",
+            site=params["site"],
+            preset=params["preset"],
+            placement=indoor,
+        )
 
     def run(self, ctx: Context, job: Job) -> None:
         p = job.params
@@ -357,7 +406,7 @@ class CoverageSim(JobKind):
         k = math.ceil(p["radius"] / p["step"])
         steps = [i * p["step"] for i in range(-k, k + 1)]
         expected = sum(1 for x in steps for y in steps if x * x + y * y <= p["radius"] ** 2)
-        job.detail = "lädt die Szene …"
+        job.detail = L("lädt die Szene …")
 
         def on_line(line: str) -> None:
             m = re.search(r"row (\d+)/(\d+)\s+(\d+) cells\s+(\d+) s", line)
@@ -365,17 +414,31 @@ class CoverageSim(JobKind):
                 row, cells, secs = int(m[1]), int(m[3]), int(m[4])
                 job.progress = min(cells / expected, 0.99)
                 rest = secs / job.progress * (1 - job.progress) if job.progress > 0.05 else None
-                elapsed = f"{secs // 60}:{secs % 60:02d}"
-                job.detail = f"Zeile {row}/{m[2]} · {cells} von {expected} Zellen · {elapsed}" + (
-                    f" · noch ca. {max(1, round(rest / 60))} min" if rest else ""
-                )
+                done = {
+                    "row": row,
+                    "rows": m[2],
+                    "cells": cells,
+                    "total": expected,
+                    "elapsed": f"{secs // 60}:{secs % 60:02d}",
+                }
+                if rest:
+                    job.detail = L(
+                        "Zeile {row}/{rows} · {cells} von {total} Zellen · {elapsed}"
+                        " · noch ca. {min} min",
+                        min=max(1, round(rest / 60)),
+                        **done,
+                    )
+                else:
+                    job.detail = L(
+                        "Zeile {row}/{rows} · {cells} von {total} Zellen · {elapsed}", **done
+                    )
             m = re.match(r"Grid: (.+\.npz)", line)
             if m:
                 job.result["file"] = Path(m[1]).name
 
         run_process(job, args, on_line)
         job.progress = 1.0
-        job.detail = f"fertig: {job.result.get('file', '')}"
+        job.detail = L("fertig: {file}", file=job.result.get("file", ""))
 
 
 KINDS = {k.id: k for k in (ProbeWalk(), CoverageSim())}
@@ -399,7 +462,8 @@ class JobManager:
                 d = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            job = Job(d["id"], d["kind"], d["title"], d["params"])
+            job = Job(d["id"], d["kind"], L.from_json(d["title"]), d["params"])
+            job.lang = d.get("lang", job.lang)
             for k in (
                 "state",
                 "created",
@@ -410,9 +474,11 @@ class JobManager:
                 "error",
                 "result",
             ):
-                setattr(job, k, d.get(k, getattr(job, k)))
+                value = d.get(k, getattr(job, k))
+                setattr(job, k, L.from_json(value) if k in Job.TEXTS else value)
+            self._translatable(job)
             if job.state in (RUNNING, WAITING):  # the server stopped while it ran
-                job.state, job.error = CANCELLED, "Server wurde beendet"
+                job.state, job.error = CANCELLED, L("Server wurde beendet")
                 job.ended = job.ended or time.time()
             job.log_path = self.dir / f"{job.id}.log"
             if job.log_path.exists():
@@ -421,9 +487,26 @@ class JobManager:
             self.jobs[job.id] = job
             self._save(job)
 
+    def _translatable(self, job: Job) -> None:
+        """Tasks stored before the translation have plain German texts: rebuild the title from
+        the parameters and turn the usual end states into translatable texts."""
+        if isinstance(job.title, str) and job.kind in self.kinds:
+            try:
+                job.title = self.kinds[job.kind].title(job.params)
+            except (KeyError, ValueError):
+                pass
+        if isinstance(job.detail, str):
+            if job.detail.startswith("fertig: "):
+                job.detail = L("fertig: {file}", file=job.detail.removeprefix("fertig: "))
+            elif job.detail == "abgebrochen":
+                job.detail = L("abgebrochen")
+        if job.error == "Server wurde beendet":
+            job.error = L("Server wurde beendet")
+
     def _save(self, job: Job) -> None:
         (self.dir / f"{job.id}.json").write_text(
-            json.dumps(job.to_json(), ensure_ascii=False, default=str), encoding="utf-8"
+            json.dumps(job.to_json(persist=True), ensure_ascii=False, default=str),
+            encoding="utf-8",
         )
 
     # ------------------------------------------------------------ api
@@ -435,7 +518,7 @@ class JobManager:
 
     def get(self, job_id: str) -> Job:
         if job_id not in self.jobs:
-            raise KeyError(f"Aufgabe {job_id} gibt es nicht")
+            raise KeyError(_("Aufgabe {id} gibt es nicht", id=job_id))
         return self.jobs[job_id]
 
     def running(self, kind: str | None = None) -> list[Job]:
@@ -443,7 +526,7 @@ class JobManager:
 
     def create(self, kind_id: str, raw: dict) -> Job:
         if kind_id not in self.kinds:
-            raise KeyError(f"unbekannte Aufgabe {kind_id!r}")
+            raise KeyError(_("unbekannte Aufgabe {kind}", kind=kind_id))
         kind = self.kinds[kind_id]
         params = {}
         for s in kind.settings(self.ctx):
@@ -451,9 +534,9 @@ class JobManager:
             params[s.name] = s.parse(None if v is None else str(v))
             if s.type == "number" and params[s.name] is not None:
                 if s.min is not None and params[s.name] < s.min:
-                    raise ValueError(f"{s.label}: mindestens {s.min:g}")
+                    raise ValueError(_("{label}: mindestens {n}", label=s.label, n=f"{s.min:g}"))
                 if s.max is not None and params[s.name] > s.max:
-                    raise ValueError(f"{s.label}: höchstens {s.max:g}")
+                    raise ValueError(_("{label}: höchstens {n}", label=s.label, n=f"{s.max:g}"))
         kind.validate(self.ctx, params)
         with self._lock:
             job_id = f"{datetime.now():%Y%m%d-%H%M%S}-{kind_id}"
@@ -473,7 +556,7 @@ class JobManager:
             self._save(job)
         elif job.state == RUNNING:
             job.stop.set()
-            job.detail = "wird beendet …"
+            job.detail = L("wird beendet …")
             if job.proc and job.proc.poll() is None:
                 job.proc.terminate()
         return job
@@ -481,7 +564,7 @@ class JobManager:
     def remove(self, job_id: str) -> None:
         job = self.get(job_id)
         if job.state in (RUNNING, WAITING):
-            raise ValueError("Laufende oder wartende Aufgaben erst abbrechen")
+            raise ValueError(_("Laufende oder wartende Aufgaben erst abbrechen"))
         with self._lock:
             del self.jobs[job_id]
         for suffix in (".json", ".log"):
@@ -504,8 +587,9 @@ class JobManager:
 
     def _run(self, job: Job) -> None:
         kind = self.kinds[job.kind]
+        set_lang(job.lang)  # log lines and errors in the language of whoever started it
         self._save(job)
-        job.add_log(f"Start: {job.title}")
+        job.add_log(_("Start: {title}", title=job.title))
         try:
             kind.run(self.ctx, job)
             job.state = DONE
@@ -517,13 +601,15 @@ class JobManager:
             if job.stop.is_set():
                 job.state = DONE if kind.stop_is_success else CANCELLED
             else:
-                job.state, job.error = FAILED, f"{type(e).__name__}: {e}"
-                job.add_log("Fehler: " + job.error)
+                # our own errors carry a message for the user; others keep their type
+                own = isinstance(e, (ValueError, RuntimeError))
+                job.state, job.error = FAILED, str(e) if own else f"{type(e).__name__}: {e}"
+                job.add_log(_("Fehler: {error}", error=job.error))
         finally:
             job.ended = time.time()
             job.proc = None
             if job.state == CANCELLED:
-                job.detail = "abgebrochen"
-            job.add_log(f"Ende: {job.state}")
+                job.detail = L("abgebrochen")
+            job.add_log(_("Ende: {state}", state=_(job.state)))
             self._save(job)
             self._schedule()

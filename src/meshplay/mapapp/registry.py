@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from meshplay.config import Settings, load_settings
+from meshplay.mapapp.i18n import _
 
 
 @dataclass
@@ -134,10 +135,10 @@ class Layer:
             settings.append(s.to_json())
         return dict(
             id=self.id,
-            name=self.name,
-            group=self.group,
+            name=_(self.name),
+            group=_(self.group),
             kind=self.kind,
-            description=self.description,
+            description=_(self.description),
             enabled=cfg.get("enabled", self.enabled_by_default),
             settings=settings,
         )

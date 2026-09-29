@@ -10,6 +10,8 @@ import zlib
 
 import numpy as np
 
+from meshplay.mapapp.i18n import N_, _
+
 # SNR bands (LongFast decodes down to about -17.5 dB)
 SNR_BANDS = [
     (0, "#1a9850", "> 0 dB"),
@@ -26,12 +28,13 @@ RESIDUAL_RAMP = ["#b2182b", "#ef8a62", "#f7f7f7", "#67a9cf", "#2166ac"]
 def snr_color(snr: float | None) -> str:
     if snr is None:
         return GREY
-    return next(color for limit, color, _ in SNR_BANDS if snr > limit)
+    return next(color for limit, color, _label in SNR_BANDS if snr > limit)
 
 
-def snr_legend(title: str = "SNR (direkt empfangen)") -> dict:
-    items = [[c, label] for _, c, label in SNR_BANDS] + [[GREY, "über Relais"]]
-    return {"title": title, "items": items}
+def snr_legend(title: str = N_("SNR (direkt empfangen)")) -> dict:
+    """Legend of the SNR colours; title is German source text, translated here."""
+    items = [[c, label] for _limit, c, label in SNR_BANDS] + [[GREY, _("über Relais")]]
+    return {"title": _(title), "items": items}
 
 
 def ramp_color(value: float, vmin: float, vmax: float, ramp: list[str]) -> str:
@@ -56,7 +59,7 @@ def ramp_rgba(grid: np.ndarray, vmin: float, vmax: float, ramp: list[str], alpha
 
 def png_data_url(rgba: np.ndarray) -> str:
     """Encode an RGBA uint8 array (rows north -> south) as a PNG data URL."""
-    h, w, _ = rgba.shape
+    h, w, _depth = rgba.shape
     raw = b"".join(b"\x00" + rgba[i].tobytes() for i in range(h))
 
     def chunk(tag: bytes, data: bytes) -> bytes:

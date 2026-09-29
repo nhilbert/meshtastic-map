@@ -32,6 +32,7 @@ from urllib.parse import parse_qsl, urlparse
 from meshplay.config import DEFAULT_PRESET
 from meshplay.mapapp import sites_store
 from meshplay.mapapp.device import DeviceLink
+from meshplay.mapapp.i18n import _, set_lang
 from meshplay.mapapp.jobs import JobManager
 from meshplay.mapapp.layers import ALL, BY_ID
 from meshplay.mapapp.registry import Context
@@ -104,7 +105,7 @@ def edit_sites(ctx: Context, action: str, body: dict) -> dict:
     elif action == "delete":
         cfg = sites_store.delete_site(path, body["name"])
     else:
-        raise KeyError(f"unbekannte Aktion {action!r}")
+        raise KeyError(_("unbekannte Aktion {action}", action=action))
     ctx.reload_sites()
     return cfg
 
@@ -134,7 +135,7 @@ def save_track(ctx: Context, name: str, data: bytes) -> dict:
 
     stem = re.sub(r"[^\w .()-]", "_", Path(name).stem).strip() or "track"
     if Path(name).suffix.lower() != ".gpx":
-        raise ValueError("Nur .gpx-Dateien")
+        raise ValueError(_("Nur .gpx-Dateien"))
     out = ctx.data_dir / "tracks" / f"{stem}.gpx"
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".upload")
@@ -143,10 +144,10 @@ def save_track(ctx: Context, name: str, data: bytes) -> dict:
         track = load_gpx(tmp)
     except Exception as e:
         tmp.unlink(missing_ok=True)
-        raise ValueError(f"Keine lesbare GPX-Datei: {e}") from None
+        raise ValueError(_("Keine lesbare GPX-Datei: {error}", error=e)) from None
     if not track:
         tmp.unlink(missing_ok=True)
-        raise ValueError("Die GPX-Datei hat keine Punkte mit Zeitstempel")
+        raise ValueError(_("Die GPX-Datei hat keine Punkte mit Zeitstempel"))
     tmp.replace(out)
     return {
         "name": out.name,
@@ -222,6 +223,7 @@ def make_handler(ctx: Context, scene_dir: Path | None):
             self.end_headers()
 
         def do_GET(self):
+            set_lang(self.headers.get("X-Lang"))  # texts and messages in the page's language
             url = urlparse(self.path)
             parts = [p for p in url.path.split("/") if p]
             try:
@@ -266,12 +268,13 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                 self.fail(e)
 
         def do_POST(self):
+            set_lang(self.headers.get("X-Lang"))
             parts = [p for p in urlparse(self.path).path.split("/") if p]
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 if parts == ["api", "tracks"]:
                     if length > 30_000_000:
-                        raise ValueError("GPX-Datei zu groß (max. 30 MB)")
+                        raise ValueError(_("GPX-Datei zu groß (max. 30 MB)"))
                     name = dict(parse_qsl(urlparse(self.path).query)).get("name", "")
                     self.send_json(save_track(ctx, name, self.rfile.read(length)))
                     return
@@ -281,7 +284,7 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                         ctx.device.connect(body.get("port") or None)
                     elif parts[2] == "disconnect":
                         if ctx.jobs.running("probe"):
-                            raise ValueError("Ein Traceroute-Rundgang läuft: erst stoppen")
+                            raise ValueError(_("Ein Traceroute-Rundgang läuft: erst stoppen"))
                         ctx.device.disconnect()
                     self.send_json(ctx.device.status())
                     return

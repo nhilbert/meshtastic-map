@@ -5,6 +5,7 @@ import { Map3D, LAYERS_3D } from "./map3d.js";
 import { bindInputs, initialValues, inputsHTML } from "./forms.js";
 import { initMessages, openConversation } from "./messages.js";
 import { initNodeList, renderNodeList } from "./nodelist.js";
+import { LANGS, lang, loadCatalogue, setLang, t, translateStatic } from "./i18n.js";
 import { renderLink, renderWalk } from "./panels.js";
 import { initSites, renderSites } from "./sites.js";
 import { initTasks, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
@@ -16,8 +17,8 @@ const store = {
   set(k, v) { try { localStorage.setItem("mapapp." + k, JSON.stringify(v)); } catch (_) { } },
 };
 
-const INDOOR = [["", "Antenne außen"], ["open", "Fenster offen"], ["trad", "Fenster zu, Altbau"], ["lowe", "Fenster zu, Wärmeschutz"]];
-const DEVICES = [["p1pro", "Stabantenne"], ["t1000e", "T1000-E"]];
+const INDOOR = () => [["", t("Antenne außen")], ["open", t("Fenster offen")], ["trad", t("Fenster zu, Altbau")], ["lowe", t("Fenster zu, Wärmeschutz")]];
+const DEVICES = () => [["p1pro", t("Stabantenne")], ["t1000e", "T1000-E"]];
 const S = {
   app: null, layers: {}, busy: false,
   // link layer: on/off and settings panel, endpoints, pick mode ("a", "b" or ""), last result
@@ -34,12 +35,12 @@ const in3d = f => { try { f(); } catch (e) { console.warn("3D-Ansicht:", e.messa
 // ---------------------------------------------------------------- endpoints
 function endpointFromFeature(f) {
   const e = f.properties._endpoint, [lon, lat] = f.geometry.coordinates;
-  return { name: e.name || f.properties._title || "Punkt", lat, lon, height_m: e.height_m || [1.5, 3],
+  return { name: e.name || f.properties._title || t("Punkt"), lat, lon, height_m: e.height_m || [1.5, 3],
     clutter_m: e.clutter_m ?? 12, indoor: e.indoor ?? null, device: e.device || "p1pro", measured: e.measured || null };
 }
 function endpointAt(lat, lon, which) {
   const walker = which === "b";
-  return { name: `Punkt ${lat.toFixed(5)}, ${lon.toFixed(5)}`, lat, lon, height_m: walker ? [1.0, 1.6] : [1.5, 3.0],
+  return { name: t("Punkt {lat}, {lon}", { lat: lat.toFixed(5), lon: lon.toFixed(5) }), lat, lon, height_m: walker ? [1.0, 1.6] : [1.5, 3.0],
     clutter_m: 12, indoor: null, device: walker ? "t1000e" : "p1pro", measured: null };
 }
 function setEndpoint(which, ep) {
@@ -64,30 +65,28 @@ function renderLinkLayer() {
   el.className = "lyr link";
   if (!S.app.scene) {  // the calculation runs over the laser-scan scene
     L.on = false;
-    el.innerHTML = `<div class="hd"><input type="checkbox" disabled aria-label="Strecke A → B">
-      <span class="nm">Strecke A → B</span><span class="grp">Simulation</span></div>
-      <div class="bd"><div class="note" style="margin:0">Braucht eine Laserscan-Szene. Wie man sie herunterlädt
-        und aufbereitet, steht in der README (Abschnitt „3D laser-scan data“).</div></div>`;
+    el.innerHTML = `<div class="hd"><input type="checkbox" disabled aria-label="${t("Strecke A → B")}">
+      <span class="nm">${t("Strecke A → B")}</span><span class="grp">${t("Simulation")}</span></div>
+      <div class="bd"><div class="note" style="margin:0">${t("Braucht eine Laserscan-Szene. Wie man sie herunterlädt und aufbereitet, steht in der README (Abschnitt „3D laser-scan data“).")}</div></div>`;
     return;
   }
-  el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${L.on ? "checked" : ""} aria-label="Strecke A → B">
-      <span class="nm">Strecke A → B</span><span class="grp">Simulation</span>
-      <button class="btn small" data-open title="Einstellungen" aria-expanded="${L.open}">⚙</button></div>
+  el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${L.on ? "checked" : ""} aria-label="${t("Strecke A → B")}">
+      <span class="nm">${t("Strecke A → B")}</span><span class="grp">${t("Simulation")}</span>
+      <button class="btn small" data-open title="${t("Einstellungen")}" aria-expanded="${L.open}">⚙</button></div>
     <div class="bd" ${L.open ? "" : "hidden"}>
-      <div class="note" style="margin:0">Direktstrecke zwischen zwei Punkten, mit allen Modellfamilien über den Laserscan
-        gerechnet. Ergebnis rechts unter „Details“.</div>
-      <div class="pickrow"><span>Klick in die Karte setzt</span>
-        <span class="seg" role="group" aria-label="Klick in die Karte setzt">
-          <button class="btn" data-pick="a">A</button><button class="btn" data-pick="b">B</button><button class="btn" data-pick="">aus</button>
+      <div class="note" style="margin:0">${t("Direktstrecke zwischen zwei Punkten, mit allen Modellfamilien über den Laserscan gerechnet. Ergebnis rechts unter „Details“.")}</div>
+      <div class="pickrow"><span>${t("Klick in die Karte setzt")}</span>
+        <span class="seg" role="group" aria-label="${t("Klick in die Karte setzt")}">
+          <button class="btn" data-pick="a">A</button><button class="btn" data-pick="b">B</button><button class="btn" data-pick="">${t("aus")}</button>
         </span></div>
       <div id="endpoints"></div>
       <div class="row2">
-        <label>Preset<select id="preset">${S.app.presets.map(p => `<option>${p}</option>`).join("")}</select></label>
-        <label>Bäume<select id="leaf"><option value="belaubt">belaubt</option><option value="unbelaubt">unbelaubt</option></select></label>
+        <label>${t("Preset")}<select id="preset">${S.app.presets.map(p => `<option>${p}</option>`).join("")}</select></label>
+        <label>${t("Bäume")}<select id="leaf"><option value="belaubt">${t("belaubt")}</option><option value="unbelaubt">${t("unbelaubt")}</option></select></label>
       </div>
-      <div class="row2"><button class="btn" id="btnSwap">A ⇄ B</button><button class="btn" id="btnClearB">B entfernen</button></div>
+      <div class="row2"><button class="btn" id="btnSwap">A ⇄ B</button><button class="btn" id="btnClearB">${t("B entfernen")}</button></div>
       <div class="msg" id="linkMsg"></div>
-      <p class="note" style="margin:0">Punkte des Rundgangs, Standorte und Knoten haben im Popup „als A“ / „als B“. Esc beendet das Setzen.</p>
+      <p class="note" style="margin:0">${t("Punkte des Rundgangs, Standorte und Knoten haben im Popup „als A“ / „als B“. Esc beendet das Setzen.")}</p>
     </div>`;
   // own key (was "preset"), so a LongFast saved by the old page doesn't override the default
   $("#preset").value = store.get("link.preset", S.app.default_preset || "ShortSlow");
@@ -127,25 +126,25 @@ function setLinkOn(on) {
 function linkState() {
   $("#btn3dLink").hidden = !S.res;
   if (!S.link.on) linkMsg("");
-  else if (!S.a || !S.b) linkMsg(`Setze ${!S.a ? "A" : "B"}: Klick in die Karte oder „als ${!S.a ? "A" : "B"}“ im Popup.`);
+  else if (!S.a || !S.b) linkMsg(t("Setze {p}: Klick in die Karte oder „als {p}“ im Popup.", { p: !S.a ? "A" : "B" }));
 }
 function renderEndpoints() {
   const box = $("#endpoints"); if (!box) return;
   const card = (which) => {
     const p = S[which], tag = which.toUpperCase();
-    if (!p) return `<div class="ep ${S.pick === which ? "pick" : ""}"><div class="hd"><span class="tag">${tag}</span><span class="nm">nicht gesetzt</span></div></div>`;
+    if (!p) return `<div class="ep ${S.pick === which ? "pick" : ""}"><div class="hd"><span class="tag">${tag}</span><span class="nm">${t("nicht gesetzt")}</span></div></div>`;
     const sel = (name, opts, val) => `<select data-ep="${which}" data-k="${name}">${opts.map(([v, l]) => `<option value="${v}" ${String(val ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`;
     const m = p.measured;
     return `<div class="ep ${S.pick === which ? "pick" : ""}">
       <div class="hd"><span class="tag">${tag}</span><span class="nm" title="${esc(p.name)}">${esc(p.name)}</span></div>
       <div class="grid">
-        <label>Höhe min [m]<input type="number" step="0.1" data-ep="${which}" data-k="h0" value="${p.height_m[0]}"></label>
-        <label>Höhe max [m]<input type="number" step="0.1" data-ep="${which}" data-k="h1" value="${p.height_m[1]}"></label>
-        <label>Aufstellung${sel("indoor", INDOOR, p.indoor)}</label>
-        <label>Gerät${sel("device", DEVICES, p.device)}</label>
-        <label>Umgebung [m]<input type="number" step="1" data-ep="${which}" data-k="clutter_m" value="${p.clutter_m}"></label>
+        <label>${t("Höhe min [m]")}<input type="number" step="0.1" data-ep="${which}" data-k="h0" value="${p.height_m[0]}"></label>
+        <label>${t("Höhe max [m]")}<input type="number" step="0.1" data-ep="${which}" data-k="h1" value="${p.height_m[1]}"></label>
+        <label>${t("Aufstellung")}${sel("indoor", INDOOR(), p.indoor)}</label>
+        <label>${t("Gerät")}${sel("device", DEVICES(), p.device)}</label>
+        <label>${t("Umgebung [m]")}<input type="number" step="1" data-ep="${which}" data-k="clutter_m" value="${p.clutter_m}"></label>
       </div>
-      ${m ? `<div class="meas">Messung ${esc(m.time || "")}: RSSI ${fmt(m.rssi, 0)} dBm, SNR ${fmt(m.snr, 1)} dB, ${m.hops} Hops</div>` : ""}
+      ${m ? `<div class="meas">${esc(t("Messung {time}: RSSI {rssi} dBm, SNR {snr} dB, {hops} Hops", { time: m.time || "", rssi: fmt(m.rssi, 0), snr: fmt(m.snr, 1), hops: m.hops }))}</div>` : ""}
     </div>`;
   };
   box.innerHTML = card("a") + card("b");
@@ -165,7 +164,7 @@ async function compute() {
   if (!S.link.on) return;
   if (!S.a || !S.b) { S.res = null; map3d.setLink(null); updateInspector(); linkState(); return; }
   if (S.busy) { pending = true; return; }
-  S.busy = true; status("rechne Strecke …");
+  S.busy = true; status(t("rechne Strecke …"));
   const body = { a: S.a, b: S.b, preset: $("#preset").value, leaf: $("#leaf").value };
   try {
     const res = await postJSON("api/tools/link", body);
@@ -177,10 +176,10 @@ async function compute() {
     else map2d.fit(S.a, S.b);
     map2d.colorLink(css(grade(res.models.ENS.p_rx)[2]));
     openInspector("link");
-    status(`${fmt(res.d_m, 0)} m · ENS ${fmt(res.models.ENS.prx[1], 1)} dBm · P(Paket) ${fmt(res.models.ENS.p_rx * 100, 0)} %`);
+    status(t("{d} m · ENS {level} dBm · P(Paket) {p} %", { d: fmt(res.d_m, 0), level: fmt(res.models.ENS.prx[1], 1), p: fmt(res.models.ENS.p_rx * 100, 0) }));
   } catch (e) {
     S.res = null; map3d.setLink(null); updateInspector();
-    linkMsg("Keine Berechnung: " + e.message); status(e.message, true);
+    linkMsg(t("Keine Berechnung: {error}", { error: e.message })); status(e.message, true);
   } finally {
     S.busy = false; linkState();
     if (pending) { pending = null; compute(); }
@@ -190,11 +189,11 @@ async function compute() {
 // ---------------------------------------------------------------- inspector
 // Tabs appear only when they have content; the panel hides when none has.
 const TABS = [
-  ["link", "Strecke", () => !!S.res],
-  ["models", "Modelle", () => !!S.res],
-  ["walk", "Rundgang", () => !!S.walk],
-  ["nodes", "Knoten", () => !!(S.layers.nodes && S.layers.nodes.enabled && S.layers.nodes.data)],
-  ["job", "Aufgabe", () => !!selectedJob()],
+  ["link", () => t("Strecke"), () => !!S.res],
+  ["models", () => t("Modelle"), () => !!S.res],
+  ["walk", () => t("Rundgang"), () => !!S.walk],
+  ["nodes", () => t("Knoten"), () => !!(S.layers.nodes && S.layers.nodes.enabled && S.layers.nodes.data)],
+  ["job", () => t("Aufgabe"), () => !!selectedJob()],
 ];
 function updateInspector() {
   const avail = TABS.filter(([, , has]) => has());
@@ -202,11 +201,11 @@ function updateInspector() {
   const show = S.insp.open && avail.length > 0, btn = $("#btnInsp");
   btn.disabled = !avail.length;
   btn.classList.toggle("on", show); btn.setAttribute("aria-pressed", String(show));
-  btn.title = avail.length ? "Detailbereich ein-/ausblenden" : "Keine Details: Strecke berechnen oder Rundgang mit Modellen vergleichen";
+  btn.title = avail.length ? t("Detailbereich ein-/ausblenden") : t("Keine Details: Strecke berechnen oder Rundgang mit Modellen vergleichen");
   const wasShown = !$("#right").hidden;
   $("#right").hidden = !show; $("main").classList.toggle("noinsp", !show);
   $("#tabs").innerHTML = avail.map(([id, label]) =>
-    `<button class="tab" role="tab" aria-selected="${id === S.insp.tab}" data-tab="${id}">${label}</button>`).join("");
+    `<button class="tab" role="tab" aria-selected="${id === S.insp.tab}" data-tab="${id}">${label()}</button>`).join("");
   $("#tabs").querySelectorAll("[data-tab]").forEach(t => t.addEventListener("click", () => { S.insp.tab = t.dataset.tab; updateInspector(); }));
   for (const [id] of TABS) $("#t_" + id).hidden = !(show && id === S.insp.tab);
   if (wasShown !== show && map3d && document.body.classList.contains("is3d")) map3d.resize();
@@ -221,7 +220,7 @@ function renderLayer(desc) {
   const el = document.getElementById("lyr_" + desc.id);
   el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${st.enabled ? "checked" : ""} aria-label="${esc(desc.name)}">
       <span class="nm">${esc(desc.name)}</span><span class="grp">${esc(desc.group)}</span>
-      <button class="btn small" data-open title="Einstellungen">⚙</button></div>
+      <button class="btn small" data-open title="${t("Einstellungen")}">⚙</button></div>
     <div class="bd" ${st.open ? "" : "hidden"}><div class="note" style="margin:0">${esc(desc.description)}</div>
       ${inputsHTML(desc.settings, st.values, desc.id)}
       <div class="msg"></div><div class="lg"></div><div class="summary"></div>
@@ -249,10 +248,10 @@ function showExtras(desc) {
 }
 function summaryHTML(d) {
   const parts = [];
-  if (d.stats) parts.push(`<div class="note" style="margin:0">${esc(d.stats.text || `${d.stats.positions} Positionen, ${d.stats.direct} direkt empfangen`)}</div>`);
+  if (d.stats) parts.push(`<div class="note" style="margin:0">${esc(d.stats.text || t("{n} Positionen, {m} direkt empfangen", { n: d.stats.positions, m: d.stats.direct }))}</div>`);
   if (d.stats && d.stats.basis) parts.push(`<div class="note" style="margin:0">${esc(d.stats.basis)}</div>`);
   if (d.summary && d.summary.models && Object.keys(d.summary.models).length)
-    parts.push(`<button class="btn small" data-cmp style="align-self:flex-start">Vergleich mit Modellen anzeigen</button>`);
+    parts.push(`<button class="btn small" data-cmp style="align-self:flex-start">${t("Vergleich mit Modellen anzeigen")}</button>`);
   return parts.join("");
 }
 // user: the refresh follows a click in the layer panel (may open the inspector).
@@ -265,11 +264,11 @@ async function refresh(desc, auto = false, user = false) {
     return;
   }
   const q = new URLSearchParams(Object.entries(st.values).map(([k, v]) => [k, String(v ?? "")]));
-  if (!auto) status(`lade ${desc.name} …`);
+  if (!auto) status(t("lade {name} …", { name: desc.name }));
   try {
     st.data = await getJSON(`api/layers/${desc.id}?${q}`);
     map2d.show(desc.id, st.data); in3d(() => map3d.show(desc.id, st.data));
-    if (!auto) status("bereit");
+    if (!auto) status(t("bereit"));
   } catch (e) { st.data = { note: e.message }; status(e.message, true); }
   showExtras(desc);
   const scored = st.data && st.data.summary && st.data.summary.models && Object.keys(st.data.summary.models).length;
@@ -291,12 +290,13 @@ async function deviceStatus(action) {
   } catch (e) { $("#devText").textContent = e.message; return; }
   const colors = { verbunden: "var(--ok)", verbinde: "var(--warn)", Fehler: "var(--bad)" };
   $("#devDot").style.background = colors[d.state] || "var(--line)";
-  const since = d.last_packet ? `, letztes vor ${Math.round(Date.now() / 1000 - d.last_packet)} s` : "";
+  const since = d.last_packet ? ", " + t("letztes vor {s} s", { s: Math.round(Date.now() / 1000 - d.last_packet) }) : "";
+  // Device states are German codes: t("getrennt") t("verbinde") t("verbunden") t("Fehler")
   $("#devText").textContent = d.state === "verbunden"
-    ? `${d.me ? d.me.name : "verbunden"} auf ${d.port} · ${d.packets} Pakete${since}${d.logging ? " · Log an" : ""}`
-    : d.state === "Fehler" ? `Fehler: ${d.error}` : d.state;
+    ? t("{name} auf {port} · {n} Pakete", { name: d.me ? d.me.name : t("verbunden"), port: d.port, n: d.packets }) + since + (d.logging ? " · " + t("Log an") : "")
+    : d.state === "Fehler" ? t("Fehler: {error}", { error: d.error }) : t(d.state);
   const connected = d.state === "verbunden" || d.state === "verbinde";
-  $("#devBtn").textContent = connected ? "Trennen" : "Verbinden";
+  $("#devBtn").textContent = connected ? t("Trennen") : t("Verbinden");
   $("#devBtn").dataset.action = connected ? "disconnect" : "connect";
   if (S.devState !== null && d.state !== S.devState && d.state !== "verbinde") {
     // The live node layer and today's packet log depend on the connection: reload the layer
@@ -329,9 +329,9 @@ function nodesChanged() {
 // Show a node on the 2D map (switching from 3D) and open its popup.
 function focusNode(id) {
   const st = S.layers.nodes;
-  if (!st || !st.enabled) { toast("Die Ebene „Meshtastic-Knoten“ ist aus."); return; }
+  if (!st || !st.enabled) { toast(t("Die Ebene „Meshtastic-Knoten“ ist aus.")); return; }
   if (document.body.classList.contains("is3d")) setView("2d");
-  if (!map2d.focusNode(id)) toast(`${id} hat keine Position auf der Karte.`);
+  if (!map2d.focusNode(id)) toast(t("{id} hat keine Position auf der Karte.", { id }));
 }
 
 // ---------------------------------------------------------------- map pick, toasts
@@ -339,7 +339,7 @@ function focusNode(id) {
 function pickOnMap(label, cb) {
   S.mapPick = { label, cb };
   $("#pickBanner").hidden = false;
-  $("#pickText").textContent = `Klick in die Karte: ${label}`;
+  $("#pickText").textContent = t("Klick in die Karte: {label}", { label });
   document.body.classList.add("picking");
 }
 function clearMapPick() {
@@ -358,7 +358,7 @@ function toast(msg, { bad = false, action = null } = {}) {
   el.className = "toast" + (bad ? " bad" : "");
   el.setAttribute("role", bad ? "alert" : "status");
   el.innerHTML = `<span class="t">${esc(msg)}</span>${action ? `<button class="btn small" data-act>${esc(action[0])}</button>` : ""}
-    <button class="btn small" data-close aria-label="Schließen">✕</button>`;
+    <button class="btn small" data-close aria-label="${t("Schließen")}">✕</button>`;
   const close = () => el.remove();
   el.querySelector("[data-close]").addEventListener("click", close);
   if (action) el.querySelector("[data-act]").addEventListener("click", () => { close(); action[1](); });
@@ -383,43 +383,43 @@ function uploadGPX(job) {
   inp.type = "file"; inp.accept = ".gpx,application/gpx+xml";
   inp.addEventListener("change", async () => {
     const f = inp.files[0]; if (!f) return;
-    status(`lade ${f.name} hoch …`);
+    status(t("lade {name} hoch …", { name: f.name }));
     try {
       const r = await fetch(`api/tracks?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
       const res = await r.json();
       if (!r.ok) throw new Error(res.error || `HTTP ${r.status}`);
       const t0 = Date.parse(res.start) / 1000, t1 = Date.parse(res.end) / 1000;
       if (job.started && (t1 < job.started || t0 > (job.ended || Date.now() / 1000)))
-        toast(`${res.name}: die Spur liegt zeitlich nicht im Rundgang – falsche Datei?`, { bad: true });
+        toast(t("{name}: die Spur liegt zeitlich nicht im Rundgang – falsche Datei?", { name: res.name }), { bad: true });
       const date = new Date(job.started * 1000);
       const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
       const saved = store.get("layer.walk", {}) || {};
       store.set("layer.walk", { ...saved, enabled: true, open: true,
         values: { ...(saved.values || {}), date: iso, tracker: "probe:" + job.params.to, gpx: res.name } });
-      toast(`${res.name}: ${res.points} Punkte hochgeladen`);
-      status("bereit");
+      toast(t("{name}: {n} Punkte hochgeladen", { name: res.name, n: res.points }));
+      status(t("bereit"));
       reloadApp();
-    } catch (e) { toast("GPX-Upload: " + e.message, { bad: true }); status(e.message, true); }
+    } catch (e) { toast(t("GPX-Upload: {error}", { error: e.message }), { bad: true }); status(e.message, true); }
   });
   inp.click();
 }
 
 function taskActions(job) {
   if (job.kind === "coverage" && job.state === "fertig" && job.result && job.result.file)
-    return [["Anzeigen", () => showCoverage(job.result.file)]];
+    return [[t("Anzeigen"), () => showCoverage(job.result.file)]];
   if (job.kind === "probe" && job.state === "fertig" && job.result && job.result.sent)
-    return [["GPX-Spur hochladen …", () => uploadGPX(job)]];
+    return [[t("GPX-Spur hochladen …"), () => uploadGPX(job)]];
   return [];
 }
 function taskTransition(job, prev) {
-  if (job.state === "Fehler") toast(`Fehler: ${job.title}`, { bad: true, action: ["Protokoll", () => showDetail(job.id)] });
-  else if (job.state === "abgebrochen") toast(`Abgebrochen: ${job.title}`);
+  if (job.state === "Fehler") toast(t("Fehler: {error}", { error: job.title }), { bad: true, action: [t("Protokoll"), () => showDetail(job.id)] });
+  else if (job.state === "abgebrochen") toast(t("Abgebrochen: {title}", { title: job.title }));
   else if (job.state === "fertig") {
     reloadApp();
     const extra = taskActions(job)[0];
-    const what = job.kind === "probe" ? ` (${job.result.answered ?? 0} von ${job.result.sent ?? 0} beantwortet)` : "";
-    toast(`Fertig: ${job.title}${what}`, { action: extra || ["Protokoll", () => showDetail(job.id)] });
-  } else if (prev === "wartet" && job.state === "läuft") toast(`Läuft: ${job.title}`);
+    const what = job.kind === "probe" ? " " + t("({a} von {s} beantwortet)", { a: job.result.answered ?? 0, s: job.result.sent ?? 0 }) : "";
+    toast(t("Fertig: {title}", { title: job.title }) + what, { action: extra || [t("Protokoll"), () => showDetail(job.id)] });
+  } else if (prev === "wartet" && job.state === "läuft") toast(t("Läuft: {title}", { title: job.title }));
 }
 
 // ---------------------------------------------------------------- start
@@ -447,6 +447,9 @@ function setView(mode) {
 }
 
 function bindUI() {
+  // language switch: the page reloads in the chosen language
+  $("#langSeg").innerHTML = LANGS.map(l => `<button class="btn ${l === lang ? "on" : ""}" data-lang="${l}" aria-pressed="${l === lang}">${l.toUpperCase()}</button>`).join("");
+  $("#langSeg").querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => { if (b.dataset.lang !== lang) setLang(b.dataset.lang); }));
   $("#devBtn").addEventListener("click", () => deviceStatus($("#devBtn").dataset.action || "connect"));
   $("#view2d").addEventListener("click", () => setView("2d"));
   $("#view3d").addEventListener("click", () => setView("3d"));
@@ -465,7 +468,7 @@ function bindUI() {
     if (open !== null) d.open = open;
     d.addEventListener("toggle", () => store.set("sec." + d.dataset.sec, d.open));
   });
-  $("#layers3d").innerHTML = LAYERS_3D.map(l => `<label class="tog"><input type="checkbox" data-l3="${l.id}" ${l.on ? "checked" : ""}><span class="sw" style="background:var(${l.sw})"></span>${l.label}</label>`).join("");
+  $("#layers3d").innerHTML = LAYERS_3D.map(l => `<label class="tog"><input type="checkbox" data-l3="${l.id}" ${l.on ? "checked" : ""}><span class="sw" style="background:var(${l.sw})"></span>${l.label()}</label>`).join("");
   document.querySelectorAll("[data-l3]").forEach(el => el.addEventListener("change", () => map3d.setLayer(el.dataset.l3, el.checked)));
   $("#vex").addEventListener("input", e => { map3d.setVex(+e.target.value); $("#vexVal").textContent = fmt(+e.target.value, 1) + "×"; });
   $("#fres").addEventListener("input", e => { $("#fresVal").textContent = fmt(+e.target.value, 1) + " F"; map3d.setFresnel(+e.target.value); });
@@ -477,9 +480,11 @@ function bindUI() {
 }
 
 (async function main() {
+  await loadCatalogue();
+  translateStatic();
   try {
     S.app = await getJSON("api/app");
-  } catch (e) { status("Server nicht erreichbar: " + e.message, true); return; }
+  } catch (e) { status(t("Server nicht erreichbar: {error}", { error: e.message }), true); return; }
   const center = S.app.home || { lat: 50.7374, lon: 7.0982 };
   map2d = new Map2D($("#map2d"), center, {
     onClick: (lat, lon) => mapClick(lat, lon),
@@ -500,11 +505,11 @@ function bindUI() {
       $("#loading").hidden = true;
       for (const [id, st] of Object.entries(S.layers)) if (st.enabled && st.data) map3d.show(id, st.data);
       if (map3d.link) { map3d.setLink(map3d.link); map3d.frameLink(); }
-    }).catch(e => { $("#loadingMsg").textContent = "3D-Szene nicht verfügbar: " + e.message; });
+    }).catch(e => { $("#loadingMsg").textContent = t("3D-Szene nicht verfügbar: {error}", { error: e.message }); });
   } else {
-    $("#loadingMsg").innerHTML = "Keine Laserscan-Szene vorhanden.<br>Die 3D-Ansicht und die Streckenberechnung brauchen sie; "
-      + "wie man die Laserscan-Daten herunterlädt und aufbereitet, steht in der README (Abschnitt „3D laser-scan data“).<br>"
-      + "Die 2D-Karte und alle anderen Ebenen funktionieren ohne.";
+    $("#loadingMsg").innerHTML = [t("Keine Laserscan-Szene vorhanden."),
+      t("Die 3D-Ansicht und die Streckenberechnung brauchen sie; wie man die Laserscan-Daten herunterlädt und aufbereitet, steht in der README (Abschnitt „3D laser-scan data“)."),
+      t("Die 2D-Karte und alle anderen Ebenen funktionieren ohne.")].map(esc).join("<br>");
     $("#loading .bar").hidden = true;
   }
   initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast });

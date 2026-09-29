@@ -13,6 +13,8 @@ import re
 import shutil
 from pathlib import Path
 
+from meshplay.mapapp.i18n import _
+
 # Names end up in scenario references and file names (coverage-<site>-...): keep them simple.
 NAME_RE = re.compile(r"^[A-Za-z0-9ÄÖÜäöüß_-]{1,24}$")
 
@@ -37,22 +39,24 @@ def save_raw(path: Path, cfg: dict) -> None:
 
 def references(cfg: dict, name: str) -> list[str]:
     """Everything in the config that refers to site `name`, as readable labels."""
-    refs = [f"Variante {n}" for n, s in cfg["sites"].items() if s.get("same_as") == name]
+    refs = [
+        _("Variante {name}", name=n) for n, s in cfg["sites"].items() if s.get("same_as") == name
+    ]
     for sc in cfg.get("scenarios", []):
         if name in (sc.get("a"), sc.get("b")):
-            refs.append(f"Szenario {sc.get('id', '?')}")
+            refs.append(_("Szenario {id}", id=sc.get("id", "?")))
     corridor = cfg.get("corridor") or {}
     if name in (corridor.get("from"), corridor.get("towards")):
-        refs.append("Korridor")
+        refs.append(_("Korridor"))
     return refs
 
 
 def _check_name(cfg: dict, name: str) -> str:
     name = (name or "").strip()
     if not NAME_RE.match(name):
-        raise ValueError("Name: 1–24 Zeichen, nur Buchstaben, Ziffern, _ und -")
+        raise ValueError(_("Name: 1–24 Zeichen, nur Buchstaben, Ziffern, _ und -"))
     if name in cfg["sites"]:
-        raise ValueError(f"Einen Standort {name!r} gibt es schon")
+        raise ValueError(_("Einen Standort „{name}“ gibt es schon", name=name))
     return name
 
 
@@ -61,24 +65,24 @@ def _clean_fields(fields: dict, variant: bool) -> dict:
     out = {}
     if "lat" in fields or "lon" in fields:
         if variant:
-            raise ValueError("Eine Variante hat die Position ihres Standorts")
+            raise ValueError(_("Eine Variante hat die Position ihres Standorts"))
         lat, lon = float(fields["lat"]), float(fields["lon"])
         if not (
             math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180
         ):
-            raise ValueError("Ungültige Position")
+            raise ValueError(_("Ungültige Position"))
         out["lat"], out["lon"] = round(lat, 7), round(lon, 7)
     if "height_m" in fields:
         lo, hi = (float(v) for v in fields["height_m"])
         if not (0 <= lo <= hi <= 300):
-            raise ValueError("Antennenhöhe: 0 ≤ min ≤ max ≤ 300 m")
+            raise ValueError(_("Antennenhöhe: 0 ≤ min ≤ max ≤ 300 m"))
         out["height_m"] = [lo, hi]
     if "clutter_m" in fields:
         if variant:
-            raise ValueError("Eine Variante hat die Umgebung ihres Standorts")
+            raise ValueError(_("Eine Variante hat die Umgebung ihres Standorts"))
         clutter = float(fields["clutter_m"])
         if not 0 <= clutter <= 150:
-            raise ValueError("Umgebung (Clutter): 0 bis 150 m")
+            raise ValueError(_("Umgebung (Clutter): 0 bis 150 m"))
         out["clutter_m"] = round(clutter, 1)
     if "description" in fields:
         out["description"] = str(fields["description"]).strip()[:200]
@@ -102,7 +106,7 @@ def add_site(
 def update_site(path: Path, name: str, fields: dict) -> dict:
     cfg = load_raw(path)
     if name not in cfg["sites"]:
-        raise KeyError(f"Standort {name!r} gibt es nicht")
+        raise KeyError(_("Standort „{name}“ gibt es nicht", name=name))
     site = cfg["sites"][name]
     site.update(_clean_fields(fields, variant=bool(site.get("same_as"))))
     save_raw(path, cfg)
@@ -112,7 +116,7 @@ def update_site(path: Path, name: str, fields: dict) -> dict:
 def rename_site(path: Path, old: str, new: str) -> dict:
     cfg = load_raw(path)
     if old not in cfg["sites"]:
-        raise KeyError(f"Standort {old!r} gibt es nicht")
+        raise KeyError(_("Standort „{name}“ gibt es nicht", name=old))
     new = _check_name(cfg, new)
     # keep the order of the sites (the first one is the default home)
     cfg["sites"] = {(new if k == old else k): v for k, v in cfg["sites"].items()}
@@ -134,10 +138,10 @@ def rename_site(path: Path, old: str, new: str) -> dict:
 def delete_site(path: Path, name: str) -> dict:
     cfg = load_raw(path)
     if name not in cfg["sites"]:
-        raise KeyError(f"Standort {name!r} gibt es nicht")
+        raise KeyError(_("Standort „{name}“ gibt es nicht", name=name))
     refs = references(cfg, name)
     if refs:
-        raise ValueError(f"{name} wird noch verwendet: {', '.join(refs)}")
+        raise ValueError(_("{name} wird noch verwendet: {refs}", name=name, refs=", ".join(refs)))
     del cfg["sites"][name]
     save_raw(path, cfg)
     return cfg

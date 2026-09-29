@@ -2,25 +2,28 @@
 
 import numpy as np
 
+from meshplay.mapapp.i18n import N_, _
 from meshplay.mapapp.registry import Context, Layer, Setting, collection
 from meshplay.mapapp.style import png_data_url
 
 
 class SceneLayer(Layer):
     id = "scene"
-    name = "Laserscan-Szene"
-    group = "Simulation"
-    description = "Umriss der Szene (data/sim/scene) und Flächen ohne Messpunkte (interpoliert)."
+    name = N_("Laserscan-Szene")
+    group = N_("Simulation")
+    description = N_(
+        "Umriss der Szene (data/sim/scene) und Flächen ohne Messpunkte (interpoliert)."
+    )
 
     def settings(self, ctx: Context) -> list[Setting]:
-        return [Setting("unmeasured", "Flächen ohne Messpunkte zeigen", "bool", True)]
+        return [Setting("unmeasured", _("Flächen ohne Messpunkte zeigen"), "bool", True)]
 
     def data(self, ctx: Context, values: dict) -> dict:
         from meshplay.sim.sites import to_lonlat
 
         if not ctx.has_scene:
             return collection(
-                [], note="Keine Laserscan-Szene (README, Abschnitt „3D laser-scan data“)."
+                [], note=_("Keine Laserscan-Szene (README, Abschnitt „3D laser-scan data“).")
             )
         s = ctx.scene
         b = s.bbox
@@ -32,10 +35,10 @@ class SceneLayer(Layer):
             "type": "Feature",
             "geometry": {"type": "Polygon", "coordinates": [ring]},
             "properties": {
-                "_title": "Laserscan-Szene",
+                "_title": _("Laserscan-Szene"),
                 "_fields": {
-                    "Größe": f"{(b[2] - b[0]) / 1000:.1f} × {(b[3] - b[1]) / 1000:.1f} km",
-                    "gemessen": f"{s.measured.mean():.0%}",
+                    _("Größe"): f"{(b[2] - b[0]) / 1000:.1f} × {(b[3] - b[1]) / 1000:.1f} km",
+                    _("gemessen"): f"{s.measured.mean():.0%}",
                 },
                 "_style": {"color": "#00707f", "weight": 2, "fillOpacity": 0, "dash": "4 4"},
             },

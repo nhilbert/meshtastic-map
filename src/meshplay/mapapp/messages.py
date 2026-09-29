@@ -14,6 +14,8 @@ import time
 from collections import deque
 from pathlib import Path
 
+from meshplay.mapapp.i18n import _
+
 # A Meshtastic data payload holds about 233 bytes; stay below that for the packet overhead.
 MAX_TEXT_BYTES = 200
 KEEP_MESSAGES = 1000
@@ -93,10 +95,12 @@ def check_text(text: str) -> str:
     """The text as it will be sent, or ValueError with a message for the page."""
     text = (text or "").strip()
     if not text:
-        raise ValueError("Leere Nachricht")
+        raise ValueError(_("Leere Nachricht"))
     size = len(text.encode("utf-8"))
     if size > MAX_TEXT_BYTES:
-        raise ValueError(f"Nachricht zu lang: {size} Bytes, höchstens {MAX_TEXT_BYTES}")
+        raise ValueError(
+            _("Nachricht zu lang: {n} Bytes, höchstens {max}", n=size, max=MAX_TEXT_BYTES)
+        )
     return text
 
 

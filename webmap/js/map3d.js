@@ -1,5 +1,6 @@
 // 3D view: laser-scan scene with three.js (from the Mesh Bonn viewer), layer features draped on
 // the terrain, raster overlays, the current link with line of sight and Fresnel zone.
+import { t } from "./i18n.js";
 import { badgeCanvas } from "./icons.js";
 import { $, css, fmt, toUTM, toLonLat } from "./util.js";
 
@@ -54,15 +55,16 @@ function triangulate(xy) {
   return tri;
 }
 
+// label() so the text is looked up after the catalogue has loaded
 export const LAYERS_3D = [
-  { id: "bldg", label: "Gebäude (Laserscan)", on: true, sw: "--bldg" },
-  { id: "veg", label: "Bewuchs", on: true, sw: "--veg" },
-  { id: "roofs", label: "Dachkanten", on: true, sw: "--ink3" },
-  { id: "terrain", label: "Gelände (DGM)", on: true, sw: "--terr" },
-  { id: "grid", label: "200-m-Raster", on: false, sw: "--ink3" },
-  { id: "fresnel", label: "1. Fresnelzone", on: true, sw: "--accent" },
-  { id: "edges", label: "Beugungskanten", on: true, sw: "--warn" },
-  { id: "data", label: "Datenebenen", on: true, sw: "--accent" },
+  { id: "bldg", label: () => t("Gebäude (Laserscan)"), on: true, sw: "--bldg" },
+  { id: "veg", label: () => t("Bewuchs"), on: true, sw: "--veg" },
+  { id: "roofs", label: () => t("Dachkanten"), on: true, sw: "--ink3" },
+  { id: "terrain", label: () => t("Gelände (DGM)"), on: true, sw: "--terr" },
+  { id: "grid", label: () => t("200-m-Raster"), on: false, sw: "--ink3" },
+  { id: "fresnel", label: () => t("1. Fresnelzone"), on: true, sw: "--accent" },
+  { id: "edges", label: () => t("Beugungskanten"), on: true, sw: "--warn" },
+  { id: "data", label: () => t("Datenebenen"), on: true, sw: "--accent" },
 ];
 
 export class Map3D {
@@ -435,16 +437,17 @@ export class Map3D {
   hover(e) {
     const hit = this.raycast(e), out = $("#readout");
     if (!hit) { out.textContent = "—"; return; }
-    if (hit.object.userData.feature) { out.textContent = hit.object.userData.feature.properties._title || "Objekt"; return; }
+    if (hit.object.userData.feature) { out.textContent = hit.object.userData.feature.properties._title || t("Objekt"); return; }
     const [E, N, Z] = this.hitUTM(hit), gz = this.terrAt(E, N);
     let extra = "";
     for (const key of ["bldg", "veg"]) {
       if (hit.object === this.body[key]) {
         const fb = this.faceBody[key], b = fb.list[fb.owner[hit.faceIndex]];
-        if (b) extra = `\n${key === "bldg" ? "Gebäude" : "Bewuchs"}  ${fmt(b.top - b.base, 1)} m ü. Grund`;
+        if (b) extra = "\n" + (key === "bldg" ? t("Gebäude {h} m ü. Grund", { h: fmt(b.top - b.base, 1) }) : t("Bewuchs {h} m ü. Grund", { h: fmt(b.top - b.base, 1) }));
       }
     }
-    out.textContent = `E ${E.toFixed(0)}  N ${N.toFixed(0)}  (EPSG:25832)\nGelände ${gz.toFixed(1)} m NHN   Treffer ${Z.toFixed(1)} m NHN${extra}`;
+    out.textContent = `E ${E.toFixed(0)}  N ${N.toFixed(0)}  (EPSG:25832)` + "\n"
+      + t("Gelände {ground} m NHN   Treffer {hit} m NHN", { ground: gz.toFixed(1), hit: Z.toFixed(1) }) + extra;
   }
   updateCam() {
     const o = this.orbit, c = this.cam;

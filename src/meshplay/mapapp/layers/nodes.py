@@ -3,6 +3,7 @@
 import json
 import time
 
+from meshplay.mapapp.i18n import N_, _
 from meshplay.mapapp.registry import Context, Layer, Setting, collection, feature
 from meshplay.mapapp.style import GREY, ramp_color, snr_color, snr_legend
 
@@ -28,9 +29,9 @@ def symbol_for(user: dict) -> str:
 
 class NodesLayer(Layer):
     id = "nodes"
-    name = "Meshtastic-Knoten"
-    group = "Meshtastic"
-    description = (
+    name = N_("Meshtastic-Knoten")
+    group = N_("Meshtastic")
+    description = N_(
         "Knoten mit Position: live aus der Knotenliste des verbundenen Geräts oder aus "
         "data/exports/nodes-*.json (python scripts/export_nodes.py)."
     )
@@ -40,35 +41,36 @@ class NodesLayer(Layer):
         return sorted((ctx.data_dir / "exports").glob("nodes-*.json"), reverse=True)
 
     def settings(self, ctx: Context) -> list[Setting]:
-        sources = [[LIVE, "Live vom Gerät"]] + [
-            [p.name, f"Export {p.stem.removeprefix('nodes-')}"] for p in self.exports(ctx)
+        sources = [[LIVE, _("Live vom Gerät")]] + [
+            [p.name, _("Export {date}", date=p.stem.removeprefix("nodes-"))]
+            for p in self.exports(ctx)
         ]
         connected = ctx.device is not None and ctx.device.state == "verbunden"
         default = LIVE if connected or len(sources) == 1 else sources[1][0]
         return [
-            Setting("source", "Quelle", "select", default, options=sources),
-            Setting("refresh_s", "Live: aktualisieren alle … s", "number", 15, min=5),
+            Setting("source", _("Quelle"), "select", default, options=sources),
+            Setting("refresh_s", _("Live: aktualisieren alle … s"), "number", 15, min=5),
             Setting(
                 "color",
-                "Farbe nach",
+                _("Farbe nach"),
                 "select",
                 "hops",
-                options=[["hops", "Hops entfernt"], ["snr", "SNR (nur 0 Hops)"]],
+                options=[["hops", _("Hops entfernt")], ["snr", _("SNR (nur 0 Hops)")]],
             ),
-            Setting("max_age_h", "Nur gehört in den letzten … h (0 = alle)", "number", 0, min=0),
+            Setting("max_age_h", _("Nur gehört in den letzten … h (0 = alle)"), "number", 0, min=0),
             Setting(
                 "markers",
-                "Darstellung",
+                _("Darstellung"),
                 "select",
                 "badge",
-                options=[["badge", "Symbol + Kurzname"], ["dot", "nur Punkt"]],
+                options=[["badge", _("Symbol + Kurzname")], ["dot", _("nur Punkt")]],
             ),
         ]
 
     def load(self, ctx: Context, source: str) -> tuple[dict, int | None, dict]:
         if source == LIVE:
             if ctx.device is None:
-                raise ValueError("kein Gerät: mapapp mit --device starten oder oben verbinden")
+                raise ValueError(_("kein Gerät: mapapp mit --device starten oder oben verbinden"))
             nodes, me = ctx.device.nodes()
             return nodes, me, {"refresh_s": None}
         path = ctx.data_dir / "exports" / source
@@ -115,7 +117,7 @@ class NodesLayer(Layer):
             if last:
                 mins = (now - last) / 60
                 age = (
-                    f"vor {mins:.0f} min"
+                    _("vor {n} min", n=f"{mins:.0f}")
                     if mins < 120
                     else time.strftime("%d.%m. %H:%M", time.localtime(last))
                 )
@@ -124,7 +126,7 @@ class NodesLayer(Layer):
                     pos["longitude"],
                     pos["latitude"],
                     _title=f"{user.get('longName', '?')} ({user.get('id', '')})"
-                    + (" · eigenes Gerät" if own else ""),
+                    + (" · " + _("eigenes Gerät") if own else ""),
                     _icon={
                         "text": user.get("shortName") or user.get("id", "????")[-4:],
                         "symbol": symbol_for(user),
@@ -136,15 +138,15 @@ class NodesLayer(Layer):
                     if values["markers"] == "badge"
                     else None,
                     _fields={
-                        "Hardware": user.get("hwModel", ""),
-                        "Rolle": user.get("role", "CLIENT"),
-                        "Hops": "–" if hops is None else hops,
+                        _("Hardware"): user.get("hwModel", ""),
+                        _("Rolle"): user.get("role", "CLIENT"),
+                        _("Hops"): "–" if hops is None else hops,
                         "SNR": "–" if node.get("snr") is None else f"{node['snr']:.1f} dB",
-                        "Zuletzt gehört": age,
-                        "Akku": f"{metrics['batteryLevel']} %"
+                        _("Zuletzt gehört"): age,
+                        _("Akku"): f"{metrics['batteryLevel']} %"
                         if "batteryLevel" in metrics
                         else "–",
-                        "Positionsgenauigkeit": f"{pos.get('precisionBits', 32)} Bit",
+                        _("Positionsgenauigkeit"): _("{n} Bit", n=pos.get("precisionBits", 32)),
                     },
                     _style={
                         "color": "#222",
@@ -155,7 +157,7 @@ class NodesLayer(Layer):
                     _z=3.0,
                     _node_id=user.get("id"),
                     _endpoint={
-                        "name": user.get("shortName", "Knoten"),
+                        "name": user.get("shortName", _("Knoten")),
                         "height_m": [1.5, 3.0],
                         "clutter_m": 12.0,
                         "device": "p1pro",
@@ -163,18 +165,18 @@ class NodesLayer(Layer):
                 )
             )
         if values["color"] == "snr":
-            legend = snr_legend("SNR beim eigenen Knoten")
+            legend = snr_legend(N_("SNR beim eigenen Knoten"))
         else:
             legend = {
-                "title": "Hops entfernt",
+                "title": _("Hops entfernt"),
                 "items": [
                     [ramp_color(h, 0, 4, HOPS_RAMP), str(h) if h < 4 else "4+"] for h in range(5)
                 ]
-                + [[GREY, "unbekannt"]],
+                + [[GREY, _("unbekannt")]],
             }
         if me is not None:
-            legend["items"].append([OWN, "eigenes Gerät"])
-        note = f"{len(features)} Knoten mit Position, {without_pos} ohne"
+            legend["items"].append([OWN, _("eigenes Gerät")])
+        note = _("{n} Knoten mit Position, {m} ohne", n=len(features), m=without_pos)
         return collection(features, legend, note=note, nodes=rows, **extra)
 
 

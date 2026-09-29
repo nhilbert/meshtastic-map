@@ -8,6 +8,7 @@ from datetime import date
 import numpy as np
 
 from meshplay.config import DEFAULT_PRESET
+from meshplay.mapapp.i18n import N_, _
 from meshplay.mapapp.registry import Context, Layer, Setting, collection, feature, line
 from meshplay.mapapp.style import (
     GREY,
@@ -35,11 +36,11 @@ def observed_signal(rssi: float, snr: float | None) -> float:
 
 
 PRESETS = ["LongFast", "MediumSlow", "MediumFast", "ShortSlow", "ShortFast", "LongSlow"]
-INDOOR = [
-    ["open", "Fenster offen"],
-    ["none", "Antenne außen"],
-    ["trad", "Fenster zu, Altbau"],
-    ["lowe", "Fenster zu, Wärmeschutzglas"],
+INDOOR = [  # German source texts, translated in settings()
+    ["open", N_("Fenster offen")],
+    ["none", N_("Antenne außen")],
+    ["trad", N_("Fenster zu, Altbau")],
+    ["lowe", N_("Fenster zu, Wärmeschutzglas")],
 ]
 TRACK_COLORS = {"direct": "#1a9850", "relayed": GREY, "none": RED}
 
@@ -65,9 +66,9 @@ def probe_targets(path) -> Counter:
 
 class WalkLayer(Layer):
     id = "walk"
-    name = "Rundgang (Messung)"
-    group = "Abdeckung"
-    description = (
+    name = N_("Rundgang (Messung)")
+    group = N_("Abdeckung")
+    description = N_(
         "Positionspakete eines Trackers, die der Heimknoten empfangen hat (data/packets/), "
         "oder Traceroutes vom Heimknoten zum Tracker (data/probes/, braucht GPX-Spur); "
         "optional mit GPX-Spur (data/tracks/) und Vergleich mit den Modellen."
@@ -80,16 +81,16 @@ class WalkLayer(Layer):
         dates = [[d, d] for d in sorted(packet_logs.keys() | probe_logs.keys(), reverse=True)]
         # Option values carry the source: "!id" for positions, "probe:!id" for traceroutes.
         trackers = {}
-        for d, _ in dates:
+        for d, _label in dates:
             options = []
             if d in probe_logs:
                 options += [
-                    [f"probe:!{n:08x}", f"!{n:08x} ({c} Traceroutes)"]
+                    [f"probe:!{n:08x}", _("!{id} ({n} Traceroutes)", id=f"{n:08x}", n=c)]
                     for n, c in probe_targets(probe_logs[d]).most_common()
                 ]
             if d in packet_logs:
                 options += [
-                    [f"!{n:08x}", f"!{n:08x} ({c} Positionen)"]
+                    [f"!{n:08x}", _("!{id} ({n} Positionen)", id=f"{n:08x}", n=c)]
                     for n, c in position_senders(packet_logs[d]).most_common()
                     if n
                 ]
@@ -105,26 +106,37 @@ class WalkLayer(Layer):
 
             home = nearest_site(ctx.sites, *ctx.settings.home)
         return [
-            Setting("date", "Datum", "select", dates[0][0] if dates else "", options=dates),
-            Setting("tracker", "Tracker", "select", first, depends_on="date", options_map=trackers),
-            Setting("gpx", "GPX-Spur", "select", "", options=gpx),
+            Setting("date", _("Datum"), "select", dates[0][0] if dates else "", options=dates),
+            Setting(
+                "tracker", _("Tracker"), "select", first, depends_on="date", options_map=trackers
+            ),
+            Setting("gpx", _("GPX-Spur"), "select", "", options=gpx),
             Setting(
                 "color",
-                "Punkte färben nach",
+                _("Punkte färben nach"),
                 "select",
                 "snr",
-                options=[["snr", "SNR"], ["residual", "Messung − Modell (ENS)"]],
+                options=[["snr", "SNR"], ["residual", _("Messung − Modell (ENS)")]],
             ),
-            Setting("home_site", "Heimknoten (für Vergleich)", "select", home, options=sites),
-            Setting("home_indoor", "Heimknoten steht", "select", "open", options=INDOOR),
+            Setting("home_site", _("Heimknoten (für Vergleich)"), "select", home, options=sites),
+            Setting(
+                "home_indoor",
+                _("Heimknoten steht"),
+                "select",
+                "open",
+                options=[[v, _(label)] for v, label in INDOOR],
+            ),
             # Named walk_preset (was preset) so values saved in the browser don't override "auto".
             Setting(
                 "walk_preset",
-                "Preset beim Rundgang",
+                _("Preset beim Rundgang"),
                 "select",
                 "auto",
-                options=[["auto", "aus Log"]] + [[p, p] for p in PRESETS],
-                help=f"Traceroute-Logs enthalten das Preset, Paketlogs nicht ({DEFAULT_PRESET}).",
+                options=[["auto", _("aus Log")]] + [[p, p] for p in PRESETS],
+                help=_(
+                    "Traceroute-Logs enthalten das Preset, Paketlogs nicht ({preset}).",
+                    preset=DEFAULT_PRESET,
+                ),
             ),
         ]
 
@@ -134,9 +146,9 @@ class WalkLayer(Layer):
         folder = "probes" if probes else "packets"
         log = ctx.data_dir / folder / f"{values['date']}.jsonl"
         if not values["date"] or not tracker or not log.exists():
-            return collection([], note="Kein Log / Tracker gewählt")
+            return collection([], note=_("Kein Log / Tracker gewählt"))
         if probes and not values["gpx"]:
-            return collection([], note="Traceroutes brauchen eine GPX-Spur")
+            return collection([], note=_("Traceroutes brauchen eine GPX-Spur"))
 
         track = load_gpx(ctx.data_dir / "tracks" / values["gpx"]) if values["gpx"] else []
         node = parse_node(tracker.removeprefix("probe:"))
@@ -155,11 +167,11 @@ class WalkLayer(Layer):
             window_s = interval * 0.75
             logged_preset = None
         if values["walk_preset"] != "auto":
-            preset, preset_from = values["walk_preset"], "gewählt"
+            preset, preset_from = values["walk_preset"], _("gewählt")
         elif logged_preset in PRESETS:
-            preset, preset_from = logged_preset, "aus Log"
+            preset, preset_from = logged_preset, _("aus Log")
         else:
-            preset, preset_from = DEFAULT_PRESET, "nicht im Log, angenommen"
+            preset, preset_from = DEFAULT_PRESET, _("nicht im Log, angenommen")
         direct = [p for p in points if p["hops"] == 0 and p["rssi"] is not None]
         features, extra = [], {}
 
@@ -173,9 +185,9 @@ class WalkLayer(Layer):
                         line(
                             [(p["lon"], p["lat"]) for p in run],
                             _title={
-                                "direct": "direkt gehört",
-                                "relayed": "über Relais",
-                                "none": "kein Empfang",
+                                "direct": _("direkt gehört"),
+                                "relayed": _("über Relais"),
+                                "none": _("kein Empfang"),
                             }[prev["status"]],
                             _style={
                                 "color": TRACK_COLORS[prev["status"]],
@@ -191,10 +203,12 @@ class WalkLayer(Layer):
         residual = values["color"] == "residual"
         if residual and not ctx.has_scene:
             residual = False
-            extra["note"] = "Vergleich mit Modellen braucht eine Laserscan-Szene: gefärbt nach SNR."
+            extra["note"] = _(
+                "Vergleich mit Modellen braucht eine Laserscan-Szene: gefärbt nach SNR."
+            )
         elif residual and values["home_site"] not in ctx.sites:
             residual = False
-            extra["note"] = (
+            extra["note"] = _(
                 "Vergleich mit Modellen braucht einen Heimknoten-Standort: gefärbt nach SNR."
             )
         scores = {}
@@ -206,32 +220,35 @@ class WalkLayer(Layer):
         for p in points:
             key = p["time"].isoformat()
             obs = observed_signal(p["rssi"], p["snr"]) if p["rssi"] is not None else None
+            clock = p["time"].astimezone().strftime("%H:%M:%S")
             fields = {
-                "Zeit": p["time"].astimezone().strftime("%H:%M:%S"),
+                _("Zeit"): clock,
                 "RSSI": f"{p['rssi']} dBm" if p["rssi"] is not None else "–",
                 "SNR": f"{p['snr']} dB" if p["snr"] is not None else "–",
-                "Signal (RSSI−Rauschanteil)": f"{obs:.1f} dBm" if obs is not None else "–",
-                "Hops": p["hops"],
+                _("Signal (RSSI−Rauschanteil)"): f"{obs:.1f} dBm" if obs is not None else "–",
+                _("Hops"): p["hops"],
             }
             if probes:
-                fields["SNR"] = f"{p['snr']} dB (Tracker → Heim)"
-                fields["SNR Heim → Tracker"] = f"{p['snrTowards']} dB"
+                fields["SNR"] = _("{snr} dB (Tracker → Heim)", snr=p["snr"])
+                fields[_("SNR Heim → Tracker")] = f"{p['snrTowards']} dB"
             color = snr_color(p["snr"]) if p["hops"] == 0 else GREY
             if key in scores:
                 s = scores[key]
-                fields["Modell ENS"] = f"{s['pred']:.1f} dBm"
-                fields["Messung − Modell"] = f"{s['resid']:+.1f} dB"
+                fields[_("Modell ENS")] = f"{s['pred']:.1f} dBm"
+                fields[_("Messung − Modell")] = f"{s['resid']:+.1f} dB"
                 color = ramp_color(s["resid"], -15, 15, RESIDUAL_RAMP)
             features.append(
                 feature(
                     p["lon"],
                     p["lat"],
-                    _title=f"{'Traceroute' if probes else 'Paket'} {fields['Zeit']}",
+                    _title=_("Traceroute {time}", time=clock)
+                    if probes
+                    else _("Paket {time}", time=clock),
                     _fields=fields,
                     _style={"color": "#333", "fillColor": color, "radius": 6, "weight": 1},
                     _z=1.5,
                     _endpoint={
-                        "name": f"Rundgang {fields['Zeit']}",
+                        "name": _("Rundgang {time}", time=clock),
                         "height_m": [1.0, 1.6],
                         "clutter_m": 12.0,
                         "device": "t1000e",
@@ -240,7 +257,7 @@ class WalkLayer(Layer):
                             "snr": p["snr"],
                             "signal": obs,
                             "hops": p["hops"],
-                            "time": fields["Zeit"],
+                            "time": clock,
                         },
                     },
                 )
@@ -251,15 +268,15 @@ class WalkLayer(Layer):
                 feature(
                     p["lon"],
                     p["lat"],
-                    _title=f"Traceroute {t}: keine Antwort",
-                    _fields={"Zeit": t, "Ergebnis": p["result"]},
+                    _title=_("Traceroute {time}: keine Antwort", time=t),
+                    _fields={_("Zeit"): t, _("Ergebnis"): p["result"]},
                     _style={"color": RED, "fillColor": "#fff", "radius": 5, "weight": 3},
                     _z=1.5,
                 )
             )
         if residual:
             legend = {
-                "title": "Messung − Modell (ENS)",
+                "title": _("Messung − Modell (ENS)"),
                 "ramp": RESIDUAL_RAMP,
                 "min": -15,
                 "max": 15,
@@ -267,14 +284,24 @@ class WalkLayer(Layer):
             }
         else:
             legend = snr_legend()
-        what = "Traceroutes beantwortet" if probes else "Positionen"
+        if probes:
+            text = _(
+                "{n} Traceroutes beantwortet, {d} direkt, {m} ohne Antwort",
+                n=len(points),
+                d=len(direct),
+                m=len(missed),
+            )
+            basis = _("Intervall {s} s (aus Log)", s=f"{interval:.0f}")
+        else:
+            text = _("{n} Positionen, {d} direkt", n=len(points), d=len(direct))
+            basis = _("Intervall {s} s (aus Zeitstempeln)", s=f"{interval:.0f}")
         extra["stats"] = {
             "positions": len(points),
             "direct": len(direct),
-            "text": f"{len(points)} {what}, {len(direct)} direkt"
-            + (f", {len(missed)} ohne Antwort" if probes else ""),
-            "basis": f"Intervall {interval:.0f} s (aus {'Log' if probes else 'Zeitstempeln'}), "
-            f"Preset {preset} ({preset_from})",
+            "text": text,
+            "basis": basis
+            + ", "
+            + _("Preset {preset} ({source})", preset=preset, source=preset_from),
         }
         # Today's log grows while the map app is connected and logging: refresh live.
         dev = ctx.device

@@ -12,11 +12,12 @@ The map app needs the simulation extras (`pip install -e ".[sim]"`). The 3D view
 calculator and the coverage simulation also need a laser-scan scene (`scripts/sim_build_scene.py`,
 see [simulation.md](simulation.md)); without one they stay empty and the rest works. The first
 start after a new scene exports the 3D data (about a minute, `data/mapapp/scene/`). The page is
-in German.
+in German, English and French (see [Languages](#languages)).
 
 ## Using it
 
 - **Header**: 2D / 3D view, **Nachrichten** (messaging pane, shows unread messages),
+  **DE | EN | FR** (language),
   **Aufgaben** (background tasks, shows how many run), **Details** (the right panel; greyed out
   while there is nothing to show), light/dark.
 - **Left column**: *Ebenen* (layers), *Aufgaben*, *3D-Darstellung* (only in 3D), *Gerät (USB)*.
@@ -145,6 +146,7 @@ src/meshplay/mapapp/
   jobs.py          background tasks: manager, task kinds (traceroute walk, coverage simulation)
   sites_store.py   editing data/sim/sites.json
   messages.py      message store for the messaging pane (data/messages.jsonl, traffic list)
+  i18n.py          translations: _(), N_(), L(), language per request
   registry.py      Layer base class, Setting, Context (paths, scene, sites), GeoJSON helpers
   style.py         colour scales, PNG encoding
   layers/          one module per data layer, registered in layers/__init__.py
@@ -157,6 +159,8 @@ webmap/
   js/sites.js      sites editor
   js/messages.js   messaging pane
   js/nodelist.js   node list (inspector tab Knoten)
+  js/i18n.js       language choice, t(), static HTML translation
+  i18n/            translation catalogues (en.json, fr.json)
   js/map2d.js      Leaflet view
   js/map3d.js      three.js view (terrain, bodies, draped layers, link, picking)
   js/panels.js     result panel
@@ -201,6 +205,35 @@ the result on both views. Feature conventions (`_style`, `_title`, `_fields`, `_
 with a symbol (router, tracker, client, sensor, home) and a short text instead of a circle, in
 2D as a marker and in 3D as a label at fixed screen size; nodes use it with the short name,
 coloured by hops or SNR, faded when not heard for 2 h, your own node with a turquoise ring.
+
+## Languages
+
+**DE | EN | FR** in the header switches the language; the page reloads and the choice is kept per
+browser (first visit: the browser's language, else English). The server answers in the page's
+language too (layer names, form labels, notes, popups, error messages), taken from the `X-Lang`
+header of each request.
+
+German is the source language: texts are written in German in the code, and the catalogues
+[webmap/i18n/en.json](../webmap/i18n/en.json) and [fr.json](../webmap/i18n/fr.json) map each
+German text to its translation. A text without an entry shows in German.
+
+- **Page:** `t("Text mit {n}", { n })` from `js/i18n.js`; static HTML with `data-i18n` (the
+  element's text), `data-i18n-title`, `data-i18n-placeholder`, `data-i18n-aria-label`.
+- **Server:** `_("Text")` from `meshplay.mapapp.i18n` translates in the request's language;
+  `N_("Text")` only marks a constant (class attributes, lookup tables) that is translated with
+  `_()` where it is shown; `L("Text {x}", x=…)` keeps source text and parameters and translates
+  when shown — for stored texts such as task titles and progress, so they follow a language
+  switch. Background tasks log in the language of whoever started them.
+- **Codes stay German:** task states (`läuft`, `fertig`, …), device states and delivery states
+  are values the code compares; the page translates them for display. They are listed as
+  `t("…")` in a comment next to the code that shows them, so the catalogue test sees them.
+- **Placeholders** `{name}` must appear unchanged in every translation; order may differ.
+
+`tests/test_i18n.py` collects every marked text (Python via the syntax tree, JavaScript,
+HTML) and fails if a language misses one, has an empty or stale entry, or placeholders differ.
+`python tests/test_i18n.py` lists what is missing. To add a language: copy `en.json` to
+`<lang>.json`, translate, add the code to `LANGS` in `js/i18n.js` and `meshplay/mapapp/i18n.py`
+and to the test.
 
 ## Adding a task kind
 

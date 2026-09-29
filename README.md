@@ -219,7 +219,8 @@ an export, also as a list), walks, simulated coverage and the scene extent. A me
 under the map sends and shows texts on your channels and to single nodes, and lists the packet
 traffic. Long jobs — a traceroute walk, a coverage simulation — run as background tasks, started
 and followed in the browser. The
-interface is in German. Tour, all features, and how to add layers or tasks:
+interface is in English, German and French (switch DE|EN|FR in the header). Tour, all features,
+and how to add layers, tasks or translations:
 [docs/mapapp.md](docs/mapapp.md).
 
 ## 3D laser-scan data
