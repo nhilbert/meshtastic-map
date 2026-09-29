@@ -95,6 +95,15 @@ export class Map2D {
     this.temp = L.circleMarker([lat, lon], { radius: 9, color: "#00707f", weight: 3, fillColor: "#2cc4d6",
       fillOpacity: 0.6, dashArray: "3 3", bubblingMouseEvents: false }).addTo(this.map);
   }
+  // The points of a polygon being drawn (multi pick), null removes them.
+  setTempPath(points) {
+    if (this.tempPath) { this.map.removeLayer(this.tempPath); this.tempPath = null; }
+    if (!points || !points.length) return;
+    this.tempPath = L.layerGroup().addTo(this.map);
+    L.polygon(points, { color: "#00707f", weight: 2, dashArray: "4 4", fillOpacity: 0.15 }).addTo(this.tempPath);
+    for (const [lat, lon] of points)
+      L.circleMarker([lat, lon], { radius: 5, color: "#00707f", fillColor: "#2cc4d6", fillOpacity: 1, bubblingMouseEvents: false }).addTo(this.tempPath);
+  }
   colorLink(color) { if (this.line) this.line.setStyle({ color, dashArray: null, weight: 4 }); }
   fit(a, b) { this.map.fitBounds([[a.lat, a.lon], [b.lat, b.lon]], { padding: [40, 40], maxZoom: 17 }); }
 }

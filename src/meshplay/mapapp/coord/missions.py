@@ -16,6 +16,15 @@ import time
 from collections import deque
 
 from meshplay.mapapp.coord import phrases
+from meshplay.mapapp.coord.areas import (
+    Area,
+    AreaSet,
+    AreaState,
+    Place,
+    circle,
+    parse_area,
+    parse_place,
+)
 from meshplay.mapapp.coord.geo import (
     bearing_deg,
     compass,
@@ -79,6 +88,7 @@ class Mission:
         self.route: Route | None = None  # from the last position to the current stop
         self.route_ahead: list[list] = []  # coordinates of the later segments, for the map
         self.off_count = 0  # positions in a row off the route
+        self.area_state = AreaState()  # entered areas and announced places (not persisted)
         self.announced = 0  # legs left when the last turn instruction went out
         self.instr_at_m = 0.0  # travelled distance at the last interval instruction
 
@@ -167,6 +177,20 @@ class Coordinator:
         self.settings = {**DEFAULTS, **saved}
         self.targets: dict[str, dict] = self.store.read("targets", {})
         self.paths: dict[str, list[dict]] = self.store.read("paths", {})  # templates
+        self.areas: list[Area] = []
+        for d in self.store.read("areas", []):
+            try:
+                self.areas.append(parse_area(d, d.get("id")))
+            except (ValueError, KeyError) as e:
+                log.warning("Skipping a stored area: %s", e)
+        self.places: list[Place] = []
+        for d in self.store.read("places", []):
+            try:
+                self.places.append(parse_place(d, d.get("id")))
+            except (ValueError, KeyError) as e:
+                log.warning("Skipping a stored place: %s", e)
+        self._areaset: AreaSet | None = None
+        self._blocked: tuple[tuple, set[int]] | None = None  # (graph key, edge ids)
         self.missions: dict[str, Mission] = {}
         for d in self.store.read("missions", []):
             try:
@@ -213,6 +237,10 @@ class Coordinator:
                 self.edit_target(parts[1], body)
             elif parts[:1] == ["paths"] and len(parts) == 2:
                 self.edit_template(parts[1], body)
+            elif parts[:1] == ["areas"] and len(parts) == 2:
+                self.edit_area(parts[1], body)
+            elif parts[:1] == ["places"] and len(parts) == 2:
+                self.edit_place(parts[1], body)
             elif parts == ["missions"]:
                 m = self.assign(
                     str(body.get("node", "")),
@@ -241,6 +269,8 @@ class Coordinator:
             "missions": [m.to_json() for m in self.missions.values()],
             "targets": self.targets,
             "paths": self.paths,
+            "areas": [a.to_json() for a in self.areas],
+            "places": [p.to_json() for p in self.places],
         }
 
     # ------------------------------------------------------------ road graph
@@ -268,6 +298,73 @@ class Coordinator:
     def graph_changed(self) -> None:
         with self._lock:
             self._graph_key = None
+            self._blocked = None
+
+    # ------------------------------------------------------------ areas and places
+    @property
+    def areaset(self) -> AreaSet:
+        if self._areaset is None:
+            self._areaset = AreaSet(self.areas, self.places)
+        return self._areaset
+
+    def _areas_changed(self) -> None:
+        self._areaset, self._blocked = None, None
+        self.store.write("areas", [a.to_json() for a in self.areas])
+        self.store.write("places", [p.to_json() for p in self.places])
+        for m in self.missions.values():
+            if m.active and m.route is not None:
+                self._route_for(m)  # a new no-go area may lie on the way
+
+    def blocked_edges(self) -> set[int]:
+        """Edges of the current graph inside no-go areas, cached per graph version."""
+        graph = self.graph
+        if graph is None or not any(a.kind == "nogo" for a in self.areas):
+            return set()
+        if self._blocked is None or self._blocked[0] != self._graph_key:
+            self._blocked = (self._graph_key, self.areaset.blocked_edges(graph))
+        return self._blocked[1]
+
+    def edit_area(self, action: str, body: dict) -> None:
+        aid = str(body.get("id") or "")
+        current = next((a for a in self.areas if a.id == aid), None)
+        if action == "add":
+            area = parse_area(body)
+            if any(a.id == area.id for a in self.areas):
+                raise ValueError(_("Ein Gebiet {name} gibt es schon", name=area.name))
+            self.areas.append(area)
+        elif action == "update":
+            if current is None:
+                raise KeyError(_("Gebiet {id} gibt es nicht", id=aid))
+            merged = {**current.to_json(), **{k: v for k, v in body.items() if k != "id"}}
+            self.areas[self.areas.index(current)] = parse_area(merged, current.id)
+        elif action == "delete":
+            if current is None:
+                raise KeyError(_("Gebiet {id} gibt es nicht", id=aid))
+            self.areas.remove(current)
+        else:
+            raise KeyError(_("unbekannte Aktion {action}", action=action))
+        self._areas_changed()
+
+    def edit_place(self, action: str, body: dict) -> None:
+        pid = str(body.get("id") or "")
+        current = next((p for p in self.places if p.id == pid), None)
+        if action == "add":
+            place = parse_place(body)
+            if any(p.id == place.id for p in self.places):
+                raise ValueError(_("Einen Ort {name} gibt es schon", name=place.name))
+            self.places.append(place)
+        elif action == "update":
+            if current is None:
+                raise KeyError(_("Ort {id} gibt es nicht", id=pid))
+            merged = {**current.to_json(), **{k: v for k, v in body.items() if k != "id"}}
+            self.places[self.places.index(current)] = parse_place(merged, current.id)
+        elif action == "delete":
+            if current is None:
+                raise KeyError(_("Ort {id} gibt es nicht", id=pid))
+            self.places.remove(current)
+        else:
+            raise KeyError(_("unbekannte Aktion {action}", action=action))
+        self._areas_changed()
 
     def osm_state(self, graphs: list[str] | None = None) -> dict:
         from meshplay.mapapp.coord.osm import graph_info
@@ -299,6 +396,7 @@ class Coordinator:
                 (m.last["lat"], m.last["lon"]),
                 [w.pos for w in m.path[m.index :]],
                 m.profile,
+                self.blocked_edges(),
             )
         except Exception as e:  # a routing bug must not stop the guidance
             log.exception("Routing failed: %s", e)
@@ -496,6 +594,40 @@ class Coordinator:
                         _fields={_("Ziel"): name, _("Notiz"): t.get("note", "")},
                         _target=name,
                         _z=2.0,
+                    )
+                )
+            for a in self.areas:
+                nogo = a.kind == "nogo"
+                out.append(
+                    _polygon(
+                        [(lon, lat) for lat, lon in a.polygon],
+                        _title=a.name,
+                        _fields={
+                            _("Art"): _("Sperrgebiet") if nogo else _("Hinweisgebiet"),
+                            _("Text"): a.text or "–",
+                            _("Puffer"): f"{a.buffer_m:g} m",
+                        },
+                        _style={
+                            "color": "#b3392f" if nogo else "#2c6fd6",
+                            "fillColor": "#b3392f" if nogo else "#2c6fd6",
+                            "fillOpacity": 0.2,
+                            "weight": 2,
+                            "dash": "6 4" if nogo else None,
+                        },
+                    )
+                )
+            for p in self.places:
+                out.append(
+                    _polygon(
+                        circle(p.lat, p.lon, p.radius_m),
+                        _title=p.name,
+                        _fields={_("Radius"): f"{p.radius_m:g} m", _("Text"): p.text or "–"},
+                        _style={
+                            "color": "#2c6fd6",
+                            "fillColor": "#2c6fd6",
+                            "fillOpacity": 0.1,
+                            "weight": 1,
+                        },
                     )
                 )
             for m in self.missions.values():
@@ -724,6 +856,7 @@ class Coordinator:
             return
         if m.held:
             return
+        self._decide_areas(m, now)
         if m.route is not None:
             self._decide_route(m, now)
         else:
@@ -786,6 +919,61 @@ class Coordinator:
         elif "offcourse" in m.flags and d < m.offcourse_from_m - OFF_STEP_M:
             m.flags.discard("offcourse")
             self._event(m.node, "oncourse", dist=d)
+
+    def _decide_areas(self, m: Mission, now: float) -> None:
+        """No-go areas (inside, or ahead on the route), notice areas and places nearby: each
+        once per entry."""
+        if not self.areas and not self.places:
+            return
+        st = m.area_state
+        lat, lon = m.last["lat"], m.last["lon"]
+        inside = self.areaset.inside(lat, lon)
+        ids = {a.id for a in inside}
+        for a in inside:
+            if a.id in st.inside:
+                continue
+            st.inside.add(a.id)
+            self._event(m.node, "area_entered", area=a.name, area_kind=a.kind)
+            if a.kind == "nogo":
+                self._send(m, "nogo", phrases.phrase(m.lang, "nogo_in", name=a.name), priority=True)
+            elif a.text:
+                self._send(m, "notice", phrases.phrase(m.lang, "notice", name=a.name, text=a.text))
+        for aid in list(st.inside - ids):
+            st.inside.discard(aid)
+            self._event(m.node, "area_left", area=aid)
+        hit = None
+        if m.route is not None and "along_m" in m.metrics:  # the route itself crosses one
+            hit = self.areaset.ahead(m.route, m.metrics["along_m"])
+        pts = list(m.positions)[-2:]
+        if hit is None and len(pts) == 2:  # the node's own heading points into one
+            prev, last = pts
+            if distance_m((prev["lat"], prev["lon"]), (last["lat"], last["lon"])) >= MOVE_MIN_M:
+                brg = bearing_deg((prev["lat"], prev["lon"]), (last["lat"], last["lon"]))
+                hit = self.areaset.ahead_heading(last["lat"], last["lon"], brg)
+        if hit is not None and hit[0].id not in st.announced and hit[0].id not in ids:
+            st.announced.add(hit[0].id)
+            self._event(m.node, "nogo_ahead", area=hit[0].name, dist=round(hit[1]))
+            self._send(
+                m,
+                "nogo",
+                phrases.phrase(m.lang, "nogo_ahead", name=hit[0].name, dist=fmt_dist(hit[1])),
+                priority=True,
+            )
+        near = self.areaset.near_places(lat, lon)
+        for place, d in near:
+            if place.id in st.places:
+                continue
+            st.places.add(place.id)
+            self._event(m.node, "place", place=place.name, dist=round(d))
+            self._send(
+                m,
+                "place",
+                phrases.phrase(m.lang, "place", name=place.name, dist=fmt_dist(d), text=place.text),
+            )
+        for pid in list(st.places):  # re-arm once well outside the radius
+            place = next((p for p in self.places if p.id == pid), None)
+            if place is None or self.areaset.place_distance(place, lat, lon) > 1.5 * place.radius_m:
+                st.places.discard(pid)
 
     def _decide_route(self, m: Mission, now: float) -> None:
         """With a route: off course by cross-track distance (two positions in a row), then a
@@ -1117,6 +1305,17 @@ class Coordinator:
         with self._lock:
             self._dirty = False
             self.store.write("missions", [m.to_json() for m in self.missions.values()])
+
+
+def _polygon(ring: list[tuple[float, float]], **props) -> dict:
+    """GeoJSON polygon from a (lon, lat) ring, closed if it isn't."""
+    if ring and ring[0] != ring[-1]:
+        ring = [*ring, ring[0]]
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [[list(p) for p in ring]]},
+        "properties": props,
+    }
 
 
 def _margin(minutes: int | None) -> str:

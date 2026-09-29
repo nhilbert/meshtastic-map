@@ -280,9 +280,15 @@ class RoadGraph:
         return self._tree
 
     def nearest(
-        self, lat: float, lon: float, max_m: float = SNAP_MAX_M, profile: str | None = None
+        self,
+        lat: float,
+        lon: float,
+        max_m: float = SNAP_MAX_M,
+        profile: str | None = None,
+        blocked: set[int] | None = None,
     ) -> Snap | None:
-        """The closest edge within max_m that the profile may use in at least one direction."""
+        """The closest edge within max_m that the profile may use in at least one direction
+        and that is not blocked (inside a no-go area)."""
         from shapely.geometry import Point
 
         tree = self._index()
@@ -291,6 +297,8 @@ class RoadGraph:
         best = None
         for i in tree.query(p.buffer(max_m)):
             if costs is not None and costs[i] == (None, None):
+                continue
+            if blocked and int(i) in blocked:
                 continue
             d = self._lines[i].distance(p)
             if d <= max_m and (best is None or d < best[1]):
@@ -427,7 +435,8 @@ def route_path(
     out = []
     prev = start
     for wp in waypoints:
-        a, b = graph.nearest(*prev, profile=profile), graph.nearest(*wp, profile=profile)
+        a = graph.nearest(*prev, profile=profile, blocked=blocked)
+        b = graph.nearest(*wp, profile=profile, blocked=blocked)
         out.append(graph.route(a, b, profile, blocked) if a and b else None)
         prev = wp
     return out

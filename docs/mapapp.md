@@ -127,6 +127,17 @@ The tracker must share its position on a channel the server node has, with *prec
 and a short interval (30 s); positions coarser than the setting *Mindestgenauigkeit* are
 ignored.
 
+### Areas and places
+
+**Gebiete** in the section opens the editor. A *Sperrgebiet* (restricted area, drawn by
+clicks on the map and *Fertig*, optionally with a buffer) is avoided by the routing; the node
+is warned once when it is inside (`!SPERR Kaserne verlassen`) and once when one lies ahead,
+either on the route or straight in its direction of travel (`!SPERR Kaserne 80m voraus`). A
+*Hinweisgebiet* (notice area) and a *Ort* (place with a radius) send their text when the node
+comes in (`i Bahnhof 100m: Treffpunkt Ausgang Nord`), once per entry. All of them are drawn on
+the map (restricted red, the others blue) and kept in `data/coord/areas.json` and
+`places.json`.
+
 ### Routing over the road network
 
 Without a road graph the guidance is straight-line: compass direction and distance. With one,

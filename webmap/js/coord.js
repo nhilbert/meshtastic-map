@@ -17,6 +17,9 @@ const C = {
   form: null,          // { node, path: [rows], profile, lang, msg }
   settings: null,      // values being edited, null = closed
   targets: false,      // targets editor open
+  areas: false,        // areas and places editor open
+  editArea: null,      // { isNew, id, name, kind, text, buffer_m, polygon }
+  editPlace: null,     // { isNew, id, name, lat, lon, radius_m, text }
   editTarget: null,    // { isNew, orig, name, lat, lon, note }
   sel: null,           // node of the mission shown in the inspector
 };
@@ -27,6 +30,7 @@ const C = {
 export function initCoord(api) {
   C.api = api;
   C.targets = api.store.get("coord.targets", false);
+  C.areas = api.store.get("coord.areas", false);
   $("#btnCoord").addEventListener("click", () => {
     const sec = $("details[data-sec=coord]"); sec.open = true; sec.scrollIntoView({ behavior: "smooth", block: "start" });
   });
@@ -124,6 +128,7 @@ function render() {
       <button class="btn" data-act="new" ${d.enabled ? "" : `title="${t("Einsätze können auch bei ausgeschaltetem Modus angelegt werden; gesendet wird erst, wenn er an ist.")}"`}>＋ ${t("Einsatz")}</button>
       <button class="btn small" data-act="settings" aria-expanded="${!!C.settings}">⚙ ${t("Einstellungen")}</button>
       <button class="btn small" data-act="targets" aria-expanded="${C.targets}">${t("Ziele")} (${Object.keys(d.targets).length})</button>
+      <button class="btn small" data-act="areas" aria-expanded="${C.areas}">${t("Gebiete")} (${(d.areas || []).length + (d.places || []).length})</button>
       <button class="btn small" data-act="osm" title="${esc(t("Straßen und Wege der Umgebung von OpenStreetMap laden (Overpass-API); danach führt der Server über Straßen statt Luftlinie."))}">${t("Straßennetz laden …")}</button>
     </div>
     <p class="note" style="margin:0 0 6px">${esc(osmLine(d.osm))}</p>
@@ -131,7 +136,8 @@ function render() {
     ${C.form ? formHTML(d) : ""}
     <div class="msg" role="alert">${esc(C.err)}</div>
     <div class="joblist">${d.missions.map(cardHTML).join("") || `<p class="note" style="margin:0">${t("Noch keine Einsätze.")}</p>`}</div>
-    ${C.targets ? targetsHTML(d) : ""}`;
+    ${C.targets ? targetsHTML(d) : ""}
+    ${C.areas ? areasHTML(d) : ""}`;
   $("#coordOn").addEventListener("change", async e => {
     try { await postJSON("api/coord/mode", { on: e.target.checked }); C.api.toast(e.target.checked ? t("Koordinationsmodus an") : t("Koordinationsmodus aus")); }
     catch (err) { C.err = err.message; }
@@ -141,6 +147,7 @@ function render() {
   if (C.settings) bindSettings(box, d);
   if (C.form) bindForm(box, d);
   if (C.targets) bindTargets(box);
+  if (C.areas) box.querySelectorAll("[data-ar]").forEach(b => b.addEventListener("click", () => areaAction(b.dataset.ar, b.dataset.id)));
   if (focus && focus.f) { const el = box.querySelector(`[data-f="${focus.f}"]`); if (el) el.focus(); }
 }
 
@@ -183,6 +190,7 @@ async function action(act, node) {
     if (act === "new") { openForm(null); return; }
     if (act === "settings") { C.settings = C.settings ? null : { ...C.data.settings, channel: String(C.data.settings.channel) }; render(); return; }
     if (act === "targets") { C.targets = !C.targets; C.api.store.set("coord.targets", C.targets); render(); return; }
+    if (act === "areas") { C.areas = !C.areas; C.api.store.set("coord.areas", C.areas); render(); return; }
     if (act === "osm") { openTaskForm("osm"); return; }
     if (act === "focus") { C.api.focusNode(node); return; }
     if (act === "detail") { showDetail(node); return; }
@@ -417,6 +425,113 @@ async function targetAction(act, name) {
         } else await postJSON("api/coord/targets/update", { name: ed.name, note: ed.note, radius_m: ed.radius_m });
       }
       C.editTarget = null; C.api.tempMarker(null);
+    }
+    C.api.refreshLayer("coord");
+  } catch (e) { C.err = e.message; render(); return; }
+  pollSoon();
+}
+
+// ---------------------------------------------------------------- areas and places editor
+function areasHTML(d) {
+  const ea = C.editArea, ep = C.editPlace;
+  const areas = (d.areas || []).map(a => ea && !ea.isNew && ea.id === a.id ? areaFormHTML(ea)
+    : `<div class="site"><div class="txt"><span class="nm">${a.kind === "nogo" ? "⛔ " : "ℹ "}${esc(a.name)}</span>
+      <span class="sub">${esc(a.kind === "nogo" ? t("Sperrgebiet") : t("Hinweisgebiet"))} · ${t("{n} Eckpunkte", { n: a.polygon.length })}${a.text ? " · " + esc(a.text) : ""}</span></div>
+      <button class="btn small" data-ar="edit" data-id="${esc(a.id)}" title="${t("Bearbeiten")}">✎</button>
+      <button class="btn small" data-ar="redraw" data-id="${esc(a.id)}" title="${t("Neu zeichnen: Klicks in die Karte, dann Fertig")}">⌖</button>
+      <button class="btn small" data-ar="del" data-id="${esc(a.id)}" title="${t("Löschen")}">✕</button></div>`).join("");
+  const places = (d.places || []).map(p => ep && !ep.isNew && ep.id === p.id ? placeFormHTML(ep)
+    : `<div class="site"><div class="txt"><span class="nm">📍 ${esc(p.name)}</span>
+      <span class="sub">${p.radius_m} m${p.text ? " · " + esc(p.text) : ""}</span></div>
+      <button class="btn small" data-ar="editp" data-id="${esc(p.id)}" title="${t("Bearbeiten")}">✎</button>
+      <button class="btn small" data-ar="movep" data-id="${esc(p.id)}" title="${t("Verschieben: Klick in die Karte")}">⌖</button>
+      <button class="btn small" data-ar="delp" data-id="${esc(p.id)}" title="${t("Löschen")}">✕</button></div>`).join("");
+  return `<div class="sitemgr"><div class="hd2">${t("Gebiete und Orte")}</div>
+    <p class="note" style="margin:0">${t("Sperrgebiete meidet die Wegführung; der Knoten wird gewarnt, wenn er hinein läuft oder eines voraus liegt. Hinweisgebiete und Orte schicken ihren Text, wenn der Knoten hineinkommt.")}</p>
+    <div class="sitelist">${areas || `<p class="note" style="margin:0">${t("Noch keine Gebiete.")}</p>`}</div>
+    ${ea && ea.isNew ? areaFormHTML(ea) : ""}
+    <div class="sitelist">${places || `<p class="note" style="margin:0">${t("Noch keine Orte.")}</p>`}</div>
+    ${ep && ep.isNew ? placeFormHTML(ep) : ""}
+    ${ea || ep ? "" : `<div class="acts"><button class="btn small" data-ar="add">＋ ${t("Gebiet zeichnen")}</button><button class="btn small" data-ar="addp">＋ ${t("Neuer Ort")}</button></div>`}</div>`;
+}
+function areaFormHTML(ea) {
+  return `<div class="siteform">
+    <label>${t("Name")}<input type="text" data-af="name" value="${esc(ea.name)}" maxlength="24" placeholder="${t("z. B. KASERNE (steht im Funkspruch)")}"></label>
+    <label>${t("Art")}<select data-af="kind"><option value="nogo" ${ea.kind === "nogo" ? "selected" : ""}>${t("Sperrgebiet")}</option><option value="notice" ${ea.kind === "notice" ? "selected" : ""}>${t("Hinweisgebiet")}</option></select></label>
+    <label>${t("Text (bei Hinweisgebieten der Funkspruch)")}<input type="text" data-af="text" value="${esc(ea.text)}" maxlength="120"></label>
+    <div class="row2"><label>${t("Puffer [m]")}<input type="number" data-af="buffer_m" value="${ea.buffer_m ?? 0}" min="0" max="500" step="5"></label>
+      <div class="note pos">${t("{n} Eckpunkte", { n: ea.polygon.length })}</div></div>
+    <div class="row2"><button class="btn small" data-ar="cancel">${t("Abbrechen")}</button><button class="btn small on" data-ar="save">${t("Speichern")}</button></div></div>`;
+}
+function placeFormHTML(ep) {
+  return `<div class="siteform">
+    <label>${t("Name")}<input type="text" data-pf="name" value="${esc(ep.name)}" maxlength="24"></label>
+    <label>${t("Text (der Funkspruch in der Nähe)")}<input type="text" data-pf="text" value="${esc(ep.text)}" maxlength="120"></label>
+    <div class="row2"><label>${t("Radius [m]")}<input type="number" data-pf="radius_m" value="${ep.radius_m ?? 100}" min="10" max="2000" step="10"></label>
+      <div class="note pos">${fmt(ep.lat, 5)}, ${fmt(ep.lon, 5)}</div></div>
+    <div class="row2"><button class="btn small" data-ar="cancelp">${t("Abbrechen")}</button><button class="btn small on" data-ar="savep">${t("Speichern")}</button></div></div>`;
+}
+async function areaAction(act, id) {
+  const d = C.data, box = $("#coordBox");
+  C.err = "";
+  const read = (sel, obj) => box.querySelectorAll(sel).forEach(inp => {
+    const k = inp.dataset.af || inp.dataset.pf;
+    obj[k] = inp.type === "number" ? (inp.value === "" ? null : +inp.value) : inp.value.trim();
+  });
+  try {
+    if (act === "add") {
+      C.api.pickOnMap(t("Eckpunkte des Gebiets"), points => {
+        if (points.length < 3) { C.err = t("Ein Gebiet braucht mindestens drei Eckpunkte"); render(); return; }
+        C.editArea = { isNew: true, name: "", kind: "nogo", text: "", buffer_m: 0, polygon: points }; render();
+        const inp = box.querySelector("[data-af=name]"); if (inp) inp.focus();
+      }, { multi: true });
+      return;
+    }
+    if (act === "edit") { const a = d.areas.find(x => x.id === id); C.editArea = { ...a, isNew: false }; render(); return; }
+    if (act === "cancel") { C.editArea = null; render(); return; }
+    if (act === "redraw") {
+      C.api.pickOnMap(t("Neue Eckpunkte des Gebiets"), async points => {
+        if (points.length < 3) { C.err = t("Ein Gebiet braucht mindestens drei Eckpunkte"); render(); return; }
+        try { await postJSON("api/coord/areas/update", { id, polygon: points }); C.api.refreshLayer("coord"); } catch (e) { C.err = e.message; }
+        pollSoon();
+      }, { multi: true });
+      return;
+    }
+    if (act === "save") {
+      const ea = C.editArea; read("[data-af]", ea);
+      await postJSON(ea.isNew ? "api/coord/areas/add" : "api/coord/areas/update",
+        { id: ea.id, name: ea.name, kind: ea.kind, text: ea.text, buffer_m: ea.buffer_m, polygon: ea.polygon });
+      C.editArea = null;
+    }
+    if (act === "del") {
+      if (!confirm(t("Gebiet {name} löschen?", { name: (d.areas.find(x => x.id === id) || {}).name || id }))) return;
+      await postJSON("api/coord/areas/delete", { id });
+    }
+    if (act === "addp") {
+      C.api.pickOnMap(t("Position des Orts"), (lat, lon) => {
+        C.editPlace = { isNew: true, name: "", text: "", radius_m: 100, lat, lon }; C.api.tempMarker(lat, lon); render();
+        const inp = box.querySelector("[data-pf=name]"); if (inp) inp.focus();
+      });
+      return;
+    }
+    if (act === "editp") { const p = d.places.find(x => x.id === id); C.editPlace = { ...p, isNew: false }; render(); return; }
+    if (act === "cancelp") { C.editPlace = null; C.api.tempMarker(null); render(); return; }
+    if (act === "movep") {
+      C.api.pickOnMap(t("Neue Position des Orts"), async (lat, lon) => {
+        try { await postJSON("api/coord/places/update", { id, lat, lon }); C.api.refreshLayer("coord"); } catch (e) { C.err = e.message; }
+        pollSoon();
+      });
+      return;
+    }
+    if (act === "savep") {
+      const ep = C.editPlace; read("[data-pf]", ep);
+      await postJSON(ep.isNew ? "api/coord/places/add" : "api/coord/places/update",
+        { id: ep.id, name: ep.name, text: ep.text, radius_m: ep.radius_m, lat: ep.lat, lon: ep.lon });
+      C.editPlace = null; C.api.tempMarker(null);
+    }
+    if (act === "delp") {
+      if (!confirm(t("Ort {name} löschen?", { name: (d.places.find(x => x.id === id) || {}).name || id }))) return;
+      await postJSON("api/coord/places/delete", { id });
     }
     C.api.refreshLayer("coord");
   } catch (e) { C.err = e.message; render(); return; }

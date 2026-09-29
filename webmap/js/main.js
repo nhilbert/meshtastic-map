@@ -344,18 +344,34 @@ function focusNode(id) {
 
 // ---------------------------------------------------------------- map pick, toasts
 // A one-off click on the map for another tool (placing a site); it wins over the link layer.
-function pickOnMap(label, cb) {
-  S.mapPick = { label, cb };
+// With multi: clicks collect points until "Fertig" (cb gets the list) or Esc (nothing).
+function pickOnMap(label, cb, { multi = false } = {}) {
+  S.mapPick = { label, cb, multi, points: [] };
   $("#pickBanner").hidden = false;
   $("#pickText").textContent = t("Klick in die Karte: {label}", { label });
+  $("#pickDone").hidden = !multi;
   document.body.classList.add("picking");
 }
 function clearMapPick() {
   S.mapPick = null; $("#pickBanner").hidden = true;
+  E_tempMarker(null); if (map2d) map2d.setTempPath(null);
   document.body.classList.toggle("picking", !!S.pick);
 }
+function finishMapPick() {
+  const pick = S.mapPick; if (!pick) return;
+  clearMapPick();
+  if (pick.multi) pick.cb(pick.points);
+}
 function mapClick(lat, lon) {
-  if (S.mapPick) { const { cb } = S.mapPick; clearMapPick(); cb(lat, lon); return true; }
+  if (S.mapPick) {
+    const pick = S.mapPick;
+    if (pick.multi) {
+      pick.points.push([lat, lon]); map2d.setTempPath(pick.points);
+      $("#pickText").textContent = t("Klick in die Karte: {label} ({n} Punkte)", { label: pick.label, n: pick.points.length });
+      return true;
+    }
+    clearMapPick(); pick.cb(lat, lon); return true;
+  }
   if (S.pick) { setEndpoint(S.pick, endpointAt(lat, lon, S.pick)); return true; }
   return false;
 }
@@ -467,9 +483,10 @@ function bindUI() {
   $("#btn3dLink").addEventListener("click", () => map3d.frameLink());
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    if (S.mapPick) { clearMapPick(); E_tempMarker(null); } else if (S.pick) setPick("");
+    if (S.mapPick) clearMapPick(); else if (S.pick) setPick("");
   });
-  $("#pickCancel").addEventListener("click", () => { clearMapPick(); E_tempMarker(null); });
+  $("#pickCancel").addEventListener("click", clearMapPick);
+  $("#pickDone").addEventListener("click", finishMapPick);
   // rail sections remember whether they are open
   document.querySelectorAll("details[data-sec]").forEach(d => {
     const open = store.get("sec." + d.dataset.sec, null);

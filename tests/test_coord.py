@@ -5,7 +5,6 @@ import time
 
 import pytest
 
-from meshplay.config import Settings
 from meshplay.mapapp.coord import phrases
 from meshplay.mapapp.coord.geo import bearing_deg, compass, fmt_dist, fmt_eta, parse_time
 from meshplay.mapapp.coord.missions import (
@@ -18,9 +17,6 @@ from meshplay.mapapp.coord.missions import (
     Coordinator,
 )
 from meshplay.mapapp.coord.paths import parse_path
-from meshplay.mapapp.device import DeviceLink
-from meshplay.mapapp.registry import Context
-from tests.test_mapapp_messages import FakeIface
 
 NODE = "!abcd1234"
 NUM = 0xABCD1234
@@ -60,6 +56,8 @@ def test_phrases_stay_short_in_both_languages():
         return dict(
             target=name,
             next=name,
+            name=name,
+            text="Treffpunkt Ausgang Nord",
             dist="1.2km",
             dir="NW",
             eta="~12min",
@@ -123,26 +121,6 @@ def test_parse_path_validation():
 
 
 # ---------------------------------------------------------------- coordinator
-@pytest.fixture
-def coord(tmp_path, monkeypatch):
-    from types import SimpleNamespace
-
-    from meshplay.mapapp.coord import missions
-
-    # the tests run in seconds: warnings and arrivals may follow each other at once
-    monkeypatch.setattr(missions, "PRIORITY_GAP_S", 0)
-    ctx = Context(Settings(port=None, data_dir=tmp_path, log_level="INFO", home=HOME))
-    dev = DeviceLink(tmp_path, log_packets=False)
-    dev.iface, dev.state = FakeIface(), "verbunden"
-    dev.iface.myInfo = SimpleNamespace(my_node_num=0x11112222)
-    ctx.device = dev
-    c = Coordinator(ctx)
-    c.set_enabled(True)
-    c.settings["min_gap_s"] = 120
-    yield c
-    c.shutdown()
-
-
 def position(lat, lon, bits=32, speed=None):
     pos = {"latitude": lat, "longitude": lon, "precisionBits": bits}
     if speed is not None:
