@@ -125,8 +125,29 @@ simulated radio first.
 
 The tracker must share its position on a channel the server node has, with *precise location*
 and a short interval (30 s); positions coarser than the setting *Mindestgenauigkeit* are
-ignored. Guidance is straight-line (compass direction and distance) until the road graph of
-the next steps exists.
+ignored.
+
+### Routing over the road network
+
+Without a road graph the guidance is straight-line: compass direction and distance. With one,
+the server routes along streets and paths: the assignment carries the first legs
+(`#ALPHA 850m NE ~11min R: N200 L300 Hauptstr R150 Z60`: compass direction or turn L/R/U,
+metres, a short street name, `Z` the stop), `?r` answers with the legs from the current
+position, the setting *Wegbeschreibung senden* sends the next legs before every turn (or every
+500 m, or only on request), and leaving the route by more than *Abweichung vom Weg* on two
+positions in a row gets a new route from where the node is (`!KURS 90m ab. R: …`). Profiles:
+on foot (one-way streets ignored, no motorways), bicycle, car (one-way and access respected).
+The map shows the route to the current stop and, dashed, the segments after it.
+
+**Straßennetz laden …** starts the task that fetches the graph: it asks the Overpass API
+(overpass-api.de, a public query service for OpenStreetMap data) for every `highway` way in a
+bounding box, by default 3 km around the home site rounded outward to a 1 km grid, and turns
+the answer into `data/osm/<name>.json.gz` (junctions as nodes, the way pieces between them as
+edges). A city is a few megabytes and one to two minutes; the bounding box is the only thing
+the query reveals, and afterwards routing is offline. Every user downloads their own area; the
+file is never committed. Offline alternative: `python scripts/coord_import_osm.py extract.osm`
+builds the same graph from an `.osm` file (a JOSM export, or an extract cut from a regional
+`.osm.pbf` with osmium). The setting *Straßennetz* picks the graph when there are several.
 
 ## Own sites (Eigene Standorte)
 

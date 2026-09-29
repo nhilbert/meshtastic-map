@@ -33,6 +33,12 @@ function renderStart() {
 }
 
 // ---------------------------------------------------------------- start form
+// Other parts of the page start a task kind through its form (the coordination mode's road
+// graph download).
+export function openTaskForm(kindId) {
+  const sec = $("details[data-sec=jobs]"); sec.open = true;
+  openForm(kindId);
+}
 async function openForm(kindId) {
   try { await loadKinds(); } catch (e) { T.api.toast(e.message, { bad: true }); return; }  // fresh nodes, sites
   const kind = T.kinds.find(k => k.id === kindId);

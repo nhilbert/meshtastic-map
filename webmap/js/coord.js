@@ -3,6 +3,7 @@
 // and sends (coord/missions.py); the page polls /api/coord and shows what happened.
 import { bindInputs, initialValues, inputsHTML } from "./forms.js";
 import { locale, t } from "./i18n.js";
+import { openTaskForm } from "./tasks.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 
 // Mission states are German codes: t("zugewiesen") t("unterwegs") t("wartet") t("erreicht")
@@ -82,6 +83,7 @@ function metricsLine(m) {
   const k = m.metrics || {};
   if (k.dist_m === undefined) return t("noch keine Position vom Knoten");
   const parts = [`${dist(k.dist_m)} ${k.compass}`, eta(k.eta_s), `${fmt(k.speed_kmh, 1)} km/h`, t("Position {ago}", { ago: ago(k.position_age_s) })];
+  if (k.mode === "route") parts.splice(1, 0, t("{d} auf der Straße", { d: dist(k.route_left_m) }) + (k.off_route_m > 30 ? ` (${t("{d} daneben", { d: dist(k.off_route_m) })})` : ""));
   if (k.margin_min !== undefined) parts.push(k.margin_min >= 0 ? t("{n} min vor Plan", { n: k.margin_min }) : t("{n} min hinter Plan", { n: -k.margin_min }));
   if (k.stale) parts.push("⚠ " + t("Position veraltet"));
   return parts.join(" · ");
@@ -122,7 +124,9 @@ function render() {
       <button class="btn" data-act="new" ${d.enabled ? "" : `title="${t("Einsätze können auch bei ausgeschaltetem Modus angelegt werden; gesendet wird erst, wenn er an ist.")}"`}>＋ ${t("Einsatz")}</button>
       <button class="btn small" data-act="settings" aria-expanded="${!!C.settings}">⚙ ${t("Einstellungen")}</button>
       <button class="btn small" data-act="targets" aria-expanded="${C.targets}">${t("Ziele")} (${Object.keys(d.targets).length})</button>
+      <button class="btn small" data-act="osm" title="${esc(t("Straßen und Wege der Umgebung von OpenStreetMap laden (Overpass-API); danach führt der Server über Straßen statt Luftlinie."))}">${t("Straßennetz laden …")}</button>
     </div>
+    <p class="note" style="margin:0 0 6px">${esc(osmLine(d.osm))}</p>
     ${C.settings ? settingsHTML(d) : ""}
     ${C.form ? formHTML(d) : ""}
     <div class="msg" role="alert">${esc(C.err)}</div>
@@ -140,6 +144,16 @@ function render() {
   if (focus && focus.f) { const el = box.querySelector(`[data-f="${focus.f}"]`); if (el) el.focus(); }
 }
 
+// One line about the road graph: loaded (with its size and date) or missing.
+function osmLine(o) {
+  if (!o) return "";
+  if (o.error) return t("Straßennetz {name}: {error}", { name: o.name, error: o.error });
+  if (!o.bbox) return t("Kein Straßennetz geladen: Wegführung als Luftlinie (Richtung und Entfernung).");
+  const when = o.downloaded ? new Date(o.downloaded).toLocaleDateString(locale) : "";
+  const size = o.edges ? t("{n} Kanten", { n: o.edges }) : t("{n} Wege", { n: o.n_ways || 0 });
+  return t("Straßennetz {name}: {size}, Stand {date}. Wegführung über Straßen.", { name: o.name, size, date: when });
+}
+
 function cardHTML(m) {
   const stop = m.path[m.index] || m.path[m.path.length - 1];
   const last = m.messages.length ? m.messages[m.messages.length - 1] : null;
@@ -149,6 +163,7 @@ function cardHTML(m) {
   return `<div class="job ${C.sel === m.node ? "sel" : ""}">
     <div class="hd">${stateChip(m.state)}<span class="nm" title="${esc(m.node)}"><button class="lnk" data-act="focus" data-node="${esc(m.node)}">${esc(nodeName(m.node))}</button></span></div>
     <div class="det"><strong>${esc(where)}</strong> · ${esc(metricsLine(m))}</div>
+    ${m.legs && ACTIVE.includes(m.state) ? `<div class="det"><span class="port">R:</span> ${esc(m.legs)}</div>` : ""}
     ${last ? `<div class="meta">${clock(last.time)} „${esc(last.text)}“ · <span class="st ${statusClass(last.status)}">${esc(statusText(last.status))}</span></div>` : ""}
     <div class="acts">
       ${active ? `<button class="btn small" data-act="status" data-node="${esc(m.node)}">${t("Status senden")}</button>
@@ -168,6 +183,7 @@ async function action(act, node) {
     if (act === "new") { openForm(null); return; }
     if (act === "settings") { C.settings = C.settings ? null : { ...C.data.settings, channel: String(C.data.settings.channel) }; render(); return; }
     if (act === "targets") { C.targets = !C.targets; C.api.store.set("coord.targets", C.targets); render(); return; }
+    if (act === "osm") { openTaskForm("osm"); return; }
     if (act === "focus") { C.api.focusNode(node); return; }
     if (act === "detail") { showDetail(node); return; }
     if (act === "again" || act === "edit") {
@@ -433,6 +449,7 @@ export async function renderMissionDetail() {
         ${kpi(t("Zurückgelegt"), dist(k.travelled_m), "")}
         ${kpi(t("Unterwegs seit"), fmt((k.elapsed_s || 0) / 60, 0), "min")}
         ${kpi(t("Position"), ago(k.position_age_s), k.precision_bits ? t("{n} Bit", { n: k.precision_bits }) : "")}
+        ${k.mode === "route" ? kpi(t("Auf der Straße"), dist(k.route_left_m), k.off_route_m > 30 ? t("{d} daneben", { d: dist(k.off_route_m) }) : "") : ""}
         ${kpi("SNR", k.snr === null || k.snr === undefined ? "–" : fmt(k.snr, 1), "dB")}
         ${kpi(t("Hops"), k.hops ?? "–", "")}
         ${kpi(t("Funksprüche"), d.messages.length, t("{n} zugestellt", { n: d.messages.filter(x => x.status === "zugestellt").length }))}
@@ -444,6 +461,8 @@ export async function renderMissionDetail() {
     <div class="sec"><h2>${t("Pfad")}</h2><div class="wrap"><table>
       <tr><th>#</th><th>${t("Name")}</th><th>${t("Art")}</th><th>${t("Radius")}</th><th>${t("bis")}</th><th>${t("warten")}</th><th></th></tr>${rows}</table></div>
       <p class="note">${t("Fortbewegung: {profile} · Funksprüche auf {lang}", { profile: t({ foot: "zu Fuß", bike: "Fahrrad", car: "Auto" }[d.profile] || d.profile), lang: d.lang === "en" ? "English" : "Deutsch" })}</p></div>
+    ${d.legs ? `<div class="sec"><h2>${t("Wegbeschreibung")}</h2><p class="pkt" style="font-size:12px">R: ${esc(d.legs)}</p>
+      <p class="note">${t("Abschnitte ab der aktuellen Position: Himmelsrichtung oder Abbiegen (L/R/U), Meter, Straßenname; Z ist der Halt.")}</p></div>` : ""}
     <div class="sec"><h2>${t("Funksprüche")}</h2>${msgs || `<p class="note">${t("Noch keine.")}</p>`}</div>
     <div class="sec"><h2>${t("Ereignisse")}</h2><pre class="log">${events || "—"}</pre>
       <p class="note">${t("{n} Ereignisse; alle stehen in data/coord/events-<Datum>.jsonl.", { n: log.length })}</p></div>`;

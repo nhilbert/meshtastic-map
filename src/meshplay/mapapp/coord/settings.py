@@ -10,6 +10,7 @@ INSTRUCTIONS = ["request", "turns", "interval"]
 DEFAULTS = {
     "lang": "de",
     "channel": 1,
+    "osm_name": "roads",
     "profile": "foot",
     "arrive_radius_m": 30,
     "off_route_m": 75,
@@ -37,8 +38,19 @@ def channel_options(channels: list[dict]) -> list[list]:
     return [[str(i), str(i)] for i in range(8)]
 
 
-def declarations(channels: list[dict] | None = None) -> list[Setting]:
+def declarations(
+    channels: list[dict] | None = None, graphs: list[str] | None = None
+) -> list[Setting]:
+    names = graphs or [DEFAULTS["osm_name"]]
     return [
+        Setting(
+            "osm_name",
+            _("Straßennetz"),
+            "select",
+            DEFAULTS["osm_name"] if DEFAULTS["osm_name"] in names else names[0],
+            options=[[n, n] for n in names],
+            help=_("Graph aus data/osm/ (Aufgabe „Straßennetz laden“); ohne: Luftlinie"),
+        ),
         Setting(
             "channel",
             _("Kanal der Funksprüche"),
@@ -183,10 +195,10 @@ def declarations(channels: list[dict] | None = None) -> list[Setting]:
     ]
 
 
-def clean(raw: dict, channels: list[dict] | None = None) -> dict:
+def clean(raw: dict, channels: list[dict] | None = None, graphs: list[str] | None = None) -> dict:
     """The settings as stored: parsed against the declarations, ranges checked."""
     out = {}
-    for s in declarations(channels):
+    for s in declarations(channels, graphs):
         v = raw.get(s.name)
         value = s.parse(None if v is None else str(v))
         if s.type == "number":

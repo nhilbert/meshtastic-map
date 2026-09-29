@@ -441,14 +441,19 @@ class CoverageSim(JobKind):
         job.detail = L("fertig: {file}", file=job.result.get("file", ""))
 
 
-KINDS = {k.id: k for k in (ProbeWalk(), CoverageSim())}
+def all_kinds() -> dict[str, JobKind]:
+    """Every task kind. The road-graph download lives with the coordination mode and builds
+    on JobKind, so it is imported here, when the manager is created, not at module level."""
+    from meshplay.mapapp.coord.osm import OsmDownload
+
+    return {k.id: k for k in (ProbeWalk(), CoverageSim(), OsmDownload())}
 
 
 # ---------------------------------------------------------------- manager
 class JobManager:
     def __init__(self, ctx: Context, kinds: dict[str, JobKind] | None = None):
         self.ctx = ctx
-        self.kinds = kinds or KINDS
+        self.kinds = kinds or all_kinds()
         self.dir = ctx.app_dir / "jobs"
         self.dir.mkdir(parents=True, exist_ok=True)
         self.jobs: dict[str, Job] = {}

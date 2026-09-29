@@ -176,16 +176,12 @@ def north(m):  # a point m metres north of home
     return HOME[0] + m / 111_320, HOME[1]
 
 
-def feed(coord, packet, count=None):
-    """A packet through the link, waiting until the worker has taken it."""
+def feed(coord, packet):
+    """A packet through the link, waiting until the worker has handled it."""
     dev = coord.ctx.device
-    before = len(coord.missions[NODE].positions) if count is None else count
+    before = coord.processed
     dev._on_receive(packet, dev.iface)
-    if packet["decoded"]["portnum"] == "POSITION_APP":
-        wait_for(lambda: len(coord.missions[NODE].positions) > before)
-    else:
-        wait_for(lambda: coord._queue.empty())
-        time.sleep(0.05)
+    wait_for(lambda: coord.processed > before)
 
 
 def sent_texts(coord):
@@ -253,7 +249,9 @@ def test_commands_halt_go_abort_and_strangers(coord):
     assert sent_texts(coord)[-1] == "Next #Z 500m N" and not coord.missions[NODE].held
     feed(coord, text("hello there"))  # plain chat: no reply
     assert len(sent_texts(coord)) == n + 6
-    feed(coord, text("?", to=0x99999999))  # not addressed to us
+    dev = coord.ctx.device
+    dev._on_receive(text("?", to=0x99999999), dev.iface)  # not addressed to us: dropped early
+    time.sleep(0.2)
     assert len(sent_texts(coord)) == n + 6
     feed(coord, text("x"))
     assert coord.missions[NODE].state == ABORTED
@@ -390,6 +388,48 @@ def test_path_templates(coord):
     assert coord.api("GET", [], {}, {})["paths"] == {}
     with pytest.raises(KeyError):
         coord.api("POST", ["paths", "delete"], {}, {"name": "RUNDE"})
+
+
+def test_guidance_over_the_road_graph(coord, tmp_path):
+    from meshplay.mapapp.coord import osm
+    from tests.test_coord_routing import grid_ways, pt
+
+    osm.write_graph(osm.build_graph(grid_ways()), tmp_path / "osm" / "roads.json.gz")
+    coord.settings["min_gap_s"] = 0
+    snap = coord.api("GET", [], {}, {})
+    assert snap["osm"]["name"] == "roads" and snap["osm"]["graphs"] == ["roads"]
+    coord.assign(NODE, [{"name": "Z", "lat": pt(3, 0)[0], "lon": pt(3, 0)[1]}], "foot", "de")
+    feed(coord, position(*pt(0, 0)))
+    m = coord.missions[NODE]
+    assert m.route is not None and abs(m.route.length_m - 300) < 2
+    assert m.metrics["mode"] == "route" and m.metrics["route_left_m"] == 300
+    assert sent_texts(coord)[-1] == "#Z 300m E ~4min R: E300m Row0str Z"
+    feed(coord, text("?r"))
+    assert sent_texts(coord)[-1] == "R: E300m Row0str Z"
+    # walking the road: nothing to say (one straight leg), progress counts down
+    feed(coord, position(*pt(1, 0)))
+    assert m.metrics["route_left_m"] == 200 and m.off_count == 0
+    n = len(sent_texts(coord))
+    # 100 m north of the road twice in a row: off course, new route from there
+    feed(coord, position(*pt(1.5, 1)))
+    assert m.off_count == 1 and len(sent_texts(coord)) == n
+    feed(coord, position(*pt(1.6, 1)))
+    assert "offcourse" in m.flags
+    assert sent_texts(coord)[-1] == "!KURS 100m ab. R: E40m Row1str R100m Col2 L100m Row0str Z"
+    assert abs(m.route.length_m - 240) < 5  # east on Row1, down Col2, east on Row0
+    # back on the new route: the flag re-arms; the turn 40 m ahead is announced once
+    feed(coord, position(*pt(1.9, 1)))
+    assert "offcourse" not in m.flags and m.off_count == 0
+    assert sent_texts(coord)[-1] == "R: R100m Col2 L100m Row0str Z"
+    k = len(sent_texts(coord))
+    feed(coord, position(*pt(1.95, 1)))  # still before the same turn: no repeat
+    assert len(sent_texts(coord)) == k
+    feed(coord, position(*pt(2, 0.5)))  # on Col2, the next turn is 50 m away: quiet
+    assert len(sent_texts(coord)) == k
+    feed(coord, position(*pt(2, 0.3)))
+    assert sent_texts(coord)[-1] == "R: L100m Row0str Z"
+    feed(coord, position(*pt(3, 0.2)))
+    assert m.state == ARRIVED
 
 
 def test_api_dispatch_and_targets(coord):

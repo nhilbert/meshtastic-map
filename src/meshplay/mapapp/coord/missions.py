@@ -25,6 +25,7 @@ from meshplay.mapapp.coord.geo import (
     hhmm,
 )
 from meshplay.mapapp.coord.paths import Waypoint, parse_path, stops
+from meshplay.mapapp.coord.routing import RoadGraph, Route, legs_text, route_path
 from meshplay.mapapp.coord.settings import DEFAULTS, clean, declarations, default_speed_ms
 from meshplay.mapapp.coord.store import CoordStore
 from meshplay.mapapp.i18n import _
@@ -47,6 +48,8 @@ RETRY_KINDS = ("assign", "reached", "next", "changed")
 MOVE_MIN_M = 15  # smaller steps are GPS noise: not counted, not used for the speed
 SPEED_DT_S = (20, 300)  # a leg between two positions counts for the speed only in this range
 OFF_STEP_M = 50  # straight-line off-course: the distance grew by this on three positions in a row
+TURN_AHEAD_M = 40  # instruction mode "turns": announce the next legs this close to the turn
+INTERVAL_M = 500  # instruction mode "interval": a route message every this many metres
 
 
 class Mission:
@@ -73,6 +76,11 @@ class Mission:
         self.retry: tuple[float, str, str] | None = None  # (when, kind, text)
         self.awaiting_position = False  # assigned without a position: the leg follows the first
         self.offcourse_from_m = 0.0  # distance to the stop when the off-course warning went out
+        self.route: Route | None = None  # from the last position to the current stop
+        self.route_ahead: list[list] = []  # coordinates of the later segments, for the map
+        self.off_count = 0  # positions in a row off the route
+        self.announced = 0  # legs left when the last turn instruction went out
+        self.instr_at_m = 0.0  # travelled distance at the last interval instruction
 
     @property
     def stop(self) -> Waypoint:
@@ -107,6 +115,11 @@ class Mission:
             "last_proactive": self.last_proactive,
             "awaiting_position": self.awaiting_position,
             "offcourse_from_m": self.offcourse_from_m,
+            "route": self.route.to_json() if self.route else None,
+            "route_ahead": self.route_ahead,
+            "legs": legs_text(self.route.legs(self.metrics.get("along_m", 0.0)), 6)
+            if self.route
+            else None,
         }
         if with_events:
             out["events"] = list(self.events)
@@ -139,6 +152,9 @@ class Mission:
         m.positions.extend(d.get("positions", []))
         m.flags = set(d.get("flags", []))
         m.messages.extend(d.get("messages", []))
+        if d.get("route"):
+            m.route = Route.from_json(d["route"])
+        m.route_ahead = d.get("route_ahead") or []
         return m
 
 
@@ -162,6 +178,9 @@ class Coordinator:
         self._dirty = False
         self._stop = threading.Event()
         self._my_num: int | None = None
+        self._graph: RoadGraph | None = None
+        self._graph_key = None  # (file, mtime) the loaded graph came from
+        self.processed = 0  # packets the worker has handled
         if ctx.device is not None:
             ctx.device.listeners.append(self._on_packet)
         threading.Thread(target=self._worker, daemon=True, name="coord-worker").start()
@@ -186,7 +205,9 @@ class Coordinator:
                 self.set_enabled(bool(body.get("on")))
             elif parts == ["settings"]:
                 dev = self.ctx.device
-                self.settings = clean({**self.settings, **body}, dev.channels() if dev else [])
+                self.settings = clean(
+                    {**self.settings, **body}, dev.channels() if dev else [], self.graph_files()
+                )
                 self._save_settings()
             elif parts[:1] == ["targets"] and len(parts) == 2:
                 self.edit_target(parts[1], body)
@@ -208,15 +229,89 @@ class Coordinator:
 
     def snapshot(self) -> dict:
         dev = self.ctx.device
+        graphs = self.graph_files()
         return {
             "enabled": self.enabled,
             "device_state": dev.state if dev else "getrennt",
             "settings": self.settings,
-            "declarations": [s.to_json() for s in declarations(dev.channels() if dev else [])],
+            "declarations": [
+                s.to_json() for s in declarations(dev.channels() if dev else [], graphs)
+            ],
+            "osm": self.osm_state(graphs),
             "missions": [m.to_json() for m in self.missions.values()],
             "targets": self.targets,
             "paths": self.paths,
         }
+
+    # ------------------------------------------------------------ road graph
+    def graph_files(self) -> list[str]:
+        d = self.ctx.data_dir / "osm"
+        return sorted(p.name[: -len(".json.gz")] for p in d.glob("*.json.gz"))
+
+    @property
+    def graph(self) -> RoadGraph | None:
+        """The road graph of the settings, loaded once per file version; None without one."""
+        path = self.ctx.data_dir / "osm" / f"{self.settings.get('osm_name', 'roads')}.json.gz"
+        if not path.exists():
+            self._graph, self._graph_key = None, None
+            return None
+        key = (path.name, path.stat().st_mtime)
+        if key != self._graph_key:
+            try:
+                self._graph = RoadGraph.load(path)
+            except (OSError, ValueError, KeyError) as e:
+                log.warning("Road graph %s unusable: %s", path, e)
+                self._graph = None
+            self._graph_key = key
+        return self._graph
+
+    def graph_changed(self) -> None:
+        with self._lock:
+            self._graph_key = None
+
+    def osm_state(self, graphs: list[str] | None = None) -> dict:
+        from meshplay.mapapp.coord.osm import graph_info
+
+        graphs = self.graph_files() if graphs is None else graphs
+        name = self.settings.get("osm_name", "roads")
+        out = {"graphs": graphs, "name": name, "loaded": False}
+        path = self.ctx.data_dir / "osm" / f"{name}.json.gz"
+        if path.exists():
+            try:
+                out.update(graph_info(path))
+                out["loaded"] = self.graph is not None
+                if self._graph is not None:
+                    out["nodes"], out["edges"] = len(self._graph.nodes), len(self._graph.edges)
+            except (OSError, ValueError):
+                out["error"] = _("Die Graphdatei ist nicht lesbar")
+        return out
+
+    def _route_for(self, m: Mission) -> None:
+        """Route from the last position through the remaining waypoints; the first segment
+        guides, the rest is drawn. Without a graph or off the roads: straight lines."""
+        m.route, m.route_ahead, m.announced, m.off_count = None, [], 0, 0
+        graph = self.graph
+        if graph is None or m.last is None or not m.active:
+            return
+        try:
+            routes = route_path(
+                graph,
+                (m.last["lat"], m.last["lon"]),
+                [w.pos for w in m.path[m.index :]],
+                m.profile,
+            )
+        except Exception as e:  # a routing bug must not stop the guidance
+            log.exception("Routing failed: %s", e)
+            self._event(m.node, "route_failed", error=str(e))
+            return
+        m.route = routes[0]
+        m.route_ahead = [r.coords for r in routes[1:] if r]
+        self._event(
+            m.node,
+            "route",
+            length_m=None if m.route is None else round(m.route.length_m),
+            segments=sum(1 for r in routes if r),
+        )
 
     def set_enabled(self, on: bool) -> None:
         dev = self.ctx.device
@@ -296,6 +391,7 @@ class Coordinator:
             old.hold_until,
         )
         self._event(node, "path_edited", path=[w.name for w in path], changed=changed)
+        self._route_for(m)
         if changed:
             m.flags.clear()
             if m.state == HOLDING:
@@ -328,6 +424,7 @@ class Coordinator:
                 m.positions.append(pos)
         self.missions[node] = m
         self._event(node, "assign", path=[w.name for w in path], profile=profile)
+        self._route_for(m)
         self._update_metrics(m, now)
         m.awaiting_position = m.last is None
         self._send(m, "assign", self._leg_text(m, "assign"))
@@ -431,7 +528,23 @@ class Coordinator:
                 pts = [(p["lon"], p["lat"]) for p in m.positions]
                 if len(pts) > 1:
                     out.append(line(pts, _style={"color": color, "weight": 3, "opacity": 0.8}))
-                if m.active and m.last is not None:
+                if m.active and m.route is not None:
+                    out.append(
+                        line(
+                            [(lon, lat) for lat, lon in m.route.coords],
+                            _style={"color": color, "weight": 4, "opacity": 0.85},
+                            _title=_("Route zu {name}", name=m.stop.name),
+                            _fields={_("Länge"): f"{m.route.length_m:.0f} m"},
+                        )
+                    )
+                    for seg in m.route_ahead:
+                        out.append(
+                            line(
+                                [(lon, lat) for lat, lon in seg],
+                                _style={"color": color, "weight": 3, "dash": "6 6", "opacity": 0.6},
+                            )
+                        )
+                elif m.active and m.last is not None:
                     out.append(
                         line(
                             [(m.last["lon"], m.last["lat"]), (m.stop.lon, m.stop.lat)],
@@ -471,14 +584,15 @@ class Coordinator:
             try:
                 with self._lock:
                     m = self.missions.get(node)
-                    if m is None:
-                        continue
-                    if kind == "position":
-                        self._on_position(m, p)
-                    else:
-                        self._on_text(m, p["decoded"]["text"])
+                    if m is not None:
+                        if kind == "position":
+                            self._on_position(m, p)
+                        else:
+                            self._on_text(m, p["decoded"]["text"])
             except Exception as e:  # one bad packet must not stop the coordination
                 log.exception("Coordination worker failed: %s", e)
+            finally:
+                self.processed += 1  # tests wait on this
 
     def _ticker(self) -> None:
         while not self._stop.wait(5.0):
@@ -522,6 +636,8 @@ class Coordinator:
             return
         if m.state == ASSIGNED:
             m.state = UNDERWAY
+        if m.route is None and self.graph is not None:  # first position, or a graph since
+            self._route_for(m)
         self._update_metrics(m, now)
         if m.awaiting_position:  # the assignment could not say where to go: now it can
             m.awaiting_position = False
@@ -545,13 +661,24 @@ class Coordinator:
         if last is not None:
             d = distance_m((last["lat"], last["lon"]), stop.pos)
             speed, source = self._speed(m)
+            to_go = d
+            if m.route is not None:
+                along, off = m.route.progress(last["lat"], last["lon"])
+                to_go = max(m.route.length_m - along, 0.0)
+                out.update(
+                    mode="route",
+                    along_m=round(along),
+                    off_route_m=round(off),
+                    route_left_m=round(to_go),
+                    route_length_m=round(m.route.length_m),
+                )
             out.update(
                 dist_m=round(d),
                 bearing=round(bearing_deg((last["lat"], last["lon"]), stop.pos)),
                 compass=compass(bearing_deg((last["lat"], last["lon"]), stop.pos)),
                 speed_kmh=round(speed * 3.6, 1),
                 speed_source=source,
-                eta_s=round(d / speed) if speed > 0 else None,
+                eta_s=round(to_go / speed) if speed > 0 else None,
             )
             if stop.arrive_by and out["eta_s"] is not None:
                 out["margin_min"] = round((stop.arrive_by - (now + out["eta_s"])) / 60)
@@ -597,30 +724,10 @@ class Coordinator:
             return
         if m.held:
             return
-        # off course without a road graph: the distance grew three times in a row
-        dists = [distance_m((p["lat"], p["lon"]), stop.pos) for p in list(m.positions)[-3:]]
-        growing = len(dists) == 3 and all(
-            b - a > OFF_STEP_M for a, b in zip(dists, dists[1:], strict=False)
-        )
-        if growing and "offcourse" not in m.flags:
-            m.flags.add("offcourse")
-            m.offcourse_from_m = dists[0]
-            self._event(m.node, "offcourse", dist=d)
-            self._send(
-                m,
-                "offcourse",
-                phrases.phrase(
-                    m.lang,
-                    "offcourse",
-                    off=fmt_dist(d - dists[0]),
-                    dir=m.metrics["compass"],
-                    dist=fmt_dist(d),
-                ),
-                priority=True,
-            )
-        elif "offcourse" in m.flags and d < m.offcourse_from_m - OFF_STEP_M:
-            m.flags.discard("offcourse")
-            self._event(m.node, "oncourse", dist=d)
+        if m.route is not None:
+            self._decide_route(m, now)
+        else:
+            self._decide_line(m, now, d)
         if stop.arrive_by and m.metrics.get("eta_s") is not None:
             late_s = now + m.metrics["eta_s"] - stop.arrive_by
             if late_s > self.settings["late_warn_min"] * 60 and "late" not in m.flags:
@@ -653,6 +760,78 @@ class Coordinator:
                 ),
             )
 
+    def _decide_line(self, m: Mission, now: float, d: float) -> None:
+        """Off course without a road graph: the distance grew three times in a row."""
+        stop = m.stop
+        dists = [distance_m((p["lat"], p["lon"]), stop.pos) for p in list(m.positions)[-3:]]
+        growing = len(dists) == 3 and all(
+            b - a > OFF_STEP_M for a, b in zip(dists, dists[1:], strict=False)
+        )
+        if growing and "offcourse" not in m.flags:
+            m.flags.add("offcourse")
+            m.offcourse_from_m = dists[0]
+            self._event(m.node, "offcourse", dist=d)
+            self._send(
+                m,
+                "offcourse",
+                phrases.phrase(
+                    m.lang,
+                    "offcourse",
+                    off=fmt_dist(d - dists[0]),
+                    dir=m.metrics["compass"],
+                    dist=fmt_dist(d),
+                ),
+                priority=True,
+            )
+        elif "offcourse" in m.flags and d < m.offcourse_from_m - OFF_STEP_M:
+            m.flags.discard("offcourse")
+            self._event(m.node, "oncourse", dist=d)
+
+    def _decide_route(self, m: Mission, now: float) -> None:
+        """With a route: off course by cross-track distance (two positions in a row), then a
+        new route; on course, turn instructions by the setting."""
+        off = m.metrics["off_route_m"]
+        limit = float(self.settings["off_route_m"])
+        n = int(self.settings["legs_per_message"])
+        if off > limit:
+            m.off_count += 1
+            if m.off_count >= 2 and "offcourse" not in m.flags:
+                m.flags.add("offcourse")
+                self._event(m.node, "offcourse", off=off)
+                self._route_for(m)  # from where the node is now
+                m.flags.add("offcourse")
+                self._update_metrics(m, m.last["time"])
+                if m.route is not None:
+                    text = phrases.phrase(
+                        m.lang,
+                        "offcourse_route",
+                        off=fmt_dist(off),
+                        legs=legs_text(m.route.legs(), n),
+                    )
+                else:
+                    text = phrases.phrase(
+                        m.lang,
+                        "offcourse",
+                        off=fmt_dist(off),
+                        dir=m.metrics["compass"],
+                        dist=fmt_dist(m.metrics["dist_m"]),
+                    )
+                self._send(m, "offcourse", text, priority=True)
+            return
+        m.off_count = 0
+        if "offcourse" in m.flags and off < limit / 2:
+            m.flags.discard("offcourse")
+            self._event(m.node, "oncourse", off=off)
+        mode = self.settings["instructions"]
+        legs = m.route.legs(m.metrics["along_m"])
+        if mode == "turns" and len(legs) >= 2 and legs[0].dist_m <= TURN_AHEAD_M:
+            if m.announced != len(legs):
+                m.announced = len(legs)
+                self._send(m, "route", phrases.phrase(m.lang, "route", legs=legs_text(legs[1:], n)))
+        elif mode == "interval" and m.travelled_m - m.instr_at_m >= INTERVAL_M and len(legs) > 1:
+            m.instr_at_m = m.travelled_m
+            self._send(m, "route", phrases.phrase(m.lang, "route", legs=legs_text(legs, n)))
+
     def _advance(self, m: Mission, now: float, skipped: bool = False) -> None:
         """The current waypoint is done: next one, or the mission is over."""
         stop = m.stop
@@ -682,6 +861,7 @@ class Coordinator:
             return
         m.index += 1
         m.state = UNDERWAY
+        self._route_for(m)
         self._update_metrics(m, now)
         if skipped:
             self._send(m, "next", self._leg_text(m, "next"), priority=True)
@@ -738,6 +918,7 @@ class Coordinator:
                 m.index += 1
                 m.state = UNDERWAY
                 m.flags.clear()
+                self._route_for(m)
                 self._update_metrics(m, now)
                 self._send(m, "next", self._leg_text(m, "next"), priority=True)
                 self._dirty = True
@@ -786,7 +967,14 @@ class Coordinator:
         if key == "assign" and m.stop.arrive_by:
             key = "assign_by"
             params.update(time=hhmm(m.stop.arrive_by), margin=_margin(mt.get("margin_min")))
-        return phrases.phrase(m.lang, key, **params)
+        text = phrases.phrase(m.lang, key, **params)
+        if m.route is not None:  # the first legs fit in the same message
+            n = int(self.settings["legs_per_message"])
+            legs = legs_text(m.route.legs(mt.get("along_m", 0.0)), n)
+            both = text + " " + phrases.phrase(m.lang, "route", legs=legs)
+            if phrases.fits(both, phrases.TARGET_BYTES):
+                return both
+        return text
 
     def _status_text(self, m: Mission) -> str:
         mt = m.metrics
@@ -813,7 +1001,11 @@ class Coordinator:
         mt = m.metrics
         if "dist_m" not in mt:
             return phrases.phrase(m.lang, "assign_nopos", target=m.stop.name)
-        legs = f"{mt['compass']}{fmt_dist(mt['dist_m'])} Z"  # straight line until step 5
+        if m.route is not None:
+            n = int(self.settings["legs_per_message"])
+            legs = legs_text(m.route.legs(mt.get("along_m", 0.0)), n)
+        else:
+            legs = f"{mt['compass']}{fmt_dist(mt['dist_m'])} Z"  # no road graph: as the crow flies
         return phrases.phrase(m.lang, "route", legs=legs)
 
     def _target_text(self, m: Mission) -> str:
