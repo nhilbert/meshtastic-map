@@ -132,7 +132,9 @@ leg list.
 | Leg changed by the coordinator | `#C neu 600m NE ~8min bis 13:30` | only for the current leg |
 | Ended by coordinator | `#ALPHA aufgehoben` | optional (setting) |
 | Held / resumed | `HALT ok` / `Weiter #ALPHA 420m NE` | answers to `halt` / `go` |
-| Help | `? Status ?R Route ?Z Ziel ?P Pfad HALT GO X` | on any unknown `?…` |
+| Arrival time | `#ALPHA Ankunft 12:58 (~7min) 6km/h jetzt, 5.4km/h Schnitt` | on `?e`; "bei 4.5km/h angenommen" while no speed was measured |
+| Legend | `Legende: #Ziel Entfernung Richtung(N/E/S/W) ~Minuten. R: Weg: …` | once after the first real assignment (setting), and on `?l` |
+| Help | `? Status ?R Weg ?Z Ziel ?E Ankunft ?P Pfad ?L Legende HALT GO X=Abbruch` | on any unknown `?…` |
 
 **Node → server** (case-insensitive, trimmed; only nodes with a mission get answers):
 
@@ -142,6 +144,8 @@ leg list.
 | `?r` | route | next legs from the current position |
 | `?z` | current stop | `#B 850m NE bis 12:55` |
 | `?p` | path | `B 12:55 > C 13:30 > ALPHA` (stops only, with times) |
+| `?e` | arrival time | clock time from the current speed, with the average since the start |
+| `?l` | legend | what the codes mean |
 | `?h` or unknown `?…` | help | help line |
 | `ok` | acknowledged | logged, no reply |
 | `halt` | hold: no proactive messages until `go` | `HALT ok` |

@@ -17,9 +17,9 @@ in German, English and French (see [Languages](#languages)).
 ## Using it
 
 - **Header**: 2D / 3D view, **Nachrichten** (messaging pane, shows unread messages),
-  **DE | EN | FR** (language),
-  **Aufgaben** (background tasks, shows how many run), **Details** (the right panel; greyed out
-  while there is nothing to show), light/dark.
+  **Aufgaben** (background tasks, shows how many run), **Koordination** (the coordination
+  mode, shows how many missions run), **Details** (the right panel; greyed out while there is
+  nothing to show), **DE | EN | FR** (language), light/dark.
 - **Left column**: *Ebenen* (layers), *Aufgaben*, *3D-Darstellung* (only in 3D), *Gerät (USB)*.
   Sections fold and remember their state; tasks and coordination start folded. On phones,
   **Bedienfeld** opens the controls as a drawer, leaving the map available at full height.
@@ -75,8 +75,9 @@ hops, SNR or name. A click on a node with a position centres it on the map and o
 ## Background tasks (Aufgaben)
 
 Long jobs run in the server, not in the page: closing or reloading the page doesn't stop them.
-**＋ Traceroute-Rundgang** and **＋ Abdeckung simulieren** open a form (defaults and last used
-values); **Starten** checks the input and starts the task. The list shows state (wartet, läuft,
+**＋ Traceroute-Rundgang**, **＋ Abdeckung simulieren** and **＋ Straßennetz laden** (the road
+graph of the coordination mode, see there) open a form (defaults and last used values);
+**Starten** checks the input and starts the task. The list shows state (wartet, läuft,
 fertig, Fehler, abgebrochen), progress, what the task is doing and how long it runs, with
 *Stoppen/Abbrechen*, *Protokoll* (live log in the right panel), *Entfernen* for finished tasks and
 follow-ups (*Anzeigen* for a coverage grid, *GPX-Spur hochladen …* after a walk). A notice pops up
@@ -244,6 +245,7 @@ Two things need the internet once:
 | Rundgang (Messung) | position packets `data/packets/<date>.jsonl` (`scripts/listen.py`) or traceroutes `data/probes/<date>.jsonl`, `data/tracks/*.gpx` | date, tracker (positions or traceroutes), GPX track, colour by SNR or measured − model, home site and placement, preset (from the log) |
 | Simulierte Abdeckung | `data/sim/maps/coverage-*.npz` (task or `scripts/sim_coverage_map.py`) | calculation (newest first), model, opacity |
 | Laserscan-Szene | `data/sim/scene/` | show unmeasured areas |
+| Koordination | the coordination mode's missions, targets, areas and places (`data/coord/`) | refresh interval |
 
 Default on/off state and default settings per layer: copy
 [config/mapapp.example.json](../config/mapapp.example.json) to `data/mapapp/layers.json`.
@@ -360,7 +362,8 @@ and to the test.
 
 ## Adding a task kind
 
-Subclass `JobKind` in `jobs.py` and add it to `KINDS`: `settings()` declares the form (same
+Subclass `JobKind` (in `jobs.py`, or in your own module like `coord/osm.py`) and add it to
+`all_kinds()` in `jobs.py`: `settings()` declares the form (same
 `Setting` objects as the layers), `validate()` raises `ValueError` with a message for the page,
 `run(ctx, job)` does the work in a worker thread. In `run`, set `job.progress` (0–1, or leave it
 `None`), `job.detail` (one line), `job.result` (e.g. a file name) and call `job.add_log()`; check

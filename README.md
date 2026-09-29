@@ -14,7 +14,9 @@ What you can do with it:
 - **Use the map app** (browser, 2D OpenStreetMap or 3D laser scan): layers for your sites, the
   live node list, walks and simulated coverage; a link calculator between any two points;
   start walks and simulations as background tasks; edit your sites; send and read messages on
-  your channels or directly to a node picked on the map, and watch the packet traffic.
+  your channels or directly to a node picked on the map, and watch the packet traffic;
+  coordinate people in the field: assign a node a target or a path, and the app guides it
+  there over the streets by short messages and answers its questions. Works offline.
 - **Simulate coverage** with ITU-R propagation models over a 3D scene built from open
   laser-scan data, and score the models against your measurements.
 
@@ -137,7 +139,8 @@ they talk to the device (otherwise `MESHTASTIC_PORT` from `.env` or auto-detecti
 | `coverage_map.py` | map of a walk (positions, or traceroutes with `--probes`) and the phone's GPX track → `data/maps/` |
 | `measure_logger.py` | fixed-point link test: one device sends numbered packets, the other logs them |
 | **Map app** | |
-| `mapapp.py` | the browser map app (`--open`, `--device`, `--port 8770`) |
+| `mapapp.py` | the browser map app (`--open`, `--device`, `--port 8770`; `--simulate [track.gpx]` for a fake radio) |
+| `coord_import_osm.py` | road graph for the coordination mode from an `.osm` file instead of the Overpass download |
 | **Simulation** | |
 | `sim_fetch_tiles.py` | lists and downloads the NRW laser-scan tiles around home ([details](#3d-laser-scan-data)) |
 | `sim_build_scene.py` | builds the 3D scene (terrain, buildings, trees) from the tiles |
@@ -378,8 +381,9 @@ Also configurable:
 ```
 src/meshplay/          shared code: device connection, settings, packets, walks, probes
 src/meshplay/sim/      coverage simulation: ITU models, LiDAR scene, link prediction
-src/meshplay/mapapp/   map app server: layers/, tools/, background tasks, sites editor
-webmap/                map app page (HTML, CSS, JavaScript modules)
+src/meshplay/mapapp/   map app server: layers/, tools/, background tasks, sites editor,
+                       messaging, coord/ (coordination mode), tile cache, simulated radio
+webmap/                map app page (HTML, CSS, JavaScript modules, vendor/ libraries and fonts)
 scripts/               command-line tools (see Scripts)
 config/                example configuration
 docs/                  longer documentation
@@ -398,7 +402,10 @@ data/                  everything local (not committed, see below)
 | `data/maps/` | walk maps from `coverage_map.py` |
 | `data/exports/` | node list exports |
 | `data/sim/` | sites, laser-scan tiles, scene, predictions, coverage grids ([details](docs/simulation.md#data-not-committed)) |
-| `data/messages.jsonl` | messages sent and received in the map app |
+| `data/messages.jsonl` | messages sent and received in the map app (`messages-sim.jsonl` with `--simulate`) |
+| `data/coord/` | coordination mode: settings, targets, paths, areas, places, missions, event log |
+| `data/osm/` | road graphs for the coordination mode (from Overpass or `coord_import_osm.py`) |
+| `data/tiles/` | cached OpenStreetMap tiles for offline use |
 | `data/mapapp/` | map app: 3D export, caches, background task logs, layer defaults |
 
 ## Troubleshooting

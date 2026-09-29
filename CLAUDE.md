@@ -51,17 +51,25 @@ src/meshplay/sim/           itu.py, p1812.py (verbatim ITU port), models.py, sce
 src/meshplay/mapapp/        server.py (HTTP + API), registry.py (Layer, Setting, Context),
                             layers/ (one module per layer), tools/link.py, jobs.py (background
                             tasks), sites_store.py (sites.json editing), device.py (live USB link,
-                            sending texts), messages.py (message store for the pane)
+                            sending texts, packet listeners), fake_device.py (--simulate),
+                            messages.py (message store for the pane), i18n.py (translations),
+                            tiles.py (map tile cache), coord/ (coordination mode: missions.py
+                            decisions + API, phrases.py radio texts, routing.py + osm.py road
+                            graph, areas.py, paths.py, settings.py, store.py)
 webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, messages.js,
-                            nodelist.js, panels.js, map2d.js (Leaflet), map3d.js (three.js),
-                            util.js, icons.js
-tests/                      pytest; markers `hardware` and `data` are opt-in
+                            nodelist.js, coord.js, panels.js, map2d.js (Leaflet), map3d.js
+                            (three.js), util.js, icons.js, i18n.js
+webmap/vendor/, i18n/       served libraries and fonts (offline use); translation catalogues
+tests/                      pytest; markers `hardware` and `data` are opt-in; conftest.py has
+                            the Coordinator fixture over a fake radio
 data/                       local only, never committed (see below)
 ```
 
 Extension points are documented in docs/mapapp.md: new layer = `Layer` subclass in `layers/`
-listed in `layers/__init__.py`; new background task = `JobKind` in `jobs.py` listed in `KINDS`.
-The page builds forms from the server's `Setting` declarations, so neither needs page changes.
+listed in `layers/__init__.py`; new background task = `JobKind` listed in `all_kinds()` in
+`jobs.py`. The page builds forms from the server's `Setting` declarations, so neither needs
+page changes. The coordination mode's design is in docs/coordination-design.md; its radio
+texts have their own catalogue in `coord/phrases.py` (per mission language, not UI language).
 
 ## Rules
 
@@ -76,8 +84,11 @@ traceroutes, starting a probe task, changing device config) without the owner's 
 for that action. Test probe and messaging logic with a fake interface (`tests/test_mapapp_jobs.py`,
 `tests/test_mapapp_messages.py`); for the page, run the server with the simulated radio
 (`python scripts/mapapp.py --simulate [track.gpx]`, see docs/mapapp.md) instead of the real
-device. Sending a text from the messaging pane is the owner's own action.
-Walk traffic goes on a private channel with hop limit 0.
+device. Sending a text from the messaging pane is the owner's own action, and so is switching
+the coordination mode on: from then on the server messages nodes with a mission by itself
+(`coord/missions.py`), never nodes without one. Walk traffic goes on a private channel with
+hop limit 0; coordination messages are direct messages on the channel of its settings
+(default 1, the private channel).
 
 **Modem preset.** The owner's mesh runs **ShortSlow**; `DEFAULT_PRESET` in `config.py` is the
 single default. Never hardcode LongFast. A preset (and interval) recorded in a log wins over the
