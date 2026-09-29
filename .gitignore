@@ -17,7 +17,6 @@ data/*
 
 # Editors / OS
 .vscode/*
-!.vscode/settings.json
 !.vscode/extensions.json
 .idea/
 Thumbs.db
