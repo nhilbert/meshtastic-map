@@ -154,6 +154,7 @@ function cardHTML(m) {
       ${active ? `<button class="btn small" data-act="status" data-node="${esc(m.node)}">${t("Status senden")}</button>
         <button class="btn small" data-act="route" data-node="${esc(m.node)}">${t("Route senden")}</button>
         ${m.index < m.path.length - 1 ? `<button class="btn small" data-act="next" data-node="${esc(m.node)}">${t("Nächster Halt")}</button>` : ""}
+        <button class="btn small" data-act="edit" data-node="${esc(m.node)}">${t("Pfad bearbeiten")}</button>
         <button class="btn small" data-act="end" data-node="${esc(m.node)}">${t("Beenden")}</button>`
       : `<button class="btn small" data-act="again" data-node="${esc(m.node)}">${t("Neuer Einsatz")}</button>
          <button class="btn small" data-act="remove" data-node="${esc(m.node)}">${t("Entfernen")}</button>`}
@@ -169,7 +170,10 @@ async function action(act, node) {
     if (act === "targets") { C.targets = !C.targets; C.api.store.set("coord.targets", C.targets); render(); return; }
     if (act === "focus") { C.api.focusNode(node); return; }
     if (act === "detail") { showDetail(node); return; }
-    if (act === "again") { const m = C.data.missions.find(x => x.node === node); openForm(node, m ? m.path : null); return; }
+    if (act === "again" || act === "edit") {
+      const m = C.data.missions.find(x => x.node === node);
+      openForm(node, m ? m.path : null, act === "edit"); return;
+    }
     if (act === "end") {
       const m = C.data.missions.find(x => x.node === node);
       const notify = C.data.enabled && C.data.settings.end_message
@@ -206,10 +210,11 @@ function bindSettings(box, d) {
 }
 
 // ---------------------------------------------------------------- mission form
-function openForm(node, path = null) {
+// edit: change the path of the running mission of `node` instead of assigning a new one.
+function openForm(node, path = null, edit = false) {
   const d = C.data || { settings: {} };
   C.form = {
-    node: node || "", profile: d.settings.profile || "foot", lang: d.settings.lang || "de", msg: "",
+    node: node || "", profile: d.settings.profile || "foot", lang: d.settings.lang || "de", msg: "", edit,
     path: path ? path.map(w => ({ ...w, arrive_by: w.arrive_by ? clock(w.arrive_by) : "", hold_until: w.hold_until ? clock(w.hold_until) : "" })) : [],
   };
   render();
@@ -235,24 +240,27 @@ function formHTML(d) {
       <button class="btn small" data-wp="del" data-i="${i}" title="${t("Entfernen")}">✕</button></div>`).join("");
   const targets = Object.keys(d.targets || {}).map(n => `<option value="t:${esc(n)}">${esc(n)}</option>`).join("");
   const sites = (C.api.sites() || []).map(s => `<option value="s:${esc(s.name)}">${esc(s.name)} (${t("Standort")})</option>`).join("");
-  return `<div class="jobform"><div class="hd">${t("Einsatz")}</div>
-    <label>${t("Knoten")}<select data-f="node">${nodeOptions(f.node)}</select></label>
+  const templates = Object.keys(d.paths || {}).map(n => `<option value="p:${esc(n)}">${esc(t("Vorlage laden: {name}", { name: n }))}</option>`).join("");
+  return `<div class="jobform"><div class="hd">${f.edit ? t("Pfad bearbeiten") : t("Einsatz")}</div>
+    <label>${t("Knoten")}<select data-f="node" ${f.edit ? "disabled" : ""}>${nodeOptions(f.node)}</select></label>
     <div class="hd2" style="font-size:11px;color:var(--ink2)">${t("Pfad: Wegpunkte in Reihenfolge; der letzte ist das Ziel. Zeiten als 12:55 oder +15 (Minuten).")}</div>
     <div class="wplist">${rows || `<p class="note" style="margin:0">${t("Noch kein Wegpunkt.")}</p>`}</div>
     <div class="row2">
-      <select data-f="add"><option value="">${t("Wegpunkt hinzufügen …")}</option><option value="map">${t("Klick in die Karte")}</option>${targets}${sites}</select>
-      <span></span></div>
-    <div class="row2">
+      <select data-f="add"><option value="">${t("Wegpunkt hinzufügen …")}</option><option value="map">${t("Klick in die Karte")}</option>${targets}${sites}${templates}</select>
+      <button class="btn small" data-form="template" ${f.path.length ? "" : "disabled"}>${t("Als Vorlage speichern …")}</button></div>
+    ${f.edit ? "" : `<div class="row2">
       <label>${t("Fortbewegung")}<select data-f="profile"><option value="foot">${t("zu Fuß")}</option><option value="bike">${t("Fahrrad")}</option><option value="car">${t("Auto")}</option></select></label>
-      <label>${t("Sprache der Funksprüche")}<select data-f="lang"><option value="de">Deutsch</option><option value="en">English</option></select></label></div>
+      <label>${t("Sprache der Funksprüche")}<select data-f="lang"><option value="de">Deutsch</option><option value="en">English</option></select></label></div>`}
     <div class="msg" role="alert">${esc(f.msg)}</div>
-    <div class="row2"><button class="btn" data-form="cancel">${t("Abbrechen")}</button><button class="btn on" data-form="start">${t("Zuweisen")}</button></div></div>`;
+    <div class="row2"><button class="btn" data-form="cancel">${t("Abbrechen")}</button><button class="btn on" data-form="start">${f.edit ? t("Pfad speichern") : t("Zuweisen")}</button></div></div>`;
 }
 function readForm(box) {
   const f = C.form;
   f.node = box.querySelector("[data-f=node]").value;
-  f.profile = box.querySelector("[data-f=profile]").value;
-  f.lang = box.querySelector("[data-f=lang]").value;
+  if (!f.edit) {
+    f.profile = box.querySelector("[data-f=profile]").value;
+    f.lang = box.querySelector("[data-f=lang]").value;
+  }
   box.querySelectorAll(".wp").forEach(row => {
     const w = f.path[+row.dataset.i];
     row.querySelectorAll("[data-f]").forEach(inp => { w[inp.dataset.f] = inp.type === "number" ? (inp.value === "" ? null : +inp.value) : inp.value.trim(); });
@@ -261,13 +269,25 @@ function readForm(box) {
 function bindForm(box, d) {
   const f = C.form, form = box.querySelector(".jobform:last-of-type");
   form.querySelector("[data-f=node]").value = f.node;
-  form.querySelector("[data-f=profile]").value = f.profile;
-  form.querySelector("[data-f=lang]").value = f.lang;
+  if (!f.edit) {
+    form.querySelector("[data-f=profile]").value = f.profile;
+    form.querySelector("[data-f=lang]").value = f.lang;
+  }
   form.querySelectorAll(".wp [data-f=kind]").forEach(s => s.addEventListener("change", () => { readForm(form); render(); }));
+  form.querySelector("[data-form=template]").addEventListener("click", async () => {
+    readForm(form);
+    const name = prompt(t("Name der Vorlage (1–24 Zeichen, keine Leerzeichen)"), "");
+    if (!name) return;
+    try { await postJSON("api/coord/paths/save", { name: name.trim(), path: f.path }); C.api.toast(t("Vorlage {name} gespeichert", { name: name.trim() })); }
+    catch (e) { f.msg = e.message; render(); }
+    pollSoon();
+  });
   form.querySelector("[data-f=add]").addEventListener("change", e => {
     readForm(form);
     const v = e.target.value; e.target.value = "";
-    if (v === "map") {
+    if (v.startsWith("p:")) {
+      f.path = (d.paths[v.slice(2)] || []).map(w => ({ ...w, arrive_by: "", hold_until: "" })); render();
+    } else if (v === "map") {
       C.api.pickOnMap(t("Position des Wegpunkts"), (lat, lon) => {
         f.path.push({ name: `P${f.path.length + 1}`, lat, lon, kind: "stop", radius_m: null, arrive_by: "", hold_until: "" });
         render();
@@ -295,10 +315,16 @@ function bindForm(box, d) {
   form.querySelector("[data-form=start]").addEventListener("click", async () => {
     readForm(form);
     try {
-      const m = await postJSON("api/coord/missions", { node: f.node, path: f.path, profile: f.profile, lang: f.lang });
-      C.form = null; C.sel = m.node;
-      C.api.toast(C.data.enabled ? t("Einsatz für {name} zugewiesen: „{text}“", { name: nodeName(m.node), text: m.messages.length ? m.messages[m.messages.length - 1].text : "" })
-        : t("Einsatz für {name} angelegt; der Modus ist aus, es wurde nichts gesendet.", { name: nodeName(m.node) }));
+      if (f.edit) {
+        await postJSON(`api/coord/missions/${f.node}/path`, { path: f.path });
+        C.form = null;
+        C.api.toast(t("Pfad für {name} geändert", { name: nodeName(f.node) }));
+      } else {
+        const m = await postJSON("api/coord/missions", { node: f.node, path: f.path, profile: f.profile, lang: f.lang });
+        C.form = null; C.sel = m.node;
+        C.api.toast(C.data.enabled ? t("Einsatz für {name} zugewiesen: „{text}“", { name: nodeName(m.node), text: m.messages.length ? m.messages[m.messages.length - 1].text : "" })
+          : t("Einsatz für {name} angelegt; der Modus ist aus, es wurde nichts gesendet.", { name: nodeName(m.node) }));
+      }
       C.api.refreshLayer("coord");
     } catch (e) { f.msg = e.message; render(); }
     pollSoon();
@@ -313,11 +339,17 @@ function targetsHTML(d) {
       <button class="btn small" data-tg="edit" data-name="${esc(name)}" title="${t("Bearbeiten")}">✎</button>
       <button class="btn small" data-tg="move" data-name="${esc(name)}" title="${t("Verschieben: Klick in die Karte")}">⌖</button>
       <button class="btn small" data-tg="del" data-name="${esc(name)}" title="${t("Löschen")}">✕</button></div>`).join("");
+  const templates = Object.entries(d.paths || {}).map(([name, p]) => `<div class="site"><div class="txt"><span class="nm">${esc(name)}</span>
+      <span class="sub">${esc(p.map(w => w.name).join(" › "))}</span></div>
+      <button class="btn small" data-tg="deltpl" data-name="${esc(name)}" title="${t("Löschen")}">✕</button></div>`).join("");
   return `<div class="sitemgr"><div class="hd2">${t("Ziele")}</div>
     <p class="note" style="margin:0">${t("Benannte Orte, die sich als Wegpunkte wiederverwenden lassen. Eigene Standorte gehen auch direkt.")}</p>
     <div class="sitelist">${rows || `<p class="note" style="margin:0">${t("Noch keine Ziele.")}</p>`}</div>
     ${ed && ed.isNew ? targetFormHTML(ed) : ""}
-    ${ed ? "" : `<button class="btn small" data-tg="add" style="align-self:flex-start">＋ ${t("Neues Ziel")}</button>`}</div>`;
+    ${ed ? "" : `<button class="btn small" data-tg="add" style="align-self:flex-start">＋ ${t("Neues Ziel")}</button>`}
+    <div class="hd2">${t("Vorlagen")}</div>
+    <p class="note" style="margin:0">${t("Gespeicherte Pfade ohne Zeiten; im Einsatzformular unter „Wegpunkt hinzufügen“ zu laden.")}</p>
+    <div class="sitelist">${templates || `<p class="note" style="margin:0">${t("Noch keine Vorlagen.")}</p>`}</div></div>`;
 }
 function targetFormHTML(ed) {
   return `<div class="siteform">
@@ -353,6 +385,10 @@ async function targetAction(act, name) {
     if (act === "del") {
       if (!confirm(t("Ziel {name} löschen?", { name }))) return;
       await postJSON("api/coord/targets/delete", { name });
+    }
+    if (act === "deltpl") {
+      if (!confirm(t("Vorlage {name} löschen?", { name }))) return;
+      await postJSON("api/coord/paths/delete", { name });
     }
     if (act === "save") {
       const ed = C.editTarget, box = $("#coordBox");

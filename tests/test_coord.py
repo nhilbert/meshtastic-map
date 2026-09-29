@@ -326,6 +326,72 @@ def test_multi_stop_path_with_hold(coord):
     assert "#C 300m N" in sent_texts(coord)[-1]
 
 
+def test_edit_path_while_running(coord):
+    coord.settings["min_gap_s"] = 0
+    path = [
+        {"name": "A", "lat": north(200)[0], "lon": HOME[1]},
+        {"name": "B", "lat": north(600)[0], "lon": HOME[1]},
+    ]
+    coord.assign(NODE, path, "foot", "de")
+    feed(coord, position(*HOME))
+    feed(coord, position(*north(195)))  # A reached, B is current
+    m = coord.missions[NODE]
+    assert m.index == 1 and sent_texts(coord)[-1].startswith("#A erreicht")
+    n = len(sent_texts(coord))
+    # a later waypoint added: the current leg is unchanged, the node hears nothing
+    coord.api(
+        "POST",
+        ["missions", NODE, "path"],
+        {},
+        {"path": path + [{"name": "C", "lat": north(900)[0], "lon": HOME[1]}]},
+    )
+    assert m.index == 1 and m.stop.name == "B" and len(sent_texts(coord)) == n
+    # the current stop moved: the node gets the new leg
+    moved = [path[0], {"name": "B", "lat": north(700)[0], "lon": HOME[1]}]
+    coord.api("POST", ["missions", NODE, "path"], {}, {"path": moved})
+    assert sent_texts(coord)[-1] == "#B neu 500m N ~7min"
+    # the current stop removed: the next one becomes current; passed ones stay passed
+    coord.api(
+        "POST",
+        ["missions", NODE, "path"],
+        {},
+        {"path": [path[0], {"name": "D", "lat": north(400)[0], "lon": HOME[1]}]},
+    )
+    assert m.index == 1 and m.stop.name == "D" and sent_texts(coord)[-1] == "#D neu 200m N ~3min"
+    assert m.events[-1]["kind"] == "sent"
+    with pytest.raises(ValueError, match="letzte Wegpunkt"):
+        coord.api(
+            "POST",
+            ["missions", NODE, "path"],
+            {},
+            {"path": [{"name": "E", "lat": 50.7, "lon": 7.1, "kind": "via"}]},
+        )
+
+
+def test_path_templates(coord):
+    with pytest.raises(ValueError, match="Name"):
+        coord.api("POST", ["paths", "save"], {}, {"name": "", "path": []})
+    coord.api(
+        "POST",
+        ["paths", "save"],
+        {},
+        {
+            "name": "RUNDE",
+            "path": [
+                {"name": "A", "lat": 50.7, "lon": 7.1, "kind": "via"},
+                {"name": "B", "lat": 50.71, "lon": 7.1, "arrive_by": "+10", "radius_m": 40},
+            ],
+        },
+    )
+    saved = coord.api("GET", [], {}, {})["paths"]["RUNDE"]
+    assert [w["name"] for w in saved] == ["A", "B"] and "arrive_by" not in saved[1]
+    assert saved[1]["radius_m"] == 40
+    coord.api("POST", ["paths", "delete"], {}, {"name": "RUNDE"})
+    assert coord.api("GET", [], {}, {})["paths"] == {}
+    with pytest.raises(KeyError):
+        coord.api("POST", ["paths", "delete"], {}, {"name": "RUNDE"})
+
+
 def test_api_dispatch_and_targets(coord):
     snap = coord.api("GET", [], {}, {})
     assert snap["enabled"] and snap["missions"] == [] and snap["declarations"]

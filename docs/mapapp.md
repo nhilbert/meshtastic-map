@@ -110,8 +110,12 @@ simulated radio first.
   `#ALPHA 850m NE ~11min`; without a known position the leg follows the first position packet.
 - **Mission cards** show the current stop, distance and compass direction, ETA, speed, the age
   of the last position, the last message with its delivery state, and buttons *Status senden*,
-  *Route senden*, *Nächster Halt*, *Beenden*, *Details* (inspector tab **Einsatz** with all
-  metrics, the path, every message and the event log).
+  *Route senden*, *Nächster Halt*, *Pfad bearbeiten*, *Beenden*, *Details* (inspector tab
+  **Einsatz** with all metrics, the path, every message and the event log).
+- **Editing while running** (*Pfad bearbeiten*): waypoints can be added, moved, removed and
+  re-timed; passed waypoints stay passed. The node hears about it only when its current leg
+  changed (`#C neu 600m NE ~8min`). A path can be saved as a template (*Als Vorlage
+  speichern …*, without times) and loaded again under *Wegpunkt hinzufügen*.
 - **The field node** answers with `?` (status), `?r` (route), `?z` (target), `?p` (path), `?h`
   (help), `halt`/`go` (pause the guidance) and `x` (abort). Nodes without a mission are never
   answered.

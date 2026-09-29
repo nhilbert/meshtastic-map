@@ -150,6 +150,7 @@ class Coordinator:
         self.enabled = bool(saved.pop("enabled", False))
         self.settings = {**DEFAULTS, **saved}
         self.targets: dict[str, dict] = self.store.read("targets", {})
+        self.paths: dict[str, list[dict]] = self.store.read("paths", {})  # templates
         self.missions: dict[str, Mission] = {}
         for d in self.store.read("missions", []):
             try:
@@ -189,6 +190,8 @@ class Coordinator:
                 self._save_settings()
             elif parts[:1] == ["targets"] and len(parts) == 2:
                 self.edit_target(parts[1], body)
+            elif parts[:1] == ["paths"] and len(parts) == 2:
+                self.edit_template(parts[1], body)
             elif parts == ["missions"]:
                 m = self.assign(
                     str(body.get("node", "")),
@@ -212,6 +215,7 @@ class Coordinator:
             "declarations": [s.to_json() for s in declarations(dev.channels() if dev else [])],
             "missions": [m.to_json() for m in self.missions.values()],
             "targets": self.targets,
+            "paths": self.paths,
         }
 
     def set_enabled(self, on: bool) -> None:
@@ -250,6 +254,58 @@ class Coordinator:
         else:
             raise KeyError(_("unbekannte Aktion {action}", action=action))
         self.store.write("targets", self.targets)
+
+    def edit_template(self, action: str, body: dict) -> None:
+        """Named paths to reuse (without times; those belong to a day)."""
+        name = str(body.get("name") or "").strip()
+        if not NAME_RE.match(name):
+            raise ValueError(_("Name: 1–24 Zeichen, nur Buchstaben, Ziffern, _ und -"))
+        if action == "delete":
+            if name not in self.paths:
+                raise KeyError(_("Pfad {name} gibt es nicht", name=name))
+            del self.paths[name]
+        elif action == "save":
+            path = parse_path(body.get("path") or [], time.time())
+            self.paths[name] = [
+                {k: v for k, v in w.to_json().items() if k not in ("arrive_by", "hold_until")}
+                for w in path
+            ]
+        else:
+            raise KeyError(_("unbekannte Aktion {action}", action=action))
+        self.store.write("paths", self.paths)
+
+    def edit_path(self, node: str, raw_path: list[dict]) -> Mission:
+        """Change a running mission's path; the node hears about it only if its current leg
+        changed. Passed waypoints stay passed (matched by name)."""
+        m = self._mission(node)
+        self._require_active(m)
+        now = time.time()
+        path = parse_path(raw_path, now, float(self.settings["arrive_radius_m"]))
+        passed = {w.name.upper() for w in m.path[: m.index]}
+        old = m.stop
+        m.path = path
+        m.index = next(
+            (i for i, w in enumerate(path) if w.name.upper() not in passed), len(path) - 1
+        )
+        new = m.stop
+        changed = (new.name, new.lat, new.lon, new.arrive_by, new.hold_until) != (
+            old.name,
+            old.lat,
+            old.lon,
+            old.arrive_by,
+            old.hold_until,
+        )
+        self._event(node, "path_edited", path=[w.name for w in path], changed=changed)
+        if changed:
+            m.flags.clear()
+            if m.state == HOLDING:
+                m.state = UNDERWAY
+            self._update_metrics(m, now)
+            self._send(m, "changed", self._leg_text(m, "changed"), priority=True)
+        else:
+            self._update_metrics(m, now)
+        self._save(force=True)
+        return m
 
     def assign(self, node: str, raw_path: list[dict], profile: str, lang: str) -> Mission:
         """A new mission for the node (replacing its old one); sends the first leg."""
@@ -291,6 +347,8 @@ class Coordinator:
             if m.index >= len(m.path) - 1:
                 raise ValueError(_("{name} ist schon der letzte Halt", name=m.stop.name))
             self._advance(m, time.time(), skipped=True)
+        elif action == "path":
+            return self.edit_path(node, body.get("path") or [])
         elif action == "end":
             if m.active and self.settings["end_message"] and body.get("notify", True):
                 self._send(
