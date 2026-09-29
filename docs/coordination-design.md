@@ -1,7 +1,11 @@
 # Coordination mode – design
 
-Status: proposal, nothing implemented. Written 2026-09-29 against the working tree after the
-messaging pane and the i18n work; decisions from the owner folded in (section 12).
+Status: implemented 2026-09-29 (phases 1–4 of the plan: core, paths, routing, areas). Still
+open: the extras of section 11 phase 5 (periodic confirmation exists; OSM-derived no-go
+suggestions and position requests do not). Where this text and the code differ, the code and
+docs/mapapp.md are current; notable differences: the direct messages use a channel setting
+(default 1, the private channel) instead of channel 0, and "heading into a no-go area" is
+also checked along the node's own direction of travel, not only along the route.
 
 ## 1. Use case
 

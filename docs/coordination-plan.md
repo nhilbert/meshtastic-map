@@ -1,8 +1,11 @@
 # Coordination mode – implementation plan
 
-Companion to [coordination-design.md](coordination-design.md). Nothing here is built yet.
-The plan is ordered so that every step leaves `main` working, passes `pytest` and `ruff`, and
-can be tried in the page with the simulated radio before anything touches the mesh.
+Companion to [coordination-design.md](coordination-design.md). Steps 1–6 were built and
+committed on 2026-09-29 (six commits from "Add a simulated radio" to "restricted areas,
+notice areas and places"); step 7 (extras) is open. The owner allowed work on `main` directly,
+so section 0's worktree setup was not needed. The plan is ordered so that every step leaves
+`main` working, passes `pytest` and `ruff`, and can be tried in the page with the simulated
+radio before anything touches the mesh.
 
 ## 0. Working without disturbing the running app
 
