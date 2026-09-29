@@ -197,4 +197,5 @@ def node_row(node: dict, own: bool, pos: dict | None) -> dict:
         "lat": pos["latitude"] if pos else None,
         "lon": pos["longitude"] if pos else None,
         "own": own,
+        "favorite": bool(node.get("isFavorite")),
     }

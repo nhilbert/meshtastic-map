@@ -16,6 +16,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -54,6 +55,8 @@ class DeviceLink:
         self._subscribed = False
         name = "messages-sim.jsonl" if simulate else "messages.jsonl"
         self.messages = MessageStore(data_dir / name)
+        # Called with every received packet (plain dict) on the reader thread; must be quick.
+        self.listeners: list[Callable[[dict], None]] = []
 
     # ------------------------------------------------------------ connection
     def connect(self, port: str | None = None) -> None:
@@ -117,10 +120,16 @@ class DeviceLink:
             return
         self.packets += 1
         self.last_packet = time.time()
+        plain = to_plain(packet)
         try:
-            self._record(to_plain(packet))
+            self._record(plain)
         except Exception as e:  # a malformed packet must not stop the logging below
             log.warning("Could not record packet for the messaging pane: %s", e)
+        for listener in list(self.listeners):
+            try:
+                listener(plain)
+            except Exception as e:  # one listener's bug must not stop the others or the log
+                log.warning("Packet listener failed: %s", e)
         if not self.log_packets:
             return
         now = datetime.now()
@@ -128,7 +137,7 @@ class DeviceLink:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps({"receivedAt": now.isoformat(), **to_plain(packet)}) + "\n")
+                f.write(json.dumps({"receivedAt": now.isoformat(), **plain}) + "\n")
         except OSError as e:
             log.warning("Could not log packet: %s", e)
 
@@ -153,11 +162,19 @@ class DeviceLink:
         if port == "TEXT_MESSAGE_APP" and decoded.get("text"):
             self.messages.add({**base, "id": p.get("id"), "dir": "in", "text": decoded["text"]})
 
-    def send_text(self, text: str, to: str, channel: int) -> dict:
+    def send_text(
+        self,
+        text: str,
+        to: str,
+        channel: int,
+        on_status: Callable[[str], None] | None = None,
+        tag: str | None = None,
+    ) -> dict:
         """Send a text to a node ("!abcd1234") or to everyone on a channel ("^all").
 
         Asks for an acknowledgement: a direct message becomes "zugestellt" when the recipient
         confirms, a channel message "im Netz" when another node was heard relaying it.
+        on_status gets the final state; tag marks the stored message (e.g. "coord").
         """
         from meshtastic.protobuf import portnums_pb2
 
@@ -190,6 +207,8 @@ class DeviceLink:
             with stored:
                 if sent is not None:
                     self.messages.set_status(sent.id, status)
+            if on_status is not None:
+                on_status(status)
 
         try:
             sent = iface.sendData(
@@ -202,18 +221,19 @@ class DeviceLink:
                 channelIndex=channel,
             )
             me = self.status().get("me") or {}
-            return self.messages.add(
-                {
-                    "id": sent.id,
-                    "time": now(),
-                    "dir": "out",
-                    "from": me.get("id"),
-                    "to": to if direct else "^all",
-                    "channel": channel,
-                    "text": text,
-                    "status": "gesendet",
-                }
-            )
+            rec = {
+                "id": sent.id,
+                "time": now(),
+                "dir": "out",
+                "from": me.get("id"),
+                "to": to if direct else "^all",
+                "channel": channel,
+                "text": text,
+                "status": "gesendet",
+            }
+            if tag:
+                rec["tag"] = tag
+            return self.messages.add(rec)
         finally:
             stored.release()
 

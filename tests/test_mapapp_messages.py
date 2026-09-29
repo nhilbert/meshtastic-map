@@ -111,6 +111,21 @@ def test_send_direct_and_delivery(dev):
     assert changed["status"] == "zugestellt"
 
 
+def test_listeners_and_status_callback(dev):
+    seen, states = [], []
+    dev.listeners.append(lambda p: seen.append(p["decoded"]["portnum"]))
+    dev.listeners.append(lambda p: 1 / 0)  # a failing listener must not stop the others
+    dev.listeners.append(lambda p: seen.append("second"))
+    dev._on_receive(packet(port="POSITION_APP"), dev.iface)
+    assert seen == ["POSITION_APP", "second"]
+    msg = dev.send_text("hi", "!abcd1234", 0, on_status=states.append, tag="coord")
+    assert msg["tag"] == "coord"
+    dev.iface.ack(0xABCD1234)
+    assert states == ["zugestellt"]
+    again = MessageStore(dev.messages.path)
+    assert again.since(0)[-1]["tag"] == "coord"
+
+
 def test_send_channel_and_failures(dev):
     dev.send_text("an alle", "^all", 1)
     dev.iface.ack(0x11112222)  # heard a relay: implicit ack from our own node
