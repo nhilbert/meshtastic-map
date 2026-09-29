@@ -1,5 +1,22 @@
 # UI review and improvement plan
 
+## Selected visual direction
+
+Signal Desk with Field Console telemetry (selected by the owner after reviewing three concepts):
+
+- Slate surfaces, cyan primary actions, subtle cyan selections and 6 px controls.
+- Quiet header tools and settings buttons; clear solid primary actions in forms and popups.
+- One shared offline outline-icon set for navigation, sections and node actions.
+- Compact mission readouts for distance, ETA and speed, plus a persistent device/packet strip.
+- Dark by default, with saved light-mode preferences preserved. Base tiles are toned only in
+  dark mode; overlays and semantic marker colors remain unchanged.
+- Responsive drawers, keyboard navigation and all three translations remain supported.
+
+Implemented in the existing app without additional libraries. Browser rendering remains
+unverified in this session because no browser connection is available.
+
+## Initial review
+
 Reviewed 2026-09-29. Scope: the map application in `webmap/`, including tasks,
 coordination, messaging and the inspector. Findings come from the implementation;
 no browser connection was available for screenshots or interactive visual review.

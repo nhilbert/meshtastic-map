@@ -16,6 +16,17 @@ in German, English and French (see [Languages](#languages)).
 
 ## Using it
 
+The **Signal Desk** appearance uses slate panels, cyan actions, outline icons and compact
+monospaced telemetry strips. Dark is the default for a new browser; a saved light/dark choice
+wins. The footer reports the device state, received packet count and last packet age. Mission
+cards separate distance, ETA and speed from position freshness and routing notices. Missing
+measurements remain blank or explicitly unavailable.
+
+Dark mode tones the existing cached OpenStreetMap base tiles locally; it needs no extra tile
+provider or download. Coverage overlays and node colors retain their original meaning.
+Light mode displays the original base tiles. The concept images are design references, not
+pixel-exact representations of the available map data.
+
 - **Header**: 2D / 3D view, **Nachrichten** (messaging pane, shows unread messages),
   **Aufgaben** (background tasks, shows how many run), **Koordination** (the coordination
   mode, shows how many missions run), **Details** (the right panel; greyed out while there is

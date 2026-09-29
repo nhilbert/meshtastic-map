@@ -1,4 +1,7 @@
 {
+  "Gerätestatus": "Device status",
+  "Pakete": "Packets",
+  "Letztes Paket": "Last packet",
   "Bedienfeld": "Controls",
   "Einstellungen für {name}": "Settings for {name}",
   "Server nicht erreichbar": "Server unreachable",

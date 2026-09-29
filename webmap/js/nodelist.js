@@ -3,6 +3,7 @@
 // position shows it on the map; ✉ opens a direct conversation in the messaging pane.
 import { locale, t } from "./i18n.js";
 import { $, esc, fmt } from "./util.js";
+import { symbolSVG } from "./icons.js";
 
 const SORTS = {
   last: [() => t("zuletzt gehört"), (a, b) => (b.last || 0) - (a.last || 0)],
@@ -63,8 +64,8 @@ function fill() {
         <span class="sn">${esc(n.short || n.id.slice(-4))}</span> ${esc(n.long || n.id)}</button>
         <div class="sub">${esc(n.id)}${n.hw ? " · " + esc(n.hw) : ""}${n.battery != null ? " · " + t("Akku {n} %", { n: n.battery }) : ""}${n.own ? " · " + t("eigenes Gerät") : ""}</div></td>
       <td class="n">${n.hops ?? "–"}</td><td class="n">${n.snr != null ? fmt(n.snr, 1) : "–"}</td><td class="n">${age(n.last)}</td>
-      <td class="acts">${n.own ? "" : `<button class="btn small" data-msg="${esc(n.id)}" aria-label="${esc(t("{name} direkt schreiben", { name: n.long || n.id }))}" title="${t("Direktnachricht")}">✉</button>
-        <button class="btn small" data-assign="${esc(n.id)}" aria-label="${esc(t("{name} ein Ziel zuweisen", { name: n.long || n.id }))}" title="${t("Ziel zuweisen")}">⚑</button>`}</td></tr>`).join("")}
+      <td class="acts">${n.own ? "" : `<button class="btn small quiet" data-msg="${esc(n.id)}" aria-label="${esc(t("{name} direkt schreiben", { name: n.long || n.id }))}" title="${t("Direktnachricht")}">${symbolSVG("message")}</button>
+        <button class="btn small quiet" data-assign="${esc(n.id)}" aria-label="${esc(t("{name} ein Ziel zuweisen", { name: n.long || n.id }))}" title="${t("Ziel zuweisen")}">${symbolSVG("target")}</button>`}</td></tr>`).join("")}
     </table>` : `<p class="note">${nodes.length ? t("Kein Knoten passt zum Filter.") : esc((L.data && L.data.note) || t("Keine Knoten."))}</p>`;
   body.querySelectorAll("[data-focus]").forEach(b => b.addEventListener("click", () => L.api.focusNode(b.dataset.focus)));
   body.querySelectorAll("[data-msg]").forEach(b => b.addEventListener("click", () => L.api.message(b.dataset.msg)));

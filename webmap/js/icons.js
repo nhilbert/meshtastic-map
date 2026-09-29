@@ -2,6 +2,17 @@
 import { esc } from "./util.js";
 
 const PATHS = {
+  map: '<path d="m1.5 3 4-1.5 5 2 4-1.5v11l-4 1.5-5-2-4 1.5zM5.5 1.5v11M10.5 3.5v11"/>',
+  cube: '<path d="m8 1.5 6 3.3v6.4L8 14.5l-6-3.3V4.8zM2 4.8 8 8l6-3.2M8 8v6.5M5 3.2l6 3.2"/>',
+  message: '<path d="M2 2.5h12v9H6l-4 3zM5 5.5h6M5 8h4"/>',
+  tasks: '<rect x="3" y="3" width="10" height="11" rx="1.5"/><path d="M6 3V1.5h4V3M5.5 8l1.5 1.5 3.5-4"/>',
+  layers: '<path d="m8 1.5 6.5 3.8L8 9 1.5 5.3zM2 8.3 8 12l6-3.7M2 11 8 14.5l6-3.5"/>',
+  route: '<circle cx="3" cy="3" r="1.5"/><circle cx="13" cy="13" r="1.5"/><path d="M4.5 3h6a2.5 2.5 0 0 1 0 5h-5a2.5 2.5 0 0 0 0 5h6"/>',
+  panel: '<rect x="1.5" y="2" width="13" height="12" rx="1.5"/><path d="M10 2v12"/>',
+  settings: '<path d="M2 4h12M2 12h12"/><rect x="5" y="2" width="3" height="4" rx="1"/><rect x="9" y="10" width="3" height="4" rx="1"/>',
+  theme: '<path d="M13.5 9.5A6 6 0 0 1 6.5 2a6 6 0 1 0 7 7.5z"/>',
+  close: '<path d="m4 4 8 8M12 4l-8 8"/>',
+  menu: '<path d="M2 4h12M2 8h12M2 12h12"/>',
   // antenna mast with waves
   router: '<path d="M8 6v8M5.5 14h5M8 6l-2.5 8M8 6l2.5 8"/><path d="M5 4.2a4 4 0 0 1 6 0M3.2 2.4a6.5 6.5 0 0 1 9.6 0"/>',
   // location pin
@@ -21,6 +32,11 @@ const PATHS = {
 export function symbolSVG(name) {
   const p = PATHS[name] || PATHS.client;
   return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+}
+
+// Refreshing unread/task counts must preserve the header's icon and accessible text.
+export function buttonLabel(button, icon, label) {
+  button.innerHTML = symbolSVG(icon) + `<span>${esc(label)}</span>`;
 }
 
 // Dark or light text depending on the badge colour.

@@ -5,6 +5,7 @@ import { bindInputs, initialValues, inputsHTML } from "./forms.js";
 import { locale, t } from "./i18n.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { showSection } from "./workspace.js";
+import { buttonLabel } from "./icons.js";
 
 const ACTIVE = ["läuft", "wartet"];
 const STATE_CLASS = { "läuft": "run", wartet: "wait", fertig: "ok", Fehler: "bad", abgebrochen: "off" };
@@ -142,7 +143,7 @@ function renderList() {
 function renderBadge() {
   const run = T.jobs.filter(j => j.state === "läuft").length, wait = T.jobs.filter(j => j.state === "wartet").length;
   const b = $("#btnJobs");
-  b.textContent = run ? t("Aufgaben · {n} läuft", { n: run }) : wait ? t("Aufgaben · {n} wartet", { n: wait }) : t("Aufgaben");
+  buttonLabel(b, "tasks", run ? t("Aufgaben · {n} läuft", { n: run }) : wait ? t("Aufgaben · {n} wartet", { n: wait }) : t("Aufgaben"));
   b.classList.toggle("busy", run > 0);
 }
 

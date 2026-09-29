@@ -16,8 +16,7 @@
 <div id="app">
 <header>
   <button class="btn" id="btnRail" aria-expanded="false" aria-controls="rail" data-i18n>Bedienfeld</button>
-  <h1 data-i18n>Meshtastic — Karten</h1>
-  <span class="sub" id="status" role="status" data-i18n>lädt …</span>
+  <h1><span class="brand-name">meshplay</span><span class="brand-sub" data-i18n>Meshtastic — Karten</span></h1>
   <button class="btn device-status" id="btnDevice" aria-controls="rail" title="Gerät (USB)" data-i18n-title="Gerät (USB)">
     <span class="dot" id="headerDevDot" aria-hidden="true"></span><span id="headerDevText" data-i18n>lädt …</span>
   </button>
@@ -132,6 +131,14 @@
     </div>
   </section>
 </main>
+<footer class="telemetry-bar" aria-label="Gerätestatus" data-i18n-aria-label="Gerätestatus">
+  <dl class="telemetry" id="deviceTelemetry">
+    <div><dt data-i18n>Gerät (USB)</dt><dd id="telemetryDevice">—</dd></div>
+    <div><dt data-i18n>Pakete</dt><dd id="telemetryPackets">—</dd></div>
+    <div><dt data-i18n>Letztes Paket</dt><dd id="telemetryLast">—</dd></div>
+  </dl>
+  <span id="status" role="status" data-i18n>lädt …</span>
+</footer>
 <div id="toasts" aria-live="polite"></div>
 </div>
 

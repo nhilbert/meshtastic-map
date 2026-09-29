@@ -1,4 +1,7 @@
 {
+  "Gerätestatus": "État de l’appareil",
+  "Pakete": "Paquets",
+  "Letztes Paket": "Dernier paquet",
   "Bedienfeld": "Commandes",
   "Einstellungen für {name}": "Paramètres de {name}",
   "Server nicht erreichbar": "Serveur inaccessible",

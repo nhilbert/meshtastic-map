@@ -6,6 +6,7 @@
 import { locale, t } from "./i18n.js";
 import { $, esc, getJSON, postJSON } from "./util.js";
 import { setRail } from "./workspace.js";
+import { buttonLabel } from "./icons.js";
 
 const MAX_BYTES = 200;  // same limit as the server (meshplay.mapapp.messages.MAX_TEXT_BYTES)
 const TRAFFIC = "traffic";
@@ -129,7 +130,7 @@ function render() {
   if (!M.conv || (M.conv !== TRAFFIC && !convs.includes(M.conv))) M.conv = convs.find(k => k === "ch:1") || convs[0] || TRAFFIC;
   const total = convs.reduce((n, k) => n + unread(k), 0);
   const title = total ? t("Nachrichten · {n} neu", { n: total }) : t("Nachrichten");
-  $("#btnMsg").textContent = title;
+  buttonLabel($("#btnMsg"), "message", title);
   $("#msgTitle").textContent = title;
   $("#btnMsg").classList.toggle("busy", total > 0);
   renderHead();

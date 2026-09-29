@@ -6,6 +6,7 @@ import { locale, t } from "./i18n.js";
 import { openTaskForm } from "./tasks.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { showSection } from "./workspace.js";
+import { buttonLabel, symbolSVG } from "./icons.js";
 
 // Mission states are German codes: t("zugewiesen") t("unterwegs") t("wartet") t("erreicht")
 // t("abgebrochen") t("beendet"); message kinds: t("assign") t("status") t("route") t("target")
@@ -87,14 +88,17 @@ const ago = s => (s === null || s === undefined) ? "–" : s < 90 ? t("vor {n} s
 const dist = m => (m === null || m === undefined) ? "–" : m < 995 ? `${Math.round(m)} m` : `${fmt(m / 1000, 1)} km`;
 const eta = s => (s === null || s === undefined) ? "–" : `~${Math.max(1, Math.round(s / 60))} min`;
 const stateChip = s => `<span class="chip ${STATE_CLASS[s] || ""}">${esc(t(s))}</span>`;
-function metricsLine(m) {
+function metricsHTML(m) {
   const k = m.metrics || {};
-  if (k.dist_m === undefined) return t("noch keine Position vom Knoten");
-  const parts = [`${dist(k.dist_m)} ${k.compass}`, eta(k.eta_s), `${fmt(k.speed_kmh, 1)} km/h`, t("Position {ago}", { ago: ago(k.position_age_s) })];
-  if (k.mode === "route") parts.splice(1, 0, t("{d} auf der Straße", { d: dist(k.route_left_m) }) + (k.off_route_m > 30 ? ` (${t("{d} daneben", { d: dist(k.off_route_m) })})` : ""));
+  if (k.dist_m == null) return `<p class="note" style="margin:0">${t("noch keine Position vom Knoten")}</p>`;
+  const readings = [[t("Distanz"), `${dist(k.dist_m)} ${k.compass || ""}`],
+    [t("Ankunft"), eta(k.eta_s)], [t("Tempo"), `${fmt(k.speed_kmh, 1)} km/h`]];
+  const parts = [t("Position {ago}", { ago: ago(k.position_age_s) })];
+  if (k.mode === "route") parts.unshift(t("{d} auf der Straße", { d: dist(k.route_left_m) }) + (k.off_route_m > 30 ? ` (${t("{d} daneben", { d: dist(k.off_route_m) })})` : ""));
   if (k.margin_min !== undefined) parts.push(k.margin_min >= 0 ? t("{n} min vor Plan", { n: k.margin_min }) : t("{n} min hinter Plan", { n: -k.margin_min }));
   if (k.stale) parts.push("⚠ " + t("Position veraltet"));
-  return parts.join(" · ");
+  return `<dl class="telemetry">${readings.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>
+    <div class="meta${k.stale ? " st bad" : ""}">${esc(parts.join(" · "))}</div>`;
 }
 function statusClass(s) { return s === "zugestellt" || s === "im Netz" ? "ok" : /^nicht/.test(s || "") ? "bad" : ""; }
 function statusText(s) {  // delivery states are German codes, see messages.js
@@ -109,9 +113,9 @@ function statusText(s) {  // delivery states are German codes, see messages.js
 const editing = () => !!(C.form || C.settings || C.editTarget || C.editArea || C.editPlace);
 function renderBadge() {
   const d = C.data, badge = $("#btnCoord");
-  if (!d) { badge.textContent = t("Koordination"); badge.classList.remove("busy"); return; }
+  if (!d) { buttonLabel(badge, "route", t("Koordination")); badge.classList.remove("busy"); return; }
   const active = d.missions.filter(m => ACTIVE.includes(m.state)).length;
-  badge.textContent = d.enabled && active ? t("Koordination · {n}", { n: active }) : t("Koordination");
+  buttonLabel(badge, "route", d.enabled && active ? t("Koordination · {n}", { n: active }) : t("Koordination"));
   badge.classList.toggle("busy", d.enabled);
   $("#coordDot").style.background = d.enabled ? "var(--ok)" : "var(--line)";
 }
@@ -129,8 +133,8 @@ function render() {
       : connected ? esc(t("Aus: es wird nichts gesendet. Einschalten erlaubt dem Server, Knoten mit Einsatz selbstständig anzufunken."))
         : esc(t("Braucht das verbundene Gerät (oben unter „Gerät (USB)“ verbinden)."))}</p>
     <div class="jobstart">
-      <button class="btn" data-act="new" ${d.enabled ? "" : `title="${t("Einsätze können auch bei ausgeschaltetem Modus angelegt werden; gesendet wird erst, wenn er an ist.")}"`}>＋ ${t("Einsatz")}</button>
-      <button class="btn small" data-act="settings" aria-expanded="${!!C.settings}">⚙ ${t("Einstellungen")}</button>
+      <button class="btn on" data-act="new" ${d.enabled ? "" : `title="${t("Einsätze können auch bei ausgeschaltetem Modus angelegt werden; gesendet wird erst, wenn er an ist.")}"`}>${symbolSVG("target")} ${t("Einsatz")}</button>
+      <button class="btn small quiet" data-act="settings" aria-expanded="${!!C.settings}">${symbolSVG("settings")} ${t("Einstellungen")}</button>
       <button class="btn small" data-act="targets" aria-expanded="${C.targets}">${t("Ziele")} (${Object.keys(d.targets).length})</button>
       <button class="btn small" data-act="areas" aria-expanded="${C.areas}">${t("Gebiete")} (${(d.areas || []).length + (d.places || []).length})</button>
       <button class="btn small" data-act="osm" title="${esc(t("Straßen und Wege der Umgebung von OpenStreetMap laden (Overpass-API); danach führt der Server über Straßen statt Luftlinie."))}">${t("Straßennetz laden …")}</button>
@@ -172,7 +176,8 @@ function cardHTML(m) {
   const where = m.path.length > 1 ? t("Halt {n} von {total}: {name}", { n: stops.indexOf(stop) + 1 + (stop.kind === "via" ? 1 : 0), total: stops.length, name: stop.name }) : stop.name;
   return `<div class="job ${C.sel === m.node ? "sel" : ""}">
     <div class="hd">${stateChip(m.state)}<span class="nm" title="${esc(m.node)}"><button class="lnk" data-act="focus" data-node="${esc(m.node)}">${esc(nodeName(m.node))}</button></span></div>
-    <div class="det"><strong>${esc(where)}</strong> · ${esc(metricsLine(m))}</div>
+    <div class="mission-target">${esc(where)}</div>
+    ${metricsHTML(m)}
     ${m.legs && ACTIVE.includes(m.state) ? `<div class="det"><span class="port">R:</span> ${esc(m.legs)}</div>` : ""}
     ${last ? `<div class="meta">${clock(last.time)} „${esc(last.text)}“ · <span class="st ${statusClass(last.status)}">${esc(statusText(last.status))}</span></div>` : ""}
     <div class="acts">

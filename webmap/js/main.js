@@ -12,6 +12,7 @@ import { initSites, renderSites } from "./sites.js";
 import { initTasks, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
 import { $, css, esc, fmt, getJSON, grade, legendHTML, postJSON } from "./util.js";
 import { initWorkspace, setRail } from "./workspace.js";
+import { buttonLabel, symbolSVG } from "./icons.js";
 
 const status = (msg, bad) => { const s = $("#status"); s.textContent = msg; s.style.color = bad ? "var(--bad)" : ""; };
 const store = {
@@ -74,7 +75,7 @@ function renderLinkLayer() {
   }
   el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${L.on ? "checked" : ""} aria-label="${t("Strecke A → B")}">
       <span class="nm">${t("Strecke A → B")}</span><span class="grp">${t("Simulation")}</span>
-      <button class="btn small" data-open aria-label="${t("Einstellungen")}" title="${t("Einstellungen")}" aria-expanded="${L.open}">⚙</button></div>
+      <button class="btn small quiet" data-open aria-label="${t("Einstellungen")}" title="${t("Einstellungen")}" aria-expanded="${L.open}">${symbolSVG("settings")}</button></div>
     <div class="bd" ${L.open ? "" : "hidden"}>
       <div class="note" style="margin:0">${t("Direktstrecke zwischen zwei Punkten, mit allen Modellfamilien über den Laserscan gerechnet. Ergebnis rechts unter „Details“.")}</div>
       <div class="pickrow"><span>${t("Klick in die Karte setzt")}</span>
@@ -248,7 +249,7 @@ function renderLayer(desc) {
   const el = document.getElementById("lyr_" + desc.id);
   el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${st.enabled ? "checked" : ""} aria-label="${esc(desc.name)}">
       <span class="nm">${esc(desc.name)}</span><span class="grp">${esc(desc.group)}</span>
-      <button class="btn small" data-open aria-label="${esc(t("Einstellungen für {name}", { name: desc.name }))}" aria-expanded="${st.open}" title="${t("Einstellungen")}">⚙</button></div>
+      <button class="btn small quiet" data-open aria-label="${esc(t("Einstellungen für {name}", { name: desc.name }))}" aria-expanded="${st.open}" title="${t("Einstellungen")}">${symbolSVG("settings")}</button></div>
     <div class="bd" ${st.open ? "" : "hidden"}><div class="note" style="margin:0">${esc(desc.description)}</div>
       ${inputsHTML(desc.settings, st.values, desc.id)}
       <div class="msg"></div><div class="lg"></div><div class="summary"></div>
@@ -322,6 +323,8 @@ async function deviceStatus(action) {
     $("#headerDevText").textContent = action ? t("Fehler") : t("Server nicht erreichbar");
     $("#headerDevDot").style.background = "var(--bad)";
     $("#btnDevice").title = e.message;
+    $("#telemetryDevice").textContent = t("Fehler");
+    $("#telemetryPackets").textContent = $("#telemetryLast").textContent = "—";
     return;
   }
   const colors = { verbunden: "var(--ok)", verbinde: "var(--warn)", Fehler: "var(--bad)" };
@@ -329,6 +332,10 @@ async function deviceStatus(action) {
   $("#headerDevDot").style.background = colors[d.state] || "var(--ink3)";
   $("#headerDevText").textContent = d.state === "verbunden" && d.port === "sim" ? t("Simulation") : t(d.state);
   $("#btnDevice").title = d.state === "Fehler" ? d.error : t("Gerät (USB)");
+  $("#btnDevice").classList.toggle("simulated", d.port === "sim");
+  $("#telemetryDevice").textContent = $("#headerDevText").textContent;
+  $("#telemetryPackets").textContent = fmt(d.packets, 0);
+  $("#telemetryLast").textContent = d.last_packet ? t("vor {n} s", { n: Math.max(0, Math.round(Date.now() / 1000 - d.last_packet)) }) : "—";
   const since = d.last_packet ? ", " + t("letztes vor {s} s", { s: Math.round(Date.now() / 1000 - d.last_packet) }) : "";
   // Device states are German codes: t("getrennt") t("verbinde") t("verbunden") t("Fehler")
   $("#devText").textContent = d.state === "verbunden"
@@ -509,6 +516,16 @@ function setView(mode) {
 
 function bindUI() {
   initWorkspace();
+  for (const [id, icon] of Object.entries({ btnRail: "menu", view2d: "map", view3d: "cube",
+    btnMsg: "message", btnJobs: "tasks", btnCoord: "route", btnInsp: "panel" })) {
+    buttonLabel($("#" + id), icon, $("#" + id).textContent);
+  }
+  for (const [id, icon] of Object.entries({ themeBtn: "theme", btnCloseInsp: "close", btnCloseRail: "close" })) {
+    $("#" + id).innerHTML = symbolSVG(icon);
+  }
+  for (const [section, icon] of Object.entries({ layers: "layers", jobs: "tasks", coord: "route", "3d": "cube", device: "client" })) {
+    $("details[data-sec='" + section + "'] h2").insertAdjacentHTML("afterbegin", symbolSVG(icon));
+  }
   $("#tabs").addEventListener("keydown", e => {
     const tabs = [...$("#tabs").querySelectorAll("[data-tab]")];
     const index = tabs.indexOf(document.activeElement);
@@ -548,15 +565,15 @@ function bindUI() {
   $("#fres").addEventListener("input", e => { $("#fresVal").textContent = fmt(+e.target.value, 1) + " F"; map3d.setFresnel(+e.target.value); });
   $("#themeBtn").addEventListener("click", () => {
     const r = document.documentElement;
-    const now = r.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const now = r.getAttribute("data-theme") || "dark";
     const theme = now === "dark" ? "light" : "dark";
     r.setAttribute("data-theme", theme); store.set("theme", theme); in3d(() => map3d.applyTheme());
   });
 }
 
 (async function main() {
-  const theme = store.get("theme", null);
-  if (theme === "light" || theme === "dark") document.documentElement.setAttribute("data-theme", theme);
+  const theme = store.get("theme", "dark");
+  document.documentElement.setAttribute("data-theme", theme === "light" ? "light" : "dark");
   await loadCatalogue();
   translateStatic();
   try {
