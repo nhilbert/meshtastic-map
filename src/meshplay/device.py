@@ -23,6 +23,9 @@ KNOWN_VIDS = {
 }
 
 
+_warned: set[str] = set()  # configured ports already reported missing
+
+
 def list_serial_ports() -> list[dict]:
     """Serial ports of the system, likely Meshtastic devices first, Bluetooth last.
 
@@ -63,7 +66,9 @@ def find_port(ports: list[dict] | None = None) -> str | None:
     if configured:
         if any(p["device"].lower() == configured.lower() for p in ports):
             return configured
-        log.warning("MESHTASTIC_PORT=%s is not present; looking for a device", configured)
+        if configured not in _warned:  # once: the map app asks every few seconds while retrying
+            _warned.add(configured)
+            log.warning("MESHTASTIC_PORT=%s is not present; looking for a device", configured)
     known = [p["device"] for p in ports if p["kind"] == "known"]
     if known:
         return known[0]
