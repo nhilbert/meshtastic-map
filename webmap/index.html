@@ -67,8 +67,9 @@
     <details class="sec" data-sec="device">
       <summary><h2 data-i18n>Gerät (USB)</h2><span class="dot" id="devDot"></span></summary>
       <div class="dev"><span id="devText">—</span></div>
-      <div class="row2">
-        <input type="text" id="devPort" aria-label="Port (leer = automatisch)" data-i18n-aria-label="Port (leer = automatisch)" placeholder="Port (leer = automatisch)" data-i18n-placeholder="Port (leer = automatisch)">
+      <div class="devrow">
+        <select id="devPort" aria-label="Port" data-i18n-aria-label="Port"></select>
+        <button class="btn small quiet" id="devScan" aria-label="Ports neu suchen" data-i18n-aria-label="Ports neu suchen" title="Ports neu suchen" data-i18n-title="Ports neu suchen"></button>
         <button class="btn" id="devBtn" data-i18n>Verbinden</button>
       </div>
     </details>

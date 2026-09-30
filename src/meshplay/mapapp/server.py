@@ -6,6 +6,7 @@ GET  /api/app                 home position, scene extent, layer list with setti
 GET  /api/layers/<id>?...     layer data for the given settings (GeoJSON or raster)
 POST /api/tools/<name>        run a tool, e.g. link
 GET  /api/device              connection status of the USB device
+GET  /api/device/ports        serial ports of the system and the automatic choice
 POST /api/device/connect      {"port": "COM8"} or {} for auto-detect; /api/device/disconnect
 GET  /api/jobs                background tasks; /api/jobs/kinds: task kinds with their forms
 GET  /api/jobs/<id>           one task with its log
@@ -252,6 +253,8 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                     self.send_json(app_info(ctx))
                 elif parts == ["api", "device"]:
                     self.send_json(ctx.device.status())
+                elif parts == ["api", "device", "ports"]:
+                    self.send_json(ctx.device.ports())
                 elif parts == ["api", "jobs"]:
                     self.send_json({"jobs": ctx.jobs.list()})
                 elif parts == ["api", "jobs", "kinds"]:

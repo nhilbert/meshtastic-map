@@ -31,7 +31,9 @@ pixel-exact representations of the available map data.
   **Aufgaben** (background tasks, shows how many run), **Koordination** (the coordination
   mode, shows how many missions run), **Details** (the right panel; greyed out while there is
   nothing to show), **DE | EN | FR** (language), light/dark.
-- **Left column**: *Ebenen* (layers), *Aufgaben*, *3D-Darstellung* (only in 3D), *Gerät (USB)*.
+- **Left column**: *Ebenen* (layers), *Aufgaben*, *3D-Darstellung* (only in 3D), *Gerät (USB)*
+  (connect; the port list shows every serial port, *Automatisch* names the one detection would
+  take, ↻ searches again after plugging in; the choice is remembered in the browser).
   Sections fold and remember their state; tasks and coordination start folded. On phones,
   **Bedienfeld** opens the controls as a drawer, leaving the map available at full height.
   Header shortcuts open the relevant section. The device status in the header also identifies

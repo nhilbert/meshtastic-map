@@ -12,6 +12,7 @@ const PATHS = {
   settings: '<path d="M2 4h12M2 12h12"/><rect x="5" y="2" width="3" height="4" rx="1"/><rect x="9" y="10" width="3" height="4" rx="1"/>',
   theme: '<path d="M13.5 9.5A6 6 0 0 1 6.5 2a6 6 0 1 0 7 7.5z"/>',
   close: '<path d="m4 4 8 8M12 4l-8 8"/>',
+  refresh: '<path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1M13.5 1.5v3.5H10"/>',
   menu: '<path d="M2 4h12M2 8h12M2 12h12"/>',
   // antenna mast with waves
   router: '<path d="M8 6v8M5.5 14h5M8 6l-2.5 8M8 6l2.5 8"/><path d="M5 4.2a4 4 0 0 1 6 0M3.2 2.4a6.5 6.5 0 0 1 9.6 0"/>',

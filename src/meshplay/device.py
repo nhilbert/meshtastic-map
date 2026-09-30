@@ -23,16 +23,52 @@ KNOWN_VIDS = {
 }
 
 
-def find_port() -> str | None:
-    """Return the configured port, or the first serial port from a known vendor."""
+def list_serial_ports() -> list[dict]:
+    """Serial ports of the system, likely Meshtastic devices first, Bluetooth last.
+
+    kind: "known" (a USB vendor from KNOWN_VIDS), "usb" (another USB device), "bluetooth"
+    (a virtual Bluetooth serial port: never a Meshtastic node on USB, and opening one can block
+    for a long time) or "other".
+    """
+    out = []
+    for p in list_ports.comports():
+        hwid = (p.hwid or "").upper()
+        if p.vid in KNOWN_VIDS:
+            kind, vendor = "known", KNOWN_VIDS[p.vid]
+        elif hwid.startswith("BTHENUM") or "BLUETOOTH" in hwid:
+            kind, vendor = "bluetooth", None
+        elif p.vid is not None:
+            kind, vendor = "usb", p.manufacturer
+        else:
+            kind, vendor = "other", p.manufacturer
+        out.append(
+            {
+                "device": p.device,
+                "kind": kind,
+                "vendor": vendor,
+                "description": p.description,
+                "vid": p.vid,
+                "pid": p.pid,
+            }
+        )
+    order = {"known": 0, "usb": 1, "other": 2, "bluetooth": 3}
+    return sorted(out, key=lambda d: (order[d["kind"]], d["device"]))
+
+
+def find_port(ports: list[dict] | None = None) -> str | None:
+    """The port to use: MESHTASTIC_PORT if that port exists, else the first port from a known
+    vendor, else the only other USB serial port. None if there is no clear choice."""
+    ports = list_serial_ports() if ports is None else ports
     configured = load_settings().port
     if configured:
-        return configured
-    for p in list_ports.comports():
-        if p.vid in KNOWN_VIDS:
-            log.debug("Found %s device on %s", KNOWN_VIDS[p.vid], p.device)
-            return p.device
-    return None
+        if any(p["device"].lower() == configured.lower() for p in ports):
+            return configured
+        log.warning("MESHTASTIC_PORT=%s is not present; looking for a device", configured)
+    known = [p["device"] for p in ports if p["kind"] == "known"]
+    if known:
+        return known[0]
+    usb = [p["device"] for p in ports if p["kind"] == "usb"]
+    return usb[0] if len(usb) == 1 else None
 
 
 @contextmanager
@@ -45,7 +81,10 @@ def connect(port: str | None = None, **kwargs) -> Iterator[SerialInterface]:
     """
     port = port or find_port()
     if port is None:
-        raise RuntimeError("No Meshtastic device found. Plug it in or set MESHTASTIC_PORT in .env.")
+        raise RuntimeError(
+            "No Meshtastic device found on USB. Plug it in (a data cable, not a charging cable) "
+            "or give the port (--port, MESHTASTIC_PORT in .env)."
+        )
     log.info("Connecting to %s", port)
     iface = SerialInterface(devPath=port, **kwargs)
     try:

@@ -313,10 +313,25 @@ async function refresh(desc, auto = false, user = false) {
 }
 
 // ---------------------------------------------------------------- device
+// The system's serial ports for the port choice; "" = automatic, which the server resolves.
+async function loadPorts() {
+  let d;
+  try { d = await getJSON("api/device/ports"); } catch (_) { return; }
+  const sel = $("#devPort");
+  const label = p => p.kind === "bluetooth" ? t("{port} · Bluetooth, kein USB-Gerät", { port: p.device })
+    : `${p.device} · ${p.vendor || p.description || ""}`;
+  const auto = d.auto ? t("Automatisch ({port})", { port: d.auto }) : t("Automatisch (kein Gerät gefunden)");
+  sel.innerHTML = `<option value="">${esc(auto)}</option>`
+    + d.ports.map(p => `<option value="${esc(p.device)}">${esc(label(p))}</option>`).join("");
+  const saved = store.get("device.port", "");
+  sel.value = d.ports.some(p => p.device === saved) ? saved : "";
+  S.simulated = d.simulated;
+  sel.disabled = d.simulated || S.devState === "verbunden" || S.devState === "verbinde";
+}
 async function deviceStatus(action) {
   let d;
   try {
-    d = action ? await postJSON(`api/device/${action}`, { port: $("#devPort").value.trim() })
+    d = action ? await postJSON(`api/device/${action}`, { port: $("#devPort").value })
       : await getJSON("api/device");
   } catch (e) {
     $("#devText").textContent = e.message;
@@ -344,6 +359,8 @@ async function deviceStatus(action) {
   const connected = d.state === "verbunden" || d.state === "verbinde";
   $("#devBtn").textContent = connected ? t("Trennen") : t("Verbinden");
   $("#devBtn").dataset.action = connected ? "disconnect" : "connect";
+  $("#devPort").disabled = connected || S.simulated;
+  if (!connected && d.state !== S.devState) loadPorts();  // plugged in or out meanwhile?
   if (S.devState !== null && d.state !== S.devState && d.state !== "verbinde") {
     // The live node layer and today's packet log depend on the connection: reload the layer
     // list (new log dates, live source as default) and redraw.
@@ -539,6 +556,9 @@ function bindUI() {
   $("#langSeg").innerHTML = LANGS.map(l => `<button class="btn ${l === lang ? "on" : ""}" data-lang="${l}" aria-pressed="${l === lang}">${l.toUpperCase()}</button>`).join("");
   $("#langSeg").querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => { if (b.dataset.lang !== lang) setLang(b.dataset.lang); }));
   $("#devBtn").addEventListener("click", () => deviceStatus($("#devBtn").dataset.action || "connect"));
+  $("#devScan").innerHTML = symbolSVG("refresh");
+  $("#devScan").addEventListener("click", loadPorts);
+  $("#devPort").addEventListener("change", () => store.set("device.port", $("#devPort").value));
   $("#view2d").addEventListener("click", () => setView("2d"));
   $("#view3d").addEventListener("click", () => setView("3d"));
   $("#btnInsp").addEventListener("click", () => toggleInspector($("#right").hidden));

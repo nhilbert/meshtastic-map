@@ -361,7 +361,7 @@ map app. The same client is hosted at https://client.meshtastic.org.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MESHTASTIC_PORT` | auto | serial port, e.g. `COM8` (Windows) or `/dev/ttyACM0` (Linux) |
+| `MESHTASTIC_PORT` | auto | serial port, e.g. `COM8` (Windows) or `/dev/ttyACM0` (Linux); used only while it exists, else auto-detection |
 | `MESHPLAY_HOME` | – | home node position as `lat,lon`: map centre, distances, nearest site, tile area |
 | `MESHPLAY_DATA_DIR` | `data` | where logs, exports and simulation data go |
 | `MESHPLAY_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
@@ -414,8 +414,12 @@ data/                  everything local (not committed, see below)
   program holds the serial port — usually the web client in Chrome/Edge (close the tab, not just
   *Disconnect*), `listen.py`, or a map app started earlier with `--device`. Only one program at a
   time can use it.
-- **"No Meshtastic device found":** check the cable (some are charge-only), then set
-  `MESHTASTIC_PORT` in `.env`. On Windows the port is listed in Device Manager → Ports (COM & LPT).
+- **"No Meshtastic device found":** check the cable (some are charge-only). Auto-detection
+  takes the first port of a known board vendor (Seeed, Adafruit, Espressif, WCH, Silicon Labs),
+  else the only other USB serial port; it never takes Bluetooth serial ports ("Standard Serial
+  over Bluetooth link"), and a `MESHTASTIC_PORT` that no longer exists is skipped. Otherwise
+  pick the port in the map app (*Gerät (USB)* lists all ports) or pass `--port`. On Windows the
+  port is listed in Device Manager → Ports (COM & LPT).
 - **Map background blank:** open maps with `--open` (a local web server), not as a file.
 - **3D view empty or "Keine Laserscan-Szene":** download the tiles and build the scene
   ([3D laser-scan data](#3d-laser-scan-data)), then restart the map app. The 3D view also needs

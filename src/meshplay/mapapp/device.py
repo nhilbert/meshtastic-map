@@ -70,7 +70,7 @@ class DeviceLink:
     def _connect(self, port: str | None) -> None:
         from pubsub import pub
 
-        from meshplay.device import find_port
+        from meshplay.device import find_port, list_serial_ports
 
         try:
             if not self._subscribed:
@@ -86,10 +86,16 @@ class DeviceLink:
             else:
                 from meshtastic.serial_interface import SerialInterface
 
-                port = port or find_port()
+                ports = list_serial_ports()
+                if port and not any(p["device"].lower() == port.lower() for p in ports):
+                    raise RuntimeError(L("Port {port} gibt es nicht (mehr)", port=port))
+                port = port or find_port(ports)
                 if not port:
                     raise RuntimeError(
-                        L("kein Meshtastic-Gerät gefunden (MESHTASTIC_PORT in .env?)")
+                        L(
+                            "kein Meshtastic-Gerät an USB gefunden: einstecken (Datenkabel, "
+                            "kein Ladekabel) oder den Port auswählen"
+                        )
                     )
                 iface = SerialInterface(devPath=port)
             with self._lock:
@@ -99,6 +105,13 @@ class DeviceLink:
             with self._lock:
                 self.state, self.error = "Fehler", f"{type(e).__name__}: {e}"
             log.warning("Device connection failed: %s", e)
+
+    def ports(self) -> dict:
+        """The system's serial ports and the one automatic detection would take."""
+        from meshplay.device import find_port, list_serial_ports
+
+        ports = list_serial_ports()
+        return {"ports": ports, "auto": find_port(ports), "simulated": self.simulate is not None}
 
     def disconnect(self) -> None:
         with self._lock:
