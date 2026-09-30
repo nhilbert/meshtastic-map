@@ -70,6 +70,7 @@ class Context:
         self.cache_dir = self.app_dir / "cache"
         self.device = None  # meshplay.mapapp.device.DeviceLink, set by the server
         self.jobs = None  # meshplay.mapapp.jobs.JobManager, set by the server
+        self.node_requests = None  # meshplay.mapapp.node_requests.NodeRequests, ditto
         self.coord = None  # meshplay.mapapp.coord.missions.Coordinator, set by the server
         self.tiles = None  # meshplay.mapapp.tiles.TileCache, set by the server
         # The scene, the models and their caches are not written for concurrent use: whatever

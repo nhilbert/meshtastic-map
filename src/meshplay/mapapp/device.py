@@ -312,14 +312,7 @@ class DeviceLink:
         sent over the API as its own, so an empty one could clear it. Returns the packet id."""
         from meshtastic.protobuf import mesh_pb2, portnums_pb2
 
-        iface = self.iface
-        if iface is None or self.state != "verbunden":
-            raise ValueError(_("Gerät nicht verbunden: oben unter „Gerät (USB)“ verbinden"))
-        channel = int(channel)
-        if channel not in {c["index"] for c in self.channels()}:
-            raise ValueError(_("Kanal {n} gibt es auf dem Gerät nicht", n=channel))
-        if not (to.startswith("!") and len(to) == 9):
-            raise ValueError(_("Empfänger: Node-ID wie !abcd1234"))
+        iface = self._ready(to, channel)
         own = (iface.getMyNodeInfo() or {}).get("position") or {}
         pos = mesh_pb2.Position()
         if "latitude" in own and "longitude" in own:
@@ -330,10 +323,55 @@ class DeviceLink:
             destinationId=to,
             portNum=portnums_pb2.PortNum.POSITION_APP,
             wantResponse=True,
-            channelIndex=channel,
+            channelIndex=int(channel),
         )
         self.sent.note("position_request", pos.ByteSize())
         return sent.id
+
+    def send_traceroute(
+        self, to: str, channel: int, on_response: Callable[[dict], None]
+    ) -> tuple[int, int]:
+        """Traceroute to a node over the mesh with the device's hop limit (unlike the walk
+        probes, which stay at hop limit 0). on_response gets the reply or a routing error on
+        the reader thread. Returns the packet id and the hop limit used."""
+        from meshtastic.protobuf import mesh_pb2, portnums_pb2
+
+        iface = self._ready(to, channel)
+        hop_limit = getattr(iface.localNode.localConfig.lora, "hop_limit", 0) or 3  # 0: default
+        sent = iface.sendData(
+            mesh_pb2.RouteDiscovery(),
+            destinationId=to,
+            portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
+            wantResponse=True,
+            onResponse=on_response,
+            channelIndex=int(channel),
+            hopLimit=hop_limit,
+        )
+        self.sent.note("traceroute", 10)  # the request; the answer is the other nodes' airtime
+        return sent.id, hop_limit
+
+    def forget_response(self, packet_id: int) -> None:
+        """Drop the handler of a request that timed out, so a late reply is ignored."""
+        iface = self.iface
+        if iface is not None:
+            iface.responseHandlers.pop(packet_id, None)
+
+    def node_channel(self, node: str) -> int:
+        """Our channel index the node was heard on (the node database leaves out 0)."""
+        iface = self.iface
+        entry = (iface.nodes or {}).get(node) if iface is not None else None
+        return int((entry or {}).get("channel", 0))
+
+    def _ready(self, to: str, channel: int):
+        """The interface, if a direct packet to `to` on `channel` can be sent now."""
+        iface = self.iface
+        if iface is None or self.state != "verbunden":
+            raise ValueError(_("Gerät nicht verbunden: oben unter „Gerät (USB)“ verbinden"))
+        if int(channel) not in {c["index"] for c in self.channels()}:
+            raise ValueError(_("Kanal {n} gibt es auf dem Gerät nicht", n=int(channel)))
+        if not (to.startswith("!") and len(to) == 9):
+            raise ValueError(_("Empfänger: Node-ID wie !abcd1234"))
+        return iface
 
     def names(self, ids) -> dict:
         """Short and long names of the given node IDs from the device's node list."""

@@ -237,14 +237,22 @@ class FakeInterface:
         pos = node.get("position") or {}
         snr = self._snr(pos["latitude"], pos["longitude"]) if pos else 5.0
         route = mesh_pb2.RouteDiscovery()
+        if node["hopsAway"]:  # the fake client is heard through the tracker
+            route.route.append(TRACKER_NUM)
+            route.snr_towards.append(int(self.nodes[node_id(TRACKER_NUM)]["snr"] * 4))
+            route.route_back.append(TRACKER_NUM)
+            route.snr_back.append(int(6.5 * 4))
         route.snr_towards.append(int(snr * 4))
+        back = self._snr(pos["latitude"], pos["longitude"]) if pos else 5.0
+        route.snr_back.append(int(back * 4))
         self._respond(
             packet_id,
             {
                 "from": dest,
-                "rxSnr": self._snr(pos["latitude"], pos["longitude"]) if pos else 5.0,
+                "to": HOME_NUM,
+                "rxSnr": back,
                 "rxRssi": -100,
-                "hopStart": 0,
+                "hopStart": node["hopsAway"],
                 "decoded": {"portnum": "TRACEROUTE_APP", "payload": route.SerializeToString()},
             },
         )

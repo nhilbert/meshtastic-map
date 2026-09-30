@@ -245,6 +245,11 @@ table.nodes td{vertical-align:top;white-space:normal}
 table.nodes .sub{font-size:10.5px;color:var(--ink3)}
 table.nodes .sn{font-family:var(--mono);font-size:10.5px;background:var(--bg2);border:1px solid var(--line-soft);border-radius:3px;padding:0 4px}
 table.nodes tr.own .nodebtn{font-weight:600}
+table.nodes .nl-acts{display:flex;gap:3px;margin-top:4px}
+table.nodes .nl-res{display:flex;gap:6px;align-items:flex-start;justify-content:space-between}
+table.nodes tr.nl-req td{border-top:0;padding-top:0;font-size:11px;color:var(--ink2)}
+table.nodes tr.nl-req .run{color:var(--accent)}
+table.nodes tr.nl-req .bad{color:var(--bad)}
 
 /* sites editor */
 .sitemgr{display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--line-soft);padding-top:6px;margin-top:2px}

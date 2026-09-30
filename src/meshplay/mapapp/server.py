@@ -16,6 +16,8 @@ POST /api/sites/<action>      add, update, rename, delete (data/sim/sites.json)
 POST /api/tracks?name=x.gpx   upload a GPX track (raw body) to data/tracks/
 GET  /api/messages?rev=N      messages (and with traffic=1 recent packets) newer than revision N
 POST /api/messages            {"text", "to": "!id" or "^all", "channel"} sends a text
+GET  /api/nodes/requests      latest traceroute and position request per node
+POST /api/nodes/<id>/<kind>   traceroute or position: send one to the node (node list)
 GET/POST /api/coord/...       coordination mode (dispatched in coord/missions.py)
 """
 
@@ -38,6 +40,7 @@ from meshplay.mapapp.device import DeviceLink, Simulation
 from meshplay.mapapp.i18n import _, set_lang
 from meshplay.mapapp.jobs import JobManager
 from meshplay.mapapp.layers import ALL, BY_ID
+from meshplay.mapapp.node_requests import KINDS, NodeRequests
 from meshplay.mapapp.registry import Context
 from meshplay.mapapp.tiles import TileCache
 from meshplay.mapapp.tools import link as link_tool
@@ -264,6 +267,8 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                 elif parts == ["api", "messages"]:
                     q = dict(parse_qsl(url.query))
                     self.send_json(messages_since(ctx, int(q.get("rev", 0)), q.get("traffic")))
+                elif parts == ["api", "nodes", "requests"]:
+                    self.send_json({"requests": ctx.node_requests.get()})
                 elif parts[:2] == ["api", "coord"]:
                     q = dict(parse_qsl(url.query))
                     self.send_json(ctx.coord.api("GET", parts[2:], q, {}))
@@ -321,6 +326,10 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                 if parts[:2] == ["api", "coord"]:
                     self.send_json(ctx.coord.api("POST", parts[2:], {}, body))
                     return
+                if parts[:2] == ["api", "nodes"] and len(parts) == 4 and parts[3] in KINDS:
+                    send = getattr(ctx.node_requests, parts[3])
+                    self.send_json(send(parts[2]), 201)
+                    return
                 if parts == ["api", "messages"]:
                     msg = ctx.device.send_text(
                         body.get("text", ""), body.get("to") or "^all", body.get("channel", 0)
@@ -377,6 +386,7 @@ def run(
         device = "auto"
     ctx.device = DeviceLink(ctx.data_dir, log_packets, sim)
     ctx.jobs = JobManager(ctx)
+    ctx.node_requests = NodeRequests(ctx.device)
     ctx.coord = Coordinator(ctx)
     ctx.tiles = TileCache(ctx.data_dir / "tiles")
     if ctx.coord.enabled and not device:

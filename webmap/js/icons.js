@@ -28,6 +28,8 @@ const PATHS = {
   target: '<path d="M4 14.5V2.5M4 3h8l-2.5 3L12 9H4"/>',
   // small ring: a via point
   via: '<circle cx="8" cy="8" r="3.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/>',
+  // crosshair with a centre dot: ask a node for its position
+  locate: '<circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/>',
 };
 
 export function symbolSVG(name) {

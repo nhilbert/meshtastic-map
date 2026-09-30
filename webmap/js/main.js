@@ -673,7 +673,12 @@ function bindUI() {
     $("#loading .bar").hidden = true;
   }
   initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast });
-  initNodeList({ store, focusNode, message: id => openConversation("dm:" + id), assign: assignTo });
+  initNodeList({ store, toast, focusNode, message: id => openConversation("dm:" + id), assign: assignTo,
+    connected: () => S.devState === "verbunden", refreshNodes: () => refreshLayer("nodes"),
+    showRoute: r => {
+      if (r && document.body.classList.contains("is3d")) setView("2d");
+      if (map2d) map2d.setRoute(r);
+    } });
   initCoord({
     store, toast, openInspector, updateInspector, pickOnMap, tempMarker: E_tempMarker, focusNode, refreshLayer,
     nodes: () => (S.layers.nodes && S.layers.nodes.data && S.layers.nodes.data.nodes) || [],

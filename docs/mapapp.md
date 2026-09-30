@@ -85,6 +85,24 @@ long name, ID, hardware, battery, hops, SNR, last heard. Filter by name or ID, s
 hops, SNR or name. A click on a node with a position centres it on the map and opens its popup;
 ✉ opens a direct conversation.
 
+Two buttons per node send over the mesh (`mapapp/node_requests.py`), on the channel the device
+heard the node on:
+
+- **Traceroute** with the device's hop limit (unlike the walk probes, which stay at hop limit 0).
+  The result shows under the node: the route there and back with the SNR at every hop
+  (`unbekannt` for a relay that doesn't record itself, no way back from old firmware), or no
+  answer after 20 s per hop plus one. *auf der Karte zeigen* draws it on the 2D map when at
+  least two of its nodes had a position when the reply came: the way there as a wide line, the
+  way back dashed on top, each leg coloured and labelled by the SNR it was heard with (colours
+  as the node layer); a leg across nodes without a position is grey and dotted.
+- **Position anfragen**: the node's firmware answers with its current position; the node layer
+  reloads when it arrives. No answer after 60 s means the node missed it or answered another
+  request in the last 3 min.
+
+One request per node and kind runs at a time. A node gets the next traceroute after 30 s at the
+earliest (each one floods the mesh), and the next position request 3 min after an answer.
+Results are kept in memory until the server restarts.
+
 ## Background tasks (Aufgaben)
 
 Long jobs run in the server, not in the page: closing or reloading the page doesn't stop them.
@@ -285,7 +303,8 @@ transmitted. Its node list has a fake tracker `!fa4e0001` (a favourite) that wal
 GPX track at `--sim-speed` times its pace (then stays at its end), or stays near home. It
 broadcasts like smart position (after 100 m at most once a minute, else every 10 min, in track
 time) and answers a position request with where it is, once per 3 min.
-Sent messages are acknowledged after half a second, traceroutes are answered, and a direct
+Sent messages are acknowledged after half a second, traceroutes are answered (the fake client
+`!fa4e0002` through the tracker), and a direct
 message to the tracker that starts with `>` is spoken by the tracker: `>?` arrives as `?` from
 it. Messages go to `data/messages-sim.jsonl`, packets are not logged. This is how the messaging
 pane and the coordination mode are tried without touching the mesh.

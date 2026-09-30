@@ -1,7 +1,7 @@
 // 2D view: Leaflet with OpenStreetMap. Draws layer payloads and the current link.
 import { t } from "./i18n.js";
 import { badgeHTML } from "./icons.js";
-import { featureHTML } from "./util.js";
+import { featureHTML, fmt } from "./util.js";
 
 export class Map2D {
   constructor(el, center, handlers) {
@@ -105,6 +105,44 @@ export class Map2D {
     L.polygon(points, { color: "#00707f", weight: 2, dashArray: "4 4", fillOpacity: 0.15 }).addTo(this.tempPath);
     for (const [lat, lon] of points)
       L.circleMarker([lat, lon], { radius: 5, color: "#00707f", fillColor: "#2cc4d6", fillOpacity: 1, bubblingMouseEvents: false }).addTo(this.tempPath);
+  }
+  // A traceroute from the node list, null removes it. The way there is the wide line, the way
+  // back the dashed one on top; each leg is coloured by the SNR it was heard with. A leg across
+  // nodes without a position (or relays that don't name themselves) is grey and dotted.
+  setRoute(r) {
+    if (this.route) { this.map.removeLayer(this.route); this.route = null; }
+    if (!r) return;
+    this.route = L.layerGroup().addTo(this.map);
+    const points = [];
+    const draw = (hops, weight, dash, label, side) => {
+      let prev = null, gap = false;
+      for (const h of hops) {
+        if (h.lat == null) { gap = true; continue; }
+        points.push([h.lat, h.lon]);
+        if (prev) {
+          const snr = h.snr === null ? "?" : fmt(h.snr, 1);
+          // a dark casing keeps the way back visible on a way there of the same colour
+          if (dash) L.polyline([[prev.lat, prev.lon], [h.lat, h.lon]], { color: "#0b1016", weight: weight + 2.5,
+            opacity: 0.9, interactive: false }).addTo(this.route);
+          L.polyline([[prev.lat, prev.lon], [h.lat, h.lon]], {
+            color: gap ? "#8a8f98" : h.color, weight, opacity: 0.95,
+            dashArray: gap ? "2 7" : dash, bubblingMouseEvents: false,
+          }).bindTooltip(gap ? t("über Knoten ohne Position, {snr} dB", { snr }) : label(snr),
+            { permanent: true, direction: side, className: "lbl" }).addTo(this.route);
+        }
+        prev = h; gap = false;
+      }
+    };
+    draw(r.towards, 6, null, snr => t("hin {snr} dB", { snr }), "top");
+    if (r.back) draw(r.back, 2.5, "6 5", snr => t("zurück {snr} dB", { snr }), "bottom");
+    const seen = new Set();
+    for (const h of [...r.towards, ...(r.back || [])]) {
+      if (h.lat == null || seen.has(h.id)) continue;
+      seen.add(h.id);
+      L.circleMarker([h.lat, h.lon], { radius: 5, color: "#00707f", weight: 2, fillColor: "#2cc4d6", fillOpacity: 1,
+        bubblingMouseEvents: false }).bindTooltip(h.long || h.short || h.id || "?").addTo(this.route);
+    }
+    if (points.length) this.map.fitBounds(points, { padding: [50, 50], maxZoom: 16 });
   }
   colorLink(color) { if (this.line) this.line.setStyle({ color, dashArray: null, weight: 4 }); }
   fit(a, b) { this.map.fitBounds([[a.lat, a.lon], [b.lat, b.lon]], { padding: [40, 40], maxZoom: 17 }); }
