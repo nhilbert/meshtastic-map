@@ -62,11 +62,22 @@ INTERVAL_M = 500  # instruction mode "interval": a route message every this many
 
 
 class Mission:
-    def __init__(self, node: str, path: list[Waypoint], profile: str, lang: str, now: float):
+    def __init__(
+        self,
+        node: str,
+        path: list[Waypoint],
+        profile: str,
+        lang: str,
+        now: float,
+        label: str = "",
+        origin: str = "page",
+    ):
         self.node = node
         self.path = path
         self.profile = profile
         self.lang = lang
+        self.label = label  # long name of a marker target, said with the assignment
+        self.origin = origin  # "page" (the coordinator) or "radio" (the node asked with ?D)
         self.index = 0  # current waypoint
         self.state = ASSIGNED
         self.held = False
@@ -129,6 +140,8 @@ class Mission:
             "path": [w.to_json() for w in self.path],
             "profile": self.profile,
             "lang": self.lang,
+            "label": self.label,
+            "origin": self.origin,
             "index": self.index,
             "state": self.state,
             "held": self.held,
@@ -163,6 +176,8 @@ class Mission:
             d.get("profile", "foot"),
             d.get("lang", "de"),
             d.get("created", time.time()),
+            d.get("label", ""),
+            d.get("origin", "page"),
         )
         for k in (
             "index",
@@ -223,6 +238,7 @@ class Coordinator:
         self._dirty = False
         self._stop = threading.Event()
         self._my_num: int | None = None
+        self._seen: dict[str, dict] = {}  # last position of every node, for markers
         self._graph: RoadGraph | None = None
         self._graph_key = None  # (file, mtime) the loaded graph came from
         self.processed = 0  # packets the worker has handled
@@ -462,6 +478,10 @@ class Coordinator:
                 raise ValueError(_("Ungültige Position"))
             radius = float(body.get("radius_m") or old.get("radius_m") or 0)
             self.targets[name] = {
+                # a marker set by radio keeps who set it, also through a rename (add + delete)
+                **{
+                    k: body.get(k, old.get(k)) for k in ("by", "created") if body.get(k, old.get(k))
+                },
                 "lat": round(lat, 7),
                 "lon": round(lon, 7),
                 "radius_m": radius or None,
@@ -525,7 +545,15 @@ class Coordinator:
         self._save(force=True)
         return m
 
-    def assign(self, node: str, raw_path: list[dict], profile: str, lang: str) -> Mission:
+    def assign(
+        self,
+        node: str,
+        raw_path: list[dict],
+        profile: str,
+        lang: str,
+        label: str = "",
+        origin: str = "page",
+    ) -> Mission:
         """A new mission for the node (replacing its old one); sends the first leg."""
         node = node.strip().lower()
         if not (node.startswith("!") and len(node) == 9):
@@ -536,16 +564,16 @@ class Coordinator:
             raise ValueError(_("Sprache der Funksprüche: de oder en"))
         now = time.time()
         path = parse_path(raw_path, now, float(self.settings["arrive_radius_m"]))
-        m = Mission(node, path, profile, lang, now)
+        m = Mission(node, path, profile, lang, now, label, origin)
         old = self.missions.get(node)
         if old is not None and old.last is not None and now - old.last["time"] < 3600:
             m.positions.append(old.last)  # keep the node's last known position
         else:
-            pos = self._db_position(node)
+            pos = self._node_position(node)
             if pos is not None:
                 m.positions.append(pos)
         self.missions[node] = m
-        self._event(node, "assign", path=[w.name for w in path], profile=profile)
+        self._event(node, "assign", path=[w.name for w in path], profile=profile, origin=origin)
         self._route_for(m)
         self._update_metrics(m, now)
         m.awaiting_position = m.last is None
@@ -621,7 +649,13 @@ class Coordinator:
                             "color": "#6b7f8c",
                             "hint": t.get("note", ""),
                         },
-                        _fields={_("Ziel"): name, _("Notiz"): t.get("note", "")},
+                        _fields={
+                            _("Ziel"): name,
+                            _("Notiz"): t.get("note", ""),
+                            _("Gesetzt per Funk von"): (
+                                f"{t['by']} {hhmm(t['created'])}" if t.get("by") else "–"
+                            ),
+                        },
                         _target=name,
                         _z=2.0,
                     )
@@ -717,17 +751,22 @@ class Coordinator:
 
     # ------------------------------------------------------------ packets
     def _on_packet(self, p: dict) -> None:
-        """Reader thread: keep only what concerns a mission node, hand it to the worker."""
+        """Reader thread: keep what concerns a mission node or is a marker command (+D, ?D,
+        from any node), hand it to the worker. Every node's last position is remembered: a
+        marker is set where its sender is."""
         sender = p.get("fromId") or f"!{p.get('from', 0):08x}"
-        if sender not in self.missions:
-            return
         decoded = p.get("decoded", {})
         port = decoded.get("portnum")
+        mission = sender in self.missions
         if port == "POSITION_APP" and "latitude" in decoded.get("position", {}):
-            self._queue.put(("position", sender, p))
+            self._seen[sender] = _position_record(p, time.time())
+            if mission:
+                self._queue.put(("position", sender, p))
         elif port == "TEXT_MESSAGE_APP" and decoded.get("text"):
             my = self._own_num()
-            if my is None or p.get("to") == my:
+            if my is not None and p.get("to") != my:
+                return
+            if mission or phrases.parse_marker(decoded["text"]) is not None:
                 self._queue.put(("text", sender, p))
 
     def _own_num(self) -> int | None:
@@ -746,11 +785,10 @@ class Coordinator:
             try:
                 with self._lock:
                     m = self.missions.get(node)
-                    if m is not None:
-                        if kind == "position":
-                            self._on_position(m, p)
-                        else:
-                            self._on_text(m, p["decoded"]["text"])
+                    if kind == "text":
+                        self._on_text(node, p["decoded"]["text"])
+                    elif m is not None:
+                        self._on_position(m, p)
             except Exception as e:  # one bad packet must not stop the coordination
                 log.exception("Coordination worker failed: %s", e)
             finally:
@@ -774,18 +812,7 @@ class Coordinator:
             m.metrics["precision_bits"] = bits
             self._event(m.node, "position_ignored", bits=bits)
             return
-        rec = {
-            "time": round(now, 1),
-            "lat": pos["latitude"],
-            "lon": pos["longitude"],
-            "bits": bits,
-            "snr": p.get("rxSnr"),
-            "rssi": p.get("rxRssi"),
-            "hops": (p.get("hopStart") or 0) - (p.get("hopLimit") or 0)
-            if p.get("hopStart") is not None
-            else None,
-            "speed": pos.get("groundSpeed"),
-        }
+        rec = _position_record(p, now)
         prev = m.last
         if prev is not None:
             step = distance_m((prev["lat"], prev["lon"]), (rec["lat"], rec["lon"]))
@@ -1196,9 +1223,14 @@ class Coordinator:
                 self._dirty = True
 
     # ------------------------------------------------------------ commands
-    def _on_text(self, m: Mission, text: str) -> None:
+    def _on_text(self, node: str, text: str) -> None:
+        marker = phrases.parse_marker(text)
+        if marker is not None:
+            self._on_marker(node, *marker)
+            return
+        m = self.missions.get(node)
         cmd = phrases.parse_command(text)
-        if cmd is None or not m.active:
+        if m is None or cmd is None or not m.active:
             return
         self._event(m.node, "command", command=cmd, text=text)
         self._update_metrics(m, time.time())  # answers use the current age, speed and ETA
@@ -1229,6 +1261,79 @@ class Coordinator:
             )
         self._dirty = True
 
+    def _on_marker(self, node: str, action: str, name: str, label: str) -> None:
+        """+D NAME label: a target at the sender's position. ?D NAME / ?D: that target, or the
+        nearest one, becomes the sender's new mission. Who may is the "markers" setting; with
+        the mode off nothing happens (the node would get no answer)."""
+        allowed = self.settings.get("markers", DEFAULTS["markers"])
+        m = self.missions.get(node)
+        if (
+            not self.enabled
+            or allowed == "off"
+            or (allowed == "missions" and (m is None or not m.active))
+        ):
+            self._event(node, "marker_ignored", action=action, name=name)
+            return
+        lang = m.lang if m is not None else self.settings["lang"]
+        self._event(node, "marker_command", action=action, name=name, label=label)
+        pos = self._node_position(node)
+        here = None if pos is None else (pos["lat"], pos["lon"])
+        if action == "set":
+            if not NAME_RE.match(name):
+                self._reply(node, "marker", phrases.phrase(lang, "marker_usage"))
+            elif self._target_key(name) is not None:
+                self._reply(node, "marker", phrases.phrase(lang, "marker_exists", name=name))
+            elif here is None:
+                self._reply(node, "marker", phrases.phrase(lang, "marker_nopos", cmd=f"+D {name}"))
+            else:
+                self.targets[name] = {
+                    "lat": round(here[0], 7),
+                    "lon": round(here[1], 7),
+                    "radius_m": None,
+                    "note": label,
+                    "by": node,
+                    "created": round(time.time()),
+                }
+                self.store.write("targets", self.targets)
+                self._event(node, "marker_set", name=name, label=label)
+                self._reply(
+                    node, "marker", phrases.phrase(lang, "marker_set", name=name, label=label)
+                )
+            return
+        if name:
+            key = self._target_key(name)
+            if key is None:
+                self._reply(node, "marker", phrases.phrase(lang, "marker_unknown", name=name))
+                return
+        elif not self.targets:
+            self._reply(node, "marker", phrases.phrase(lang, "marker_none"))
+            return
+        elif here is None:
+            self._reply(node, "marker", phrases.phrase(lang, "marker_nopos", cmd="?D"))
+            return
+        else:
+            key = self._nearest_target(here)
+        t = self.targets[key]
+        waypoint = {"name": key, "lat": t["lat"], "lon": t["lon"], "radius_m": t.get("radius_m")}
+        self.assign(
+            node, [waypoint], self.settings["profile"], lang, t.get("note", ""), origin="radio"
+        )
+
+    def _target_key(self, name: str) -> str | None:
+        """The stored name of a target, whatever case the field typed."""
+        return next((k for k in self.targets if k.upper() == name.upper()), None)
+
+    def _nearest_target(self, here: tuple[float, float]) -> str:
+        """The nearest target the node is not already at (after arriving at one, ?D means the
+        next); the nearest of all when it is at every one."""
+
+        def dist(k: str) -> float:
+            return distance_m(here, (self.targets[k]["lat"], self.targets[k]["lon"]))
+
+        radius = float(self.settings["arrive_radius_m"])
+        away = [k for k in self.targets if dist(k) > (self.targets[k].get("radius_m") or radius)]
+        return min(away or self.targets, key=dist)
+
     # ------------------------------------------------------------ texts
     def _leg_text(self, m: Mission, key: str) -> str:
         """assign / next / changed / resume: the current stop with distance, direction, ETA."""
@@ -1245,14 +1350,20 @@ class Coordinator:
         if key == "assign" and guide.arrive_by:
             key = "assign_by"
             params.update(time=hhmm(guide.arrive_by), margin=_margin(mt.get("margin_min")))
-        text = phrases.phrase(m.lang, key, **params)
+        # a marker's long name goes with its assignment, but the route legs matter more
+        names = [guide.name]
+        if m.label and key.startswith("assign") and guide is m.path[-1]:
+            names.insert(0, f"{guide.name} {m.label}")
+        texts = [phrases.phrase(m.lang, key, **{**params, "target": n}) for n in names]
         if m.route is not None:  # the first legs fit in the same message
             n = int(self.settings["legs_per_message"])
-            legs = legs_text(m.route.legs(mt.get("along_m", 0.0)), n)
-            both = text + " " + phrases.phrase(m.lang, "route", legs=legs)
-            if phrases.fits(both, phrases.TARGET_BYTES):
-                return both
-        return text
+            route = phrases.phrase(
+                m.lang, "route", legs=legs_text(m.route.legs(mt.get("along_m", 0.0)), n)
+            )
+            for text in texts:
+                if phrases.fits(text + " " + route, phrases.TARGET_BYTES):
+                    return text + " " + route
+        return next((t for t in texts if phrases.fits(t, phrases.TARGET_BYTES)), texts[-1])
 
     def _status_text(self, m: Mission) -> str:
         mt = m.metrics
@@ -1378,7 +1489,35 @@ class Coordinator:
         self._dirty = True
         return True
 
+    def _reply(self, node: str, kind: str, text: str) -> None:
+        """The answer to a node's command; a node without a mission gets it directly."""
+        m = self.missions.get(node)
+        if m is not None:
+            self._send(m, kind, text, reply=True)
+            return
+        if not self.enabled:
+            self._event(node, "suppressed", what=kind, text=text, why="mode off")
+            return
+        try:
+            self.ctx.device.send_text(text, node, int(self.settings.get("channel", 0)), tag="coord")
+        except Exception as e:
+            self._event(node, "send_failed", what=kind, text=text, error=str(e))
+            return
+        self._event(node, "sent", what=kind, text=text)
+
     # ------------------------------------------------------------ helpers
+    def _node_position(self, node: str) -> dict | None:
+        """A node's last position, if recent and precise enough: from its own broadcasts,
+        else from the device's node database."""
+        rec = self._seen.get(node)
+        if (
+            rec is not None
+            and time.time() - rec["time"] <= self.settings["stale_min"] * 60
+            and rec["bits"] >= int(self.settings["min_precision_bits"])
+        ):
+            return rec
+        return self._db_position(node)
+
     def _db_position(self, node: str) -> dict | None:
         """Last known position of a node from the device's node database, if recent."""
         dev = self.ctx.device
@@ -1420,6 +1559,23 @@ class Coordinator:
         with self._lock:
             self._dirty = False
             self.store.write("missions", [m.to_json() for m in self.missions.values()])
+
+
+def _position_record(p: dict, now: float) -> dict:
+    """What a mission keeps of a position packet."""
+    pos = p["decoded"]["position"]
+    return {
+        "time": round(now, 1),
+        "lat": pos["latitude"],
+        "lon": pos["longitude"],
+        "bits": pos.get("precisionBits", 32),
+        "snr": p.get("rxSnr"),
+        "rssi": p.get("rxRssi"),
+        "hops": (p.get("hopStart") or 0) - (p.get("hopLimit") or 0)
+        if p.get("hopStart") is not None
+        else None,
+        "speed": pos.get("groundSpeed"),
+    }
 
 
 def _polygon(ring: list[tuple[float, float]], **props) -> dict:

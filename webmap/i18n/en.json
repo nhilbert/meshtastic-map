@@ -690,5 +690,15 @@
   "ü. Grund": "above ground",
   "über Relais": "via relay",
   "„{text}“": "“{text}”",
-  "„{title}“ abbrechen? Die bisherige Rechenzeit geht verloren.": "Cancel “{title}”? The computing time so far is lost."
+  "„{title}“ abbrechen? Die bisherige Rechenzeit geht verloren.": "Cancel “{title}”? The computing time so far is lost.",
+  "(per Funk angefordert)": "(requested by radio)",
+  "+D NAME Text setzt ein Ziel an der eigenen Position, ?D NAME macht es zum Einsatz, ?D das nächste. Wer das darf, bekommt auch Antworten.": "+D NAME text sets a target at the sender's position, ?D NAME makes it the sender's mission, ?D the nearest one. Whoever may do this also gets answers.",
+  "Gesetzt per Funk von": "Set by radio from",
+  "Markierungen per Funk (+D, ?D)": "Markers by radio (+D, ?D)",
+  "Ziele sind zugleich Markierungen für das Feld: „+D NAME Text“ setzt eines an der Position des Absenders, „?D NAME“ macht es zu dessen Einsatz, „?D“ das nächste (Einstellung „Markierungen per Funk“).": "Targets are also markers for the field: “+D NAME text” sets one at the sender's position, “?D NAME” makes it the sender's mission, “?D” the nearest one (setting “Markers by radio”).",
+  "nur von Knoten mit Einsatz": "only from nodes with a mission",
+  "per Funk von {node}, {time}": "by radio from {node}, {time}",
+  "von allen Knoten": "from all nodes",
+  "{name} hat sich per Funk {stop} als Ziel geholt": "{name} took {stop} as target by radio",
+  "{node} hat per Funk die Markierung {name} gesetzt": "{node} set the marker {name} by radio"
 }

@@ -86,7 +86,8 @@ for that action. Test probe and messaging logic with a fake interface (`tests/te
 (`python scripts/mapapp.py --simulate [track.gpx]`, see docs/mapapp.md) instead of the real
 device. Sending a text from the messaging pane is the owner's own action, and so is switching
 the coordination mode on: from then on the server messages nodes with a mission by itself
-(`coord/missions.py`), never nodes without one. Walk traffic goes on a private channel with
+(`coord/missions.py`), never nodes without one; the only exception is the answer to a node's
+own marker command (`+D`/`?D`, setting *Markierungen per Funk*, default all nodes). Walk traffic goes on a private channel with
 hop limit 0; coordination messages are direct messages on the channel of its settings
 (default 1, the private channel).
 

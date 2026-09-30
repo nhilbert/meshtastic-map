@@ -134,9 +134,12 @@ leg list.
 | Held / resumed | `HALT ok` / `Weiter #ALPHA 420m NE` | answers to `halt` / `go` |
 | Arrival time | `#ALPHA Ankunft 12:58 (~7min) 6km/h jetzt, 5.4km/h Schnitt` | on `?e`; "bei 4.5km/h angenommen" while no speed was measured |
 | Legend | `Legende: #Ziel Entfernung Richtung(N/E/S/W) ~Minuten. R: Weg: …` | once after the first real assignment (setting), and on `?l` |
-| Help | `? Status ?R Weg ?Z Ziel ?E Ankunft ?P Pfad ?L Legende HALT GO X=Abbruch` | on any unknown `?…` |
+| Help | `? Status ?R Weg ?Z Ziel ?E Ankunft ?P Pfad ?L Legende HALT GO X=Abbruch. +D NAME Text=Marke setzen, ?D NAME hinfuehren, ?D zur naechsten` | on any unknown `?…`; over 80 bytes, sent on request only |
+| Marker set | `D S1 gesetzt Storage Box` | on `+d`; `D S1 gibt es schon`, `+D S1: keine Position von dir` |
+| Marker unknown / none | `D S9 unbekannt. ?D fuehrt zur naechsten` / `Keine Marken. Setzen mit +D NAME Text` | on `?d` |
 
-**Node → server** (case-insensitive, trimmed; only nodes with a mission get answers):
+**Node → server** (case-insensitive, trimmed; only nodes with a mission get answers, except
+for the marker commands):
 
 | Command | Meaning | Reply |
 |---|---|---|
@@ -151,9 +154,15 @@ leg list.
 | `halt` | hold: no proactive messages until `go` | `HALT ok` |
 | `go` | resume | status message |
 | `x` | abort the mission | `#ALPHA abgebrochen`; the coordinator gets a notice |
+| `+d NAME long name` | set a marker: a target at the sender's last position (fresh, precise) | `D NAME gesetzt long name` |
+| `?d NAME` | that target becomes the sender's new mission | the assignment, with the long name when it fits: `#S1 Storage Box 800m N ~11min` |
+| `?d` | the same for the nearest target the sender is not already at | the assignment |
 
 Anything else from a coordinated node is an ordinary DM and stays in the pane without a reply.
-Nodes without a mission are never answered (no unsolicited radio).
+Nodes without a mission are never answered (no unsolicited radio), except for `+d`/`?d`: the
+node asked, and the setting `markers` (all nodes / only nodes with a mission / off; added
+2026-09-30) says who may. Markers are ordinary targets with `by` (node) and `created`, so the
+targets editor manages them; radio can only add, not change or delete.
 
 **Language.** Radio phrases follow a per-mission language (default from the settings, `de` or
 `en`), not the page's UI language: the field person may not be the coordinator. The phrases
@@ -251,7 +260,8 @@ dependency; supported by `scripts/coord_import_osm.py` for people who don't want
 
 ```
 data/coord/settings.json     radio language, profile, thresholds (section below)
-data/coord/targets.json      {"ALPHA": {"lat", "lon", "radius_m"?, "note"}}
+data/coord/targets.json      {"ALPHA": {"lat", "lon", "radius_m"?, "note", "by"?, "created"?}}
+                              (by/created: set by radio with +d)
 data/coord/paths.json        named route templates: {"RUNDE1": [waypoints without times]}
 data/coord/areas.json        [{"id", "name", "kind": "nogo"|"notice", "polygon": [[lat, lon], …],
                               "text", "buffer_m"}]

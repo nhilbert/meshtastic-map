@@ -7,6 +7,7 @@ from meshplay.mapapp.registry import Setting
 
 PROFILES = ["foot", "bike", "car"]
 INSTRUCTIONS = ["request", "turns", "interval"]
+MARKERS = ["all", "missions", "off"]
 DEFAULTS = {
     "lang": "de",
     "channel": 1,
@@ -26,6 +27,7 @@ DEFAULTS = {
     "speed_car_kmh": 30,
     "end_message": True,
     "send_legend": True,
+    "markers": "all",
 }
 
 
@@ -199,6 +201,21 @@ def declarations(
             "bool",
             DEFAULTS["send_legend"],
             help=_("Ein zweiter Funkspruch; der Knoten bekommt sie auch mit ?L"),
+        ),
+        Setting(
+            "markers",
+            _("Markierungen per Funk (+D, ?D)"),
+            "select",
+            DEFAULTS["markers"],
+            options=[
+                ["all", _("von allen Knoten")],
+                ["missions", _("nur von Knoten mit Einsatz")],
+                ["off", _("aus")],
+            ],
+            help=_(
+                "+D NAME Text setzt ein Ziel an der eigenen Position, ?D NAME macht es zum "
+                "Einsatz, ?D das nächste. Wer das darf, bekommt auch Antworten."
+            ),
         ),
     ]
 

@@ -72,13 +72,15 @@ def test_phrases_stay_short_in_both_languages():
             travelled="1.3km",
             duration="17min",
             stops=f"{name} 12:55 > {name} > {name}",
+            label="L" * phrases.LABEL_MAX,
+            cmd=f"+D {name}",
         )
 
     for lang in phrases.LANGS:
         for key in phrases.PHRASES[lang]:
             text = phrases.phrase(lang, key, **params("X" * 12))  # names longer than advised
             assert "{" not in text and "  " not in text
-            long_ok = key in ("path", "legend")  # listings, sent once or on request
+            long_ok = key in ("path", "legend", "help")  # listings, sent once or on request
             assert phrases.fits(text, phrases.TARGET_BYTES) or long_ok, (lang, key, text)
             assert phrases.fits(phrases.phrase(lang, key, **params("X" * 24))), (lang, key)
     assert set(phrases.PHRASES["en"]) == set(phrases.PHRASES["de"])
@@ -216,9 +218,8 @@ def test_commands_halt_go_abort_and_strangers(coord):
     feed(coord, position(*HOME))
     n = len(sent_texts(coord))
     feed(coord, text("?h"))
-    assert (
-        sent_texts(coord)[-1]
-        == "? status ?R route ?Z target ?E arrival ?P path ?L legend HALT GO X=abort"
+    assert sent_texts(coord)[-1].startswith(
+        "? status ?R route ?Z target ?E arrival ?P path ?L legend HALT GO X=abort. +D NAME"
     )
     feed(coord, text("?z"))
     assert sent_texts(coord)[-1] == "#Z 500m N"

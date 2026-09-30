@@ -690,5 +690,15 @@
   "ü. Grund": "au-dessus du sol",
   "über Relais": "par relais",
   "„{text}“": "« {text} »",
-  "„{title}“ abbrechen? Die bisherige Rechenzeit geht verloren.": "Annuler « {title} » ? Le temps de calcul déjà écoulé sera perdu."
+  "„{title}“ abbrechen? Die bisherige Rechenzeit geht verloren.": "Annuler « {title} » ? Le temps de calcul déjà écoulé sera perdu.",
+  "(per Funk angefordert)": "(demandé par radio)",
+  "+D NAME Text setzt ein Ziel an der eigenen Position, ?D NAME macht es zum Einsatz, ?D das nächste. Wer das darf, bekommt auch Antworten.": "+D NOM texte crée une cible à la position de l'expéditeur, ?D NOM en fait sa mission, ?D la plus proche. Qui y est autorisé reçoit aussi des réponses.",
+  "Gesetzt per Funk von": "Placé par radio par",
+  "Markierungen per Funk (+D, ?D)": "Marqueurs par radio (+D, ?D)",
+  "Ziele sind zugleich Markierungen für das Feld: „+D NAME Text“ setzt eines an der Position des Absenders, „?D NAME“ macht es zu dessen Einsatz, „?D“ das nächste (Einstellung „Markierungen per Funk“).": "Les cibles servent aussi de marqueurs sur le terrain : « +D NOM texte » en place une à la position de l'expéditeur, « ?D NOM » en fait sa mission, « ?D » la plus proche (réglage « Marqueurs par radio »).",
+  "nur von Knoten mit Einsatz": "seulement des nœuds ayant une mission",
+  "per Funk von {node}, {time}": "par radio de {node}, {time}",
+  "von allen Knoten": "de tous les nœuds",
+  "{name} hat sich per Funk {stop} als Ziel geholt": "{name} a pris {stop} comme cible par radio",
+  "{node} hat per Funk die Markierung {name} gesetzt": "{node} a placé le marqueur {name} par radio"
 }

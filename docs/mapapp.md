@@ -139,7 +139,17 @@ simulated radio first.
 - **The field node** answers with `?` (status), `?r` (route), `?z` (target), `?e` (arrival
   time from the current speed, with the average since the start), `?p` (path), `?h` (help),
   `?l` (legend), `halt`/`go` (pause the guidance) and `x` (abort). Nodes without a mission
-  are never answered.
+  are never answered, except for the marker commands below.
+- **Markers by radio.** Targets double as markers the field can set and use: `+d s1 Storage
+  Box` stores target `S1` (short name, upper case; the rest is the long name, shown as the
+  target's note) at the sender's last position (recent and precise enough, else the answer
+  says there is none); `?d s1` makes `S1` the sender's new mission (replacing any other) and
+  answers with the assignment, `#S1 Storage Box 800m N ~11min R: …`; `?d` does the same for
+  the nearest target the node is not already at. The setting *Markierungen per Funk* says who
+  may: all nodes (default), only nodes with a mission, or nobody; with the mode off nothing
+  happens. In **Ziele** markers are edited, moved and deleted like any target; the row and the
+  map popup say which node set it and when, and the page shows a notice when a marker or a
+  mission arrives by radio. Radio can only add markers, not change or delete them.
 - **Reading the messages.** `#KKR 210m N ~6min` is the target, the straight-line distance,
   the compass direction (N, NE, E, SE, S, SW, W, NW, English in every language) and the
   expected walking time. `R: E20m L150m L10m Z` is the way along the streets: the first leg
@@ -150,7 +160,8 @@ simulated radio first.
   one message (setting *Legende*, off if the people know the codes).
 - **Layer "Koordination"** draws the waypoints (flags, numbered), the node's trail and the line
   to the current stop, coloured by mission state.
-- Files: `data/coord/` (settings, targets, missions, `events-<date>.jsonl`).
+- Files: `data/coord/` (settings, targets (markers carry `by` and `created`), missions,
+  `events-<date>.jsonl`).
 
 The tracker must share its position on a channel the server node has, with *precise location*
 and a short interval (30 s); positions coarser than the setting *Mindestgenauigkeit* are

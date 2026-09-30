@@ -16,7 +16,7 @@ import { buttonLabel, symbolSVG } from "./icons.js";
 const ACTIVE = ["zugewiesen", "unterwegs", "wartet"];
 const STATE_CLASS = { zugewiesen: "wait", unterwegs: "run", wartet: "wait", erreicht: "ok", abgebrochen: "bad", beendet: "off" };
 const C = {
-  api: null, data: null, timer: null, prev: {}, err: "",
+  api: null, data: null, timer: null, prev: {}, prevTargets: null, err: "",
   form: null,          // { node, path: [rows], profile, lang, msg }
   settings: null,      // values being edited, null = closed
   targets: false,      // targets editor open
@@ -56,9 +56,17 @@ async function poll() {
     const d = await getJSON("api/coord");
     for (const m of d.missions) {
       const prev = C.prev[m.node];
-      if (prev && prev !== m.state) transition(m, prev);
+      if (prev && prev.created !== m.created && m.origin === "radio") radioMission(m);
+      else if (!prev && C.data && m.origin === "radio") radioMission(m);
+      else if (prev && prev.state !== m.state) transition(m, prev.state);
     }
-    C.prev = Object.fromEntries(d.missions.map(m => [m.node, m.state]));
+    C.prev = Object.fromEntries(d.missions.map(m => [m.node, { state: m.state, created: m.created }]));
+    if (C.prevTargets) {  // markers the field set by radio (+D)
+      for (const [name, tg] of Object.entries(d.targets)) {
+        if (tg.by && !C.prevTargets.has(name)) C.api.toast(t("{node} hat per Funk die Markierung {name} gesetzt", { node: nodeName(tg.by), name }));
+      }
+    }
+    C.prevTargets = new Set(Object.keys(d.targets));
     C.data = d; C.err = "";
     if (C.sel && !d.missions.some(m => m.node === C.sel)) { C.sel = null; C.api.updateInspector(); }
   } catch (e) { C.err = e.message; }
@@ -75,6 +83,12 @@ function transition(m, prev) {
   else if (m.state === "abgebrochen") C.api.toast(t("{name} hat den Einsatz abgebrochen", { name: who }), { bad: true, action: [t("Details"), () => showDetail(m.node)] });
   else if (m.state === "wartet") C.api.toast(t("{name} wartet an {stop}", { name: who, stop }));
   else if (prev === "zugewiesen" && m.state === "unterwegs") C.api.toast(t("{name} ist unterwegs nach {stop}", { name: who, stop }));
+  C.api.refreshLayer("coord");
+}
+
+function radioMission(m) {
+  const stop = m.path[m.path.length - 1].name;
+  C.api.toast(t("{name} hat sich per Funk {stop} als Ziel geholt", { name: nodeName(m.node), stop }), { action: [t("Details"), () => showDetail(m.node)] });
   C.api.refreshLayer("coord");
 }
 
@@ -176,7 +190,7 @@ function cardHTML(m) {
   const where = m.path.length > 1 ? t("Halt {n} von {total}: {name}", { n: stops.indexOf(stop) + 1 + (stop.kind === "via" ? 1 : 0), total: stops.length, name: stop.name }) : stop.name;
   return `<div class="job ${C.sel === m.node ? "sel" : ""}">
     <div class="hd">${stateChip(m.state)}<span class="nm" title="${esc(m.node)}"><button class="lnk" data-act="focus" data-node="${esc(m.node)}">${esc(nodeName(m.node))}</button></span></div>
-    <div class="mission-target">${esc(where)}</div>
+    <div class="mission-target">${esc(where)}${m.label ? ` · ${esc(m.label)}` : ""}${m.origin === "radio" ? ` <span class="note">${t("(per Funk angefordert)")}</span>` : ""}</div>
     ${metricsHTML(m)}
     ${m.legs && ACTIVE.includes(m.state) ? `<div class="det"><span class="port">R:</span> ${esc(m.legs)}</div>` : ""}
     ${last ? `<div class="meta">${clock(last.time)} „${esc(last.text)}“ · <span class="st ${statusClass(last.status)}">${esc(statusText(last.status))}</span></div>` : ""}
@@ -367,7 +381,7 @@ function bindForm(box, d) {
 function targetsHTML(d) {
   const ed = C.editTarget;
   const rows = Object.entries(d.targets).map(([name, tg]) => ed && !ed.isNew && ed.orig === name ? targetFormHTML(ed)
-    : `<div class="site"><div class="txt"><span class="nm">${esc(name)}</span><span class="sub">${esc(tg.note || "")}${tg.radius_m ? ` · ${tg.radius_m} m` : ""}</span></div>
+    : `<div class="site"><div class="txt"><span class="nm">${esc(name)}</span><span class="sub">${esc(tg.note || "")}${tg.radius_m ? ` · ${tg.radius_m} m` : ""}${tg.by ? ` · ${esc(t("per Funk von {node}, {time}", { node: nodeName(tg.by), time: clock(tg.created) }))}` : ""}</span></div>
       <button class="btn small" data-tg="edit" data-name="${esc(name)}" title="${t("Bearbeiten")}">✎</button>
       <button class="btn small" data-tg="move" data-name="${esc(name)}" title="${t("Verschieben: Klick in die Karte")}">⌖</button>
       <button class="btn small" data-tg="del" data-name="${esc(name)}" title="${t("Löschen")}">✕</button></div>`).join("");
@@ -376,6 +390,7 @@ function targetsHTML(d) {
       <button class="btn small" data-tg="deltpl" data-name="${esc(name)}" title="${t("Löschen")}">✕</button></div>`).join("");
   return `<div class="sitemgr"><div class="hd2">${t("Ziele")}</div>
     <p class="note" style="margin:0">${t("Benannte Orte, die sich als Wegpunkte wiederverwenden lassen. Eigene Standorte gehen auch direkt.")}</p>
+    <p class="note" style="margin:0">${esc(t("Ziele sind zugleich Markierungen für das Feld: „+D NAME Text“ setzt eines an der Position des Absenders, „?D NAME“ macht es zu dessen Einsatz, „?D“ das nächste (Einstellung „Markierungen per Funk“)."))}</p>
     <div class="sitelist">${rows || `<p class="note" style="margin:0">${t("Noch keine Ziele.")}</p>`}</div>
     ${ed && ed.isNew ? targetFormHTML(ed) : ""}
     ${ed ? "" : `<button class="btn small" data-tg="add" style="align-self:flex-start">＋ ${t("Neues Ziel")}</button>`}
@@ -405,7 +420,7 @@ async function targetAction(act, name) {
       });
       return;
     }
-    if (act === "edit") { const tg = d.targets[name]; C.editTarget = { isNew: false, orig: name, name, note: tg.note || "", radius_m: tg.radius_m, lat: tg.lat, lon: tg.lon }; render(); return; }
+    if (act === "edit") { const tg = d.targets[name]; C.editTarget = { isNew: false, orig: name, name, note: tg.note || "", radius_m: tg.radius_m, lat: tg.lat, lon: tg.lon, by: tg.by, created: tg.created }; render(); return; }
     if (act === "cancel") { C.editTarget = null; C.api.tempMarker(null); render(); return; }
     if (act === "move") {
       C.api.pickOnMap(t("Neue Position für {name}", { name }), async (lat, lon) => {
@@ -428,7 +443,7 @@ async function targetAction(act, name) {
       if (ed.isNew) await postJSON("api/coord/targets/add", { name: ed.name, lat: ed.lat, lon: ed.lon, note: ed.note, radius_m: ed.radius_m });
       else {
         if (ed.name !== ed.orig) {  // rename = add the new, delete the old
-          await postJSON("api/coord/targets/add", { name: ed.name, lat: ed.lat, lon: ed.lon, note: ed.note, radius_m: ed.radius_m });
+          await postJSON("api/coord/targets/add", { name: ed.name, lat: ed.lat, lon: ed.lon, note: ed.note, radius_m: ed.radius_m, by: ed.by, created: ed.created });
           await postJSON("api/coord/targets/delete", { name: ed.orig });
         } else await postJSON("api/coord/targets/update", { name: ed.name, note: ed.note, radius_m: ed.radius_m });
       }

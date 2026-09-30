@@ -8,6 +8,8 @@ own catalogue here instead of the UI catalogues.
 
 from __future__ import annotations
 
+import re
+
 from meshplay.mapapp.messages import MAX_TEXT_BYTES
 
 TARGET_BYTES = 80  # what a message should stay under; MAX_TEXT_BYTES is the hard limit
@@ -41,7 +43,16 @@ PHRASES = {
         "halt_ok": "HALT ok",
         "resume": "Weiter #{target} {dist} {dir}",
         "aborted": "#{target} abgebrochen",
-        "help": "? Status ?R Weg ?Z Ziel ?E Ankunft ?P Pfad ?L Legende HALT GO X=Abbruch",
+        "help": (
+            "? Status ?R Weg ?Z Ziel ?E Ankunft ?P Pfad ?L Legende HALT GO X=Abbruch. "
+            "+D NAME Text=Marke setzen, ?D NAME hinfuehren, ?D zur naechsten"
+        ),
+        "marker_set": "D {name} gesetzt {label}",
+        "marker_exists": "D {name} gibt es schon",
+        "marker_nopos": "{cmd}: keine Position von dir",
+        "marker_unknown": "D {name} unbekannt. ?D fuehrt zur naechsten",
+        "marker_none": "Keine Marken. Setzen mit +D NAME Text",
+        "marker_usage": "+D NAME Text: NAME 1-24 Zeichen ohne Leerzeichen",
         "eta": "#{target} Ankunft {time} ({eta}) {speed} jetzt, {avg} Schnitt",
         "eta_default": "#{target} Ankunft {time} ({eta}) bei {speed} angenommen",
         "legend": (
@@ -76,7 +87,16 @@ PHRASES = {
         "halt_ok": "HALT ok",
         "resume": "Next #{target} {dist} {dir}",
         "aborted": "#{target} aborted",
-        "help": "? status ?R route ?Z target ?E arrival ?P path ?L legend HALT GO X=abort",
+        "help": (
+            "? status ?R route ?Z target ?E arrival ?P path ?L legend HALT GO X=abort. "
+            "+D NAME text=set marker, ?D NAME guide there, ?D to the nearest"
+        ),
+        "marker_set": "D {name} set {label}",
+        "marker_exists": "D {name} exists already",
+        "marker_nopos": "{cmd}: no position from you",
+        "marker_unknown": "D {name} unknown. ?D guides to the nearest",
+        "marker_none": "No markers. Set one with +D NAME text",
+        "marker_usage": "+D NAME text: NAME 1-24 characters, no spaces",
         "eta": "#{target} arrival {time} ({eta}) {speed} now, {avg} average",
         "eta_default": "#{target} arrival {time} ({eta}) assuming {speed}",
         "legend": (
@@ -101,6 +121,12 @@ COMMANDS = {
 }
 
 
+# "+d NAME long name" sets a marker at the sender's position, "?d NAME" guides there, "?d" to
+# the nearest one; the letter follows the owner's wording (D for depot)
+MARKER_RE = re.compile(r"^([+?])d(?:\s+(\S+)(?:\s+(.*))?)?$", re.IGNORECASE | re.DOTALL)
+LABEL_MAX = 40
+
+
 def phrase(lang: str, key: str, **params) -> str:
     """The text for `key` with the parameters filled in; empty parameters leave no gaps."""
     lang = lang if lang in PHRASES else "de"
@@ -122,3 +148,15 @@ def parse_command(text: str) -> str | None:
     if t.startswith("?"):
         return "help"
     return None
+
+
+def parse_marker(text: str) -> tuple[str, str, str] | None:
+    """("set", NAME, label) for "+d NAME label", ("goto", NAME or "", "") for "?d [NAME]",
+    None for anything else. Names are upper case like the other targets; the label is the
+    long name, whitespace collapsed."""
+    m = MARKER_RE.match((text or "").strip())
+    if m is None:
+        return None
+    sign, name, label = m.groups()
+    label = " ".join((label or "").split())[:LABEL_MAX]
+    return ("set" if sign == "+" else "goto"), (name or "").upper(), label
