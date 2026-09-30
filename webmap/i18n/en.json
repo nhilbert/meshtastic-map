@@ -692,13 +692,13 @@
   "„{text}“": "“{text}”",
   "„{title}“ abbrechen? Die bisherige Rechenzeit geht verloren.": "Cancel “{title}”? The computing time so far is lost.",
   "(per Funk angefordert)": "(requested by radio)",
-  "+D NAME Text setzt ein Ziel an der eigenen Position, ?D NAME macht es zum Einsatz, ?D das nächste. Wer das darf, bekommt auch Antworten.": "+D NAME text sets a target at the sender's position, ?D NAME makes it the sender's mission, ?D the nearest one. Whoever may do this also gets answers.",
   "Gesetzt per Funk von": "Set by radio from",
   "Markierungen per Funk (+D, ?D)": "Markers by radio (+D, ?D)",
   "Ziele sind zugleich Markierungen für das Feld: „+D NAME Text“ setzt eines an der Position des Absenders, „?D NAME“ macht es zu dessen Einsatz, „?D“ das nächste (Einstellung „Markierungen per Funk“).": "Targets are also markers for the field: “+D NAME text” sets one at the sender's position, “?D NAME” makes it the sender's mission, “?D” the nearest one (setting “Markers by radio”).",
   "nur von Knoten mit Einsatz": "only from nodes with a mission",
   "per Funk von {node}, {time}": "by radio from {node}, {time}",
-  "von allen Knoten": "from all nodes",
   "{name} hat sich per Funk {stop} als Ziel geholt": "{name} took {stop} as target by radio",
-  "{node} hat per Funk die Markierung {name} gesetzt": "{node} set the marker {name} by radio"
+  "{node} hat per Funk die Markierung {name} gesetzt": "{node} set the marker {name} by radio",
+  "+D NAME Text setzt ein Ziel an der eigenen Position, ?D NAME macht es zum Einsatz, ?D das nächste. Auf dem Kanal ist ein Knoten, von dem in den letzten {hours} Stunden ein Paket mit dem Schlüssel dieses Kanals kam (Position, Knoteninfo, Text); eine PKI-verschlüsselte Direktnachricht allein zeigt den Kanal nicht. Andere bekommen keine Antwort.": "+D NAME text sets a target at the sender's position, ?D NAME makes it the sender's mission, ?D the nearest one. A node is on the channel when a packet with this channel's key came from it in the last {hours} hours (position, node info, text); a PKI-encrypted direct message alone does not show the channel. Others get no answer.",
+  "von Knoten auf dem Kanal der Funksprüche": "from nodes on the channel of the messages"
 }

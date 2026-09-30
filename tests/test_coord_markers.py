@@ -10,10 +10,25 @@ OTHER = "!abcd5678"
 OTHER_NUM = 0xABCD5678
 
 
-def seen(coord, lat, lon, bits=32):
-    """A position broadcast of NODE without a mission: only remembered, nothing queued."""
+def seen(coord, lat, lon, bits=32, channel=1):
+    """A position broadcast of NODE without a mission (on the private channel by default):
+    only remembered, nothing queued."""
     dev = coord.ctx.device
-    dev._on_receive(position(lat, lon, bits), dev.iface)
+    dev._on_receive({**position(lat, lon, bits), "channel": channel}, dev.iface)
+
+
+def on_channel(coord, node=NODE, num=None):
+    """A node info broadcast with the private channel's key, without a position."""
+    dev = coord.ctx.device
+    packet = {
+        "id": 7,
+        "from": num or int(node[1:], 16),
+        "fromId": node,
+        "to": 0xFFFFFFFF,
+        "channel": 1,
+        "decoded": {"portnum": "NODEINFO_APP", "user": {"id": node}},
+    }
+    dev._on_receive(packet, dev.iface)
 
 
 def test_parse_marker():
@@ -52,6 +67,7 @@ def test_set_marker_from_a_node_without_mission(coord):
 
 
 def test_set_marker_needs_a_fresh_precise_position(coord):
+    on_channel(coord)
     feed(coord, text("+d s1"))
     assert sent_texts(coord) == ["+D S1: keine Position von dir"]
     seen(coord, *north(200), bits=13)  # reduced precision: kilometres
@@ -87,6 +103,7 @@ def test_goto_named_and_nearest_marker(coord):
 
 
 def test_marker_setting_and_mode(coord):
+    on_channel(coord)
     coord.settings["lang"] = "en"
     feed(coord, text("?d"))
     assert sent_texts(coord) == ["No markers. Set one with +D NAME text"]
@@ -115,5 +132,36 @@ def test_markers_from_two_nodes(coord):
     feed(coord, {**text("+d box"), "from": OTHER_NUM, "fromId": OTHER})
     assert coord.targets["BOX"]["by"] == OTHER
     assert dev.iface.sent[-1]["to"] == OTHER
+    on_channel(coord)
     feed(coord, text("+d box2"))  # NODE sent no position
     assert "BOX2" not in coord.targets and dev.iface.sent[-1]["to"] == NODE
+
+
+def test_only_nodes_on_the_private_channel_get_answers(coord):
+    """A PKI direct message arrives as channel 0 whatever the sender picked: it does not show
+    the channel. A packet decrypted with the channel's key does."""
+    seen(coord, *north(200), channel=0)  # position on the public channel
+    feed(coord, {**text("+d s1"), "pkiEncrypted": True})
+    assert sent_texts(coord) == [] and not coord.targets
+    assert not coord.on_channel(NODE)
+    feed(coord, {**text("?d"), "channel": 1, "pkiEncrypted": True})  # PKI: channel meaningless
+    assert sent_texts(coord) == []
+    feed(coord, {**text("?d"), "channel": 1})  # a DM with the channel's key
+    assert sent_texts(coord) == ["Keine Marken. Setzen mit +D NAME Text"]
+    coord._on_channel[NODE] -= 5 * 3600  # long ago: not any more
+    feed(coord, text("?d"))
+    assert len(sent_texts(coord)) == 1
+    seen(coord, *north(200))  # its position broadcast on the private channel
+    feed(coord, {**text("+d s1 Kiste"), "pkiEncrypted": True})
+    assert sent_texts(coord)[-1] == "D S1 gesetzt Kiste"
+    coord.settings["channel"] = 2  # another channel for the messages: its key counts
+    feed(coord, text("?d s1"))
+    assert len(sent_texts(coord)) == 2
+
+
+def test_old_setting_all_becomes_channel(coord):
+    coord.settings["markers"] = "all"
+    coord._save_settings()
+    again = Coordinator(coord.ctx)
+    assert again.settings["markers"] == "channel"
+    again.shutdown()

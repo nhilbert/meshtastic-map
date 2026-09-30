@@ -7,7 +7,10 @@ from meshplay.mapapp.registry import Setting
 
 PROFILES = ["foot", "bike", "car"]
 INSTRUCTIONS = ["request", "turns", "interval"]
-MARKERS = ["all", "missions", "off"]
+MARKERS = ["channel", "missions", "off"]
+# a node counts as on the private channel this long after a packet came with the channel's key;
+# nodes broadcast their node info every 3 h by default
+CHANNEL_PROOF_S = 4 * 3600
 DEFAULTS = {
     "lang": "de",
     "channel": 1,
@@ -27,7 +30,7 @@ DEFAULTS = {
     "speed_car_kmh": 30,
     "end_message": True,
     "send_legend": True,
-    "markers": "all",
+    "markers": "channel",
 }
 
 
@@ -208,13 +211,17 @@ def declarations(
             "select",
             DEFAULTS["markers"],
             options=[
-                ["all", _("von allen Knoten")],
+                ["channel", _("von Knoten auf dem Kanal der Funksprüche")],
                 ["missions", _("nur von Knoten mit Einsatz")],
                 ["off", _("aus")],
             ],
             help=_(
                 "+D NAME Text setzt ein Ziel an der eigenen Position, ?D NAME macht es zum "
-                "Einsatz, ?D das nächste. Wer das darf, bekommt auch Antworten."
+                "Einsatz, ?D das nächste. Auf dem Kanal ist ein Knoten, von dem in den letzten "
+                "{hours} Stunden ein Paket mit dem Schlüssel dieses Kanals kam (Position, "
+                "Knoteninfo, Text); eine PKI-verschlüsselte Direktnachricht allein zeigt den "
+                "Kanal nicht. Andere bekommen keine Antwort.",
+                hours=CHANNEL_PROOF_S // 3600,
             ),
         ),
     ]

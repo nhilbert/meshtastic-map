@@ -35,7 +35,13 @@ from meshplay.mapapp.coord.geo import (
 )
 from meshplay.mapapp.coord.paths import Waypoint, parse_path, stops
 from meshplay.mapapp.coord.routing import RoadGraph, Route, legs_text, route_path
-from meshplay.mapapp.coord.settings import DEFAULTS, clean, declarations, default_speed_ms
+from meshplay.mapapp.coord.settings import (
+    CHANNEL_PROOF_S,
+    DEFAULTS,
+    clean,
+    declarations,
+    default_speed_ms,
+)
 from meshplay.mapapp.coord.store import CoordStore
 from meshplay.mapapp.i18n import _
 from meshplay.mapapp.sites_store import NAME_RE
@@ -211,6 +217,8 @@ class Coordinator:
         saved = self.store.read("settings", {})
         self.enabled = bool(saved.pop("enabled", False))
         self.settings = {**DEFAULTS, **saved}
+        if self.settings["markers"] not in ("channel", "missions", "off"):
+            self.settings["markers"] = DEFAULTS["markers"]  # "all" before 2026-09-30
         self.targets: dict[str, dict] = self.store.read("targets", {})
         self.paths: dict[str, list[dict]] = self.store.read("paths", {})  # templates
         self.areas: list[Area] = []
@@ -239,6 +247,7 @@ class Coordinator:
         self._stop = threading.Event()
         self._my_num: int | None = None
         self._seen: dict[str, dict] = {}  # last position of every node, for markers
+        self._on_channel: dict[str, float] = {}  # last packet with the channel's key, per node
         self._graph: RoadGraph | None = None
         self._graph_key = None  # (file, mtime) the loaded graph came from
         self.processed = 0  # packets the worker has handled
@@ -758,6 +767,14 @@ class Coordinator:
         decoded = p.get("decoded", {})
         port = decoded.get("portnum")
         mission = sender in self.missions
+        # decrypted with the channel's key: the sender has it. A PKI direct message arrives as
+        # channel 0 whatever channel the sender picked, so it proves nothing.
+        if (
+            decoded
+            and not p.get("pkiEncrypted")
+            and p.get("channel", 0) == int(self.settings.get("channel", 0))
+        ):
+            self._on_channel[sender] = time.time()
         if port == "POSITION_APP" and "latitude" in decoded.get("position", {}):
             self._seen[sender] = _position_record(p, time.time())
             if mission:
@@ -1263,15 +1280,16 @@ class Coordinator:
 
     def _on_marker(self, node: str, action: str, name: str, label: str) -> None:
         """+D NAME label: a target at the sender's position. ?D NAME / ?D: that target, or the
-        nearest one, becomes the sender's new mission. Who may is the "markers" setting; with
-        the mode off nothing happens (the node would get no answer)."""
+        nearest one, becomes the sender's new mission. Who may is the "markers" setting: nodes
+        on the private channel (default) or nodes with a mission; nobody else gets an answer.
+        With the mode off nothing happens."""
         allowed = self.settings.get("markers", DEFAULTS["markers"])
         m = self.missions.get(node)
-        if (
-            not self.enabled
-            or allowed == "off"
-            or (allowed == "missions" and (m is None or not m.active))
-        ):
+        if allowed == "missions":
+            ok = m is not None and m.active
+        else:
+            ok = allowed == "channel" and self.on_channel(node)
+        if not self.enabled or not ok:
             self._event(node, "marker_ignored", action=action, name=name)
             return
         lang = m.lang if m is not None else self.settings["lang"]
@@ -1318,6 +1336,10 @@ class Coordinator:
         self.assign(
             node, [waypoint], self.settings["profile"], lang, t.get("note", ""), origin="radio"
         )
+
+    def on_channel(self, node: str) -> bool:
+        """The node sent a packet with the key of the messages' channel recently."""
+        return time.time() - self._on_channel.get(node, 0.0) <= CHANNEL_PROOF_S
 
     def _target_key(self, name: str) -> str | None:
         """The stored name of a target, whatever case the field typed."""

@@ -146,8 +146,11 @@ simulated radio first.
   says there is none); `?d s1` makes `S1` the sender's new mission (replacing any other) and
   answers with the assignment, `#S1 Storage Box 800m N ~11min R: …`; `?d` does the same for
   the nearest target the node is not already at. The setting *Markierungen per Funk* says who
-  may: all nodes (default), only nodes with a mission, or nobody; with the mode off nothing
-  happens. In **Ziele** markers are edited, moved and deleted like any target; the row and the
+  may: nodes on the channel of the messages (default), only nodes with a mission, or nobody;
+  nobody else gets an answer, and with the mode off nothing happens. A node is on the channel
+  when a packet with that channel's key came from it in the last 4 h (position, node info,
+  text); a PKI-encrypted direct message alone can't show the channel, since it always arrives
+  as channel 0. In **Ziele** markers are edited, moved and deleted like any target; the row and the
   map popup say which node set it and when, and the page shows a notice when a marker or a
   mission arrives by radio. Radio can only add markers, not change or delete them.
 - **Reading the messages.** `#KKR 210m N ~6min` is the target, the straight-line distance,

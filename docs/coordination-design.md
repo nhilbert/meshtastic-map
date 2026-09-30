@@ -160,8 +160,13 @@ for the marker commands):
 
 Anything else from a coordinated node is an ordinary DM and stays in the pane without a reply.
 Nodes without a mission are never answered (no unsolicited radio), except for `+d`/`?d`: the
-node asked, and the setting `markers` (all nodes / only nodes with a mission / off; added
-2026-09-30) says who may. Markers are ordinary targets with `by` (node) and `created`, so the
+node asked, and the setting `markers` (added 2026-09-30) says who may: `channel` (default)
+nodes on the private channel of the `channel` setting, `missions` nodes with a mission, `off`
+nobody. Everyone else gets no answer. A PKI-encrypted DM arrives as channel 0 whatever channel
+the sender picked, so the command itself does not show the channel; a node counts as on it
+for 4 h after any packet decrypted with the channel's key (position, node info, a text, a DM
+without PKI). A tracker whose private channel is only secondary broadcasts on its primary one
+and has to send something on the private channel first. Markers are ordinary targets with `by` (node) and `created`, so the
 targets editor manages them; radio can only add, not change or delete.
 
 **Language.** Radio phrases follow a per-mission language (default from the settings, `de` or
