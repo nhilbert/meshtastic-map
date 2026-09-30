@@ -11,6 +11,7 @@ class SceneLayer(Layer):
     id = "scene"
     name = N_("Laserscan-Szene")
     group = N_("Simulation")
+    uses_models = True
     description = N_(
         "Umriss der Szene (data/sim/scene) und Flächen ohne Messpunkte (interpoliert)."
     )

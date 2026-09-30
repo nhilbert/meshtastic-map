@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import logging
+import threading
 from collections import Counter
 from datetime import date
 
@@ -29,6 +31,12 @@ from meshplay.walk import (
     probe_points,
     typical_interval_s,
 )
+
+logger = logging.getLogger(__name__)
+# Model comparisons being computed in the background: cache key -> None while running, the
+# error text if it failed. The first comparison of a walk takes about a second per packet.
+_running: dict[str, str | None] = {}
+_running_lock = threading.Lock()
 
 
 def observed_signal(rssi: float, snr: float | None) -> float:
@@ -213,9 +221,22 @@ class WalkLayer(Layer):
             )
         scores = {}
         if residual:
-            scores, extra["summary"] = self.scores(
-                ctx, values, log, direct, track, interval, preset
-            )
+            result = self.scores(ctx, values, log, direct, track, interval, preset)
+            if isinstance(result, str):
+                residual = False
+                extra["note"] = _(
+                    "Vergleich mit den Modellen fehlgeschlagen: {error}", error=result
+                )
+            elif result is None:  # being computed: SNR colours until then, the page asks again
+                residual = False
+                extra["note"] = _(
+                    "Vergleich mit den Modellen wird berechnet ({n} Pakete, etwa 1 s je "
+                    "Paket); bis dahin nach SNR gefärbt.",
+                    n=len(direct),
+                )
+                extra["refresh_s"] = 3
+            else:
+                scores, extra["summary"] = result
 
         for p in points:
             key = p["time"].isoformat()
@@ -325,11 +346,9 @@ class WalkLayer(Layer):
         return collection(features, legend, **extra)
 
     def scores(self, ctx, values, log, direct, track, interval, preset):
-        """Per-packet ENS prediction and residual plus the model summary; cached on disk."""
-        from meshplay.sim.compare import summarize
-        from meshplay.sim.predictor import LinkSetup, Predictor
-        from meshplay.sim.walkcompare import model_names, score_packets, score_slots
-
+        """Per-packet ENS prediction and residual plus the model summary, cached on disk.
+        Not cached yet: computed in the background, None meanwhile; the error text if that
+        failed."""
         gpx = ctx.data_dir / "tracks" / values["gpx"] if values["gpx"] else None
         stamp = [
             log.stat().st_mtime,
@@ -342,6 +361,30 @@ class WalkLayer(Layer):
         if path.exists():
             cached = json.loads(path.read_text(encoding="utf-8"))
             return cached["scores"], cached["summary"]
+        with _running_lock:
+            if key in _running:
+                return _running[key]
+            _running[key] = None
+        args = (ctx, values, direct, track, interval, preset, key, path)
+        threading.Thread(target=self._compute, args=args, daemon=True).start()
+        return None
+
+    def _compute(self, ctx, values, direct, track, interval, preset, key, path) -> None:
+        try:
+            with ctx.model_lock:
+                out = self._score(ctx, values, direct, track, interval, preset)
+            path.write_text(json.dumps(out), encoding="utf-8")
+            with _running_lock:
+                del _running[key]
+        except Exception as e:  # shown in the layer's note; a changed input tries again
+            logger.exception("Walk comparison failed")
+            with _running_lock:
+                _running[key] = f"{type(e).__name__}: {e}"
+
+    def _score(self, ctx, values, direct, track, interval, preset) -> dict:
+        from meshplay.sim.compare import summarize
+        from meshplay.sim.predictor import LinkSetup, Predictor
+        from meshplay.sim.walkcompare import model_names, score_packets, score_slots
 
         site = ctx.sites[values["home_site"]]
         indoor = None if values["home_indoor"] == "none" else values["home_indoor"]
@@ -364,7 +407,7 @@ class WalkLayer(Layer):
             r = times.get(p["time"].astimezone().isoformat(timespec="seconds"))
             if r:
                 by_time[p["time"].isoformat()] = {"pred": r["ENS__pred"], "resid": r["ENS__resid"]}
-        out = {
+        return {
             "scores": by_time,
             "summary": {
                 "models": summary,
@@ -373,5 +416,3 @@ class WalkLayer(Layer):
                 "skipped": skipped + skipped_slots,
             },
         }
-        path.write_text(json.dumps(out), encoding="utf-8")
-        return out["scores"], out["summary"]

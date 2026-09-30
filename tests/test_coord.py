@@ -222,7 +222,7 @@ def test_commands_halt_go_abort_and_strangers(coord):
     n = len(sent_texts(coord))
     feed(coord, text("?h"))
     assert sent_texts(coord)[-1].startswith(
-        "? status ?R route ?Z target ?E arrival ?P path ?L legend HALT GO X=abort. +D NAME"
+        "? status ?R route ?Z target ?E arrival ?P path ?L legend HERE=at the stop HALT GO"
     )
     feed(coord, text("?z"))
     assert sent_texts(coord)[-1] == "#Z 500m N"
@@ -668,3 +668,76 @@ def test_position_requests(coord):
     coord.assign(NODE, [{"name": "B", "lat": north(900)[0], "lon": HOME[1]}], "foot", "de")
     tick(age_s=16 * 60)
     assert len(requests()) == 4  # the mode is off: nothing goes out
+
+
+def test_essential_messages_wait_for_the_device(coord):
+    """Device away: the assignment is held back, no position request is counted; when the
+    device is back the next tick sends both."""
+    from meshtastic.protobuf import portnums_pb2
+
+    dev = coord.ctx.device
+    coord.settings["request_positions"] = True
+    dev.state = "Fehler"
+    m = coord.assign(NODE, [{"name": "A", "lat": north(300)[0], "lon": HOME[1]}], "foot", "de")
+    assert sent_texts(coord) == [] and m.requests_open == 0
+    assert m.outbox == {"assign": "#A zugewiesen, keine Position von dir"}
+    assert coord.snapshot()["device_state"] == "Fehler"
+    with coord._lock:
+        coord._tick(time.time())
+    assert dev.iface.sent == []  # still away
+    dev.state = "verbunden"
+    with coord._lock:
+        coord._tick(time.time())
+    assert sent_texts(coord) == ["#A zugewiesen, keine Position von dir"] and not m.outbox
+    ports = [s["port"] for s in dev.iface.sent]
+    assert ports.count(portnums_pb2.PortNum.POSITION_APP) == 1
+    assert "resend" in [e["kind"] for e in m.events]
+
+
+def test_arrival_reported_by_the_node(coord):
+    """DA / HERE: the stop counts as reached although the last position is 90 m before it."""
+    path = [
+        {"name": "A", "lat": north(300)[0], "lon": HOME[1], "hold_until": "+10"},
+        {"name": "B", "lat": north(800)[0], "lon": HOME[1]},
+    ]
+    coord.assign(NODE, path, "foot", "de")
+    feed(coord, position(*north(210)))
+    m = coord.missions[NODE]
+    feed(coord, text("da"))
+    assert m.state == HOLDING and sent_texts(coord)[-1].startswith("#A erreicht")
+    feed(coord, text("DA"))  # again while waiting: the status, not a second arrival
+    assert m.state == HOLDING and sent_texts(coord)[-1].startswith("#A")
+    assert [e["kind"] for e in m.events].count("hold") == 1
+    m.stop.hold_until = time.time() - 1
+    with coord._lock:
+        coord._tick(time.time())
+    feed(coord, text("here"))
+    assert m.state == ARRIVED and sent_texts(coord)[-1].startswith("#B erreicht")
+    reported = [e for e in m.events if e["kind"] == "arrival_reported"]
+    assert [e["name"] for e in reported] == ["A", "B"] and reported[0]["dist"] == 90
+    assert "DA=am Halt" in phrases.phrase("de", "help")
+
+
+def test_archive_keeps_replaced_and_removed_missions(coord):
+    """A replaced or removed mission goes to the archive; the detail has every event and the
+    whole trail from the daily logs, beyond the 50 positions a mission keeps."""
+    first = coord.assign(NODE, [{"name": "A", "lat": north(900)[0], "lon": HOME[1]}], "foot", "de")
+    for i in range(55):
+        feed(coord, position(*north(i * 5)))
+    first.created -= 1  # the next mission must not share the second
+    old_id = coord.missions[NODE].id
+    second = coord.assign(NODE, [{"name": "B", "lat": north(50)[0], "lon": HOME[1]}], "foot", "de")
+    rows = coord.api("GET", ["archive"], {}, {})["missions"]
+    assert [(r["path"], r["current"]) for r in rows] == [(["B"], True), (["A"], False)]
+    d = coord.api("GET", ["archive", old_id], {}, {})
+    assert d["path"][0]["name"] == "A" and d["archived_at"] is not None
+    assert len(d["trail"]) == 55 and len(d["positions"]) == 50
+    assert {e["kind"] for e in d["events"]} >= {"assign", "position", "sent"}
+    assert all(e["node"] == NODE for e in d["events"])
+    feed(coord, position(*north(50)))  # B reached
+    coord.mission_action(NODE, "remove", {})
+    rows = coord.api("GET", ["archive"], {}, {})["missions"]
+    assert [(r["path"], r["current"]) for r in rows] == [(["B"], False), (["A"], False)]
+    assert rows[0]["id"] == second.id and rows[0]["state"] == ARRIVED
+    with pytest.raises(KeyError):
+        coord.api("GET", ["archive", "..\\..\\settings"], {}, {})

@@ -73,12 +73,18 @@
         <button class="btn" id="devBtn" data-i18n>Verbinden</button>
       </div>
     </details>
+    <details class="sec" data-sec="airtime">
+      <summary><h2 data-i18n>Funklast</h2><span class="dot" id="airDot"></span></summary>
+      <div id="airBox"></div>
+    </details>
   </aside>
   <button id="railBackdrop" hidden tabindex="-1" aria-label="Schließen" data-i18n-aria-label="Schließen"></button>
 
   <section id="view">
   <div id="mapbox">
     <div id="map2d"></div>
+    <div id="devBanner" class="banner lost" hidden role="alert"><span id="devBannerText"></span>
+      <button class="btn small" id="devBannerStop" data-i18n>Nicht mehr versuchen</button></div>
     <div id="pickBanner" class="banner" hidden role="status"><span id="pickText"></span>
       <button class="btn small on" id="pickDone" hidden data-i18n>Fertig</button>
       <button class="btn small" id="pickCancel" data-i18n>Abbrechen (Esc)</button></div>
@@ -137,6 +143,8 @@
     <div><dt data-i18n>Gerät (USB)</dt><dd id="telemetryDevice">—</dd></div>
     <div><dt data-i18n>Pakete</dt><dd id="telemetryPackets">—</dd></div>
     <div><dt data-i18n>Letztes Paket</dt><dd id="telemetryLast">—</dd></div>
+    <div><dt data-i18n>Kanal belegt</dt><dd id="telemetryChUtil">—</dd></div>
+    <div><dt data-i18n>Eigene Sendezeit</dt><dd id="telemetryAirTx">—</dd></div>
   </dl>
   <span id="status" role="status" data-i18n>lädt …</span>
 </footer>

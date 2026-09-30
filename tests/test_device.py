@@ -1,12 +1,13 @@
 """Port detection (no device needed) and a real connection (marker hardware)."""
 
+import time
 from types import SimpleNamespace
 
 import pytest
 
 from meshplay import connect, device
 
-BT = "BTHENUM\{00001101-0000-1000-8000-00805F9B34FB}_LOCALMFG&0000\7&0&000000000000_00000005"
+BT = r"BTHENUM\{00001101-0000-1000-8000-00805F9B34FB}_LOCALMFG&0000\7&0&000000000000_00000005"
 
 
 def port(dev, vid=None, hwid="", manufacturer=None):
@@ -62,16 +63,69 @@ def test_unknown_usb_only_when_unambiguous(system):
     assert device.find_port() is None  # Bluetooth ports are never taken
 
 
-def test_link_refuses_a_missing_port(system, tmp_path):
-    from meshplay.mapapp.device import DeviceLink
+def wait_for(cond, timeout=5.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return
+        time.sleep(0.02)
+    raise AssertionError("condition not reached")
 
+
+class FakeSerial:
+    """Stands in for meshtastic's SerialInterface: records opens and closes."""
+
+    opened: list = []
+
+    def __init__(self, devPath):
+        self.devPath, self.closed = devPath, False
+        FakeSerial.opened.append(self)
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def link(system, tmp_path, monkeypatch):
+    import meshtastic.serial_interface
+
+    from meshplay.mapapp import device as mapdevice
+
+    monkeypatch.setattr(meshtastic.serial_interface, "SerialInterface", FakeSerial)
+    monkeypatch.setattr(mapdevice, "RETRY_S", 0.1)
+    FakeSerial.opened = []
+    d = mapdevice.DeviceLink(tmp_path, log_packets=False)
+    yield d
+    d.disconnect()
+
+
+def test_link_refuses_a_missing_port_then_retries(system, link):
     system([port("COM3", hwid=BT)])
-    link = DeviceLink(tmp_path, log_packets=False)
     assert link.ports()["auto"] is None
-    link._connect("COM8")
-    assert link.state == "Fehler" and "COM8" in link.error
-    link._connect(None)
-    assert link.state == "Fehler" and "USB" in link.error
+    link.connect("COM8")  # the owner's choice: a missing port is an error
+    wait_for(lambda: link.state == "Fehler")
+    assert "COM8" in link.error and link.status()["retrying"]
+    wait_for(lambda: link.retries >= 1)  # retries fall back to detection: still nothing
+    assert "USB" in link.error
+    system([port("COM3", hwid=BT), port("COM9", vid=0x2886, hwid="USB")])  # plugged in
+    wait_for(lambda: link.state == "verbunden")
+    assert link.port == "COM9" and not link.status()["retrying"]
+
+
+def test_lost_connection_is_released_and_retried(system, link):
+    system([port("COM7", vid=0x2886, hwid="USB")])
+    link.connect()
+    wait_for(lambda: link.state == "verbunden")
+    first = link.iface
+    link._on_lost(interface=first)
+    assert link.state == "Fehler" and link.lost_at is not None
+    wait_for(lambda: first.closed)  # the port is released
+    wait_for(lambda: link.state == "verbunden")  # and opened again
+    assert link.iface is not first and link.lost_at is None
+    link._on_lost(interface=first)  # an old interface's late notice changes nothing
+    assert link.state == "verbunden"
+    link.disconnect()
+    assert not link.wanted and not link.status()["retrying"]
 
 
 @pytest.mark.hardware

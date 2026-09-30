@@ -142,3 +142,40 @@ def test_coverage_task_refused_without_scene(bare_ctx):
     jobs = JobManager(bare_ctx)
     with pytest.raises(ValueError, match="Keine Laserscan-Szene"):
         jobs.create("coverage", {})
+
+
+def test_walk_comparison_runs_in_the_background(bare_ctx, monkeypatch):
+    """A comparison not cached yet is computed in a thread under the model lock: the layer
+    answers at once (None = pending), later calls get the cached result."""
+    import threading
+
+    from meshplay.mapapp.layers import walk
+    from meshplay.mapapp.layers.walk import WalkLayer
+
+    log = bare_ctx.data_dir / "packets" / "2026-09-29.jsonl"
+    log.parent.mkdir()
+    log.write_text("", encoding="utf-8")
+    meta = bare_ctx.sim_dir / "scene" / "scene_meta.json"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("{}", encoding="utf-8")
+    release, calls = threading.Event(), []
+
+    def slow_score(self, ctx, *args):
+        calls.append(ctx.model_lock._is_owned())  # the thread holds the model lock
+        release.wait(5)
+        return {"scores": {"t": {"pred": -100.0, "resid": 1.0}}, "summary": {"packets": 1}}
+
+    monkeypatch.setattr(WalkLayer, "_score", slow_score)
+    layer, values = WalkLayer(), {"gpx": "", "date": "2026-09-29", "color": "residual"}
+    args = (bare_ctx, values, log, [], [], 30.0, "ShortSlow")
+    assert layer.scores(*args) is None
+    assert layer.scores(*args) is None  # still running: no second thread
+    with bare_ctx.model_lock:  # the layer request itself did not need the lock
+        pass
+    release.set()
+    for _ in range(100):
+        if not walk._running:
+            break
+        threading.Event().wait(0.05)
+    assert calls == [True]
+    assert layer.scores(*args) == ({"t": {"pred": -100.0, "resid": 1.0}}, {"packets": 1})

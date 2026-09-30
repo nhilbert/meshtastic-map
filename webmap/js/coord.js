@@ -7,12 +7,13 @@ import { openTaskForm } from "./tasks.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { showSection } from "./workspace.js";
 import { buttonLabel, symbolSVG } from "./icons.js";
+import { csv, download, gpx } from "./export.js";
 
 // Mission states are German codes: t("zugewiesen") t("unterwegs") t("wartet") t("erreicht")
 // t("abgebrochen") t("beendet"); message kinds: t("assign") t("status") t("route") t("target")
 // t("path") t("help") t("halt") t("resume") t("aborted") t("ended") t("offcourse") t("late")
 // t("early") t("confirm") t("reached") t("next") t("changed") t("legend") t("nogo") t("notice") t("place");
-// speed sources: t("gemessen") t("Standard")
+// speed sources: t("gemessen") t("Standard"); OSM suggestion reasons: t("militärisch") t("kein Zugang")
 const ACTIVE = ["zugewiesen", "unterwegs", "wartet"];
 const STATE_CLASS = { zugewiesen: "wait", unterwegs: "run", wartet: "wait", erreicht: "ok", abgebrochen: "bad", beendet: "off" };
 const C = {
@@ -25,6 +26,8 @@ const C = {
   editPlace: null,     // { isNew, id, name, lat, lon, radius_m, text }
   editTarget: null,    // { isNew, orig, name, lat, lon, note }
   sel: null,           // node of the mission shown in the inspector
+  arch: null,          // or the id of an archived mission shown there
+  archive: null,       // archive panel open: the list of missions (null = closed)
 };
 
 // api: { store, toast(msg, opts), openInspector(tab), updateInspector(), pickOnMap(label, cb),
@@ -40,6 +43,7 @@ export function initCoord(api) {
   poll();
 }
 export const selectedMission = () => (C.sel && C.data && C.data.missions.find(m => m.node === C.sel)) || null;
+export const hasMissionDetail = () => !!(C.arch || selectedMission());
 export function pollSoon() { clearTimeout(C.timer); C.timer = setTimeout(poll, 200); }
 
 // "Ziel zuweisen" from a node popup or the node list: the mission form with the node preset.
@@ -135,7 +139,7 @@ function renderBadge() {
   const active = d.missions.filter(m => ACTIVE.includes(m.state)).length;
   buttonLabel(badge, "route", d.enabled && active ? t("Koordination · {n}", { n: active }) : t("Koordination"));
   badge.classList.toggle("busy", d.enabled);
-  $("#coordDot").style.background = d.enabled ? "var(--ok)" : "var(--line)";
+  $("#coordDot").style.background = !d.enabled ? "var(--line)" : d.device_state === "verbunden" ? "var(--ok)" : "var(--warn)";
 }
 function render() {
   const box = $("#coordBox"); if (!box) return;
@@ -146,6 +150,9 @@ function render() {
   box.innerHTML = `
     <label class="tog"><input type="checkbox" id="coordOn" ${d.enabled ? "checked" : ""} ${connected || d.enabled ? "" : "disabled"}>
       <strong>${t("Koordinationsmodus")}</strong></label>
+    ${d.enabled && !connected ? `<p class="msg" role="status" style="margin:0 0 6px">${esc(d.device_retrying
+      ? t("Wartet auf das Gerät: die Verbindung wird immer wieder versucht. Bis dahin geht nichts raus; Zuweisungen, Ankünfte und nächste Abschnitte werden danach nachgeholt.")
+      : t("Wartet auf das Gerät: oben unter „Gerät (USB)“ verbinden. Bis dahin geht nichts raus."))}</p>` : ""}
     <p class="note" style="margin:0 0 6px">${d.enabled
       ? esc(t("An: der eigene Knoten funkt selbstständig an die Knoten mit Einsatz (Zuweisung, Kurs, Ankunft, Antworten auf ? ?R ?Z ?P HALT GO X)."))
       : connected ? esc(t("Aus: es wird nichts gesendet. Einschalten erlaubt dem Server, Knoten mit Einsatz selbstständig anzufunken."))
@@ -155,6 +162,7 @@ function render() {
       <button class="btn small quiet" data-act="settings" aria-expanded="${!!C.settings}">${symbolSVG("settings")} ${t("Einstellungen")}</button>
       <button class="btn small" data-act="targets" aria-expanded="${C.targets}">${t("Ziele")} (${Object.keys(d.targets).length})</button>
       <button class="btn small" data-act="areas" aria-expanded="${C.areas}">${t("Gebiete")} (${(d.areas || []).length + (d.places || []).length})</button>
+      <button class="btn small" data-act="archive" aria-expanded="${!!C.archive}">${t("Archiv")}</button>
       <button class="btn small" data-act="osm" title="${esc(t("Straßen und Wege der Umgebung von OpenStreetMap laden (Overpass-API); danach führt der Server über Straßen statt Luftlinie."))}">${t("Straßennetz laden …")}</button>
     </div>
     <p class="note" style="margin:0 0 6px">${esc(osmLine(d.osm))}</p>
@@ -163,7 +171,8 @@ function render() {
     <div class="msg" role="alert">${esc(C.err)}</div>
     <div class="joblist">${d.missions.map(cardHTML).join("") || `<p class="note" style="margin:0">${t("Noch keine Einsätze.")}</p>`}</div>
     ${C.targets ? targetsHTML(d) : ""}
-    ${C.areas ? areasHTML(d) : ""}`;
+    ${C.areas ? areasHTML(d) : ""}
+    ${C.archive ? archiveHTML() : ""}`;
   $("#coordOn").addEventListener("change", async e => {
     try { await postJSON("api/coord/mode", { on: e.target.checked }); C.api.toast(e.target.checked ? t("Koordinationsmodus an") : t("Koordinationsmodus aus")); }
     catch (err) { C.err = err.message; }
@@ -174,6 +183,45 @@ function render() {
   if (C.form) bindForm(box, d);
   if (C.targets) bindTargets(box);
   if (C.areas) box.querySelectorAll("[data-ar]").forEach(b => b.addEventListener("click", () => areaAction(b.dataset.ar, b.dataset.id)));
+  box.querySelectorAll("[data-arch]").forEach(b => b.addEventListener("click", () => archiveAction(b.dataset.arch, b.dataset.id)));
+}
+
+// ---------------------------------------------------------------- archive
+// Every mission, current or archived (replaced by a new one or removed from the list), with
+// its whole event log and trail from the server's daily logs; GPX and CSV built here.
+const stamp = ts => new Date(ts * 1000).toLocaleString(locale, { dateStyle: "short", timeStyle: "short" });
+function archiveHTML() {
+  const rows = C.archive.map(a => `<div class="site"><div class="txt">
+      <span class="nm">${esc(stamp(a.created))} · ${esc(nodeName(a.node))}</span>
+      <span class="sub">${esc(a.path.join(" › "))} · ${esc(t(a.state))} · ${dist(a.travelled_m)}${a.current ? " · " + esc(t("in der Liste")) : ""}</span></div>
+    <button class="btn small" data-arch="detail" data-id="${esc(a.id)}">${t("Details")}</button>
+    <button class="btn small" data-arch="gpx" data-id="${esc(a.id)}" title="${t("Spur und Wegpunkte als GPX")}">GPX</button>
+    <button class="btn small" data-arch="csv" data-id="${esc(a.id)}" title="${t("Ereignisse als CSV")}">CSV</button></div>`).join("");
+  return `<div class="sitemgr"><div class="hd2">${t("Archiv")}</div>
+    <p class="note" style="margin:0">${t("Alle Einsätze mit vollständigem Ereignisprotokoll und Spur; ersetzte und entfernte bleiben hier.")}</p>
+    <div class="sitelist">${rows || `<p class="note" style="margin:0">${t("Noch keine Einsätze.")}</p>`}</div></div>`;
+}
+async function loadArchive() {
+  try { C.archive = (await getJSON("api/coord/archive")).missions; } catch (e) { C.err = e.message; C.archive = []; }
+  render();
+}
+async function archiveAction(act, id) {
+  if (act === "detail") { showArchived(id); return; }
+  try { exportMission(await getJSON(`api/coord/archive/${id}`), act); } catch (e) { C.err = e.message; render(); }
+}
+function exportMission(d, kind) {
+  const when = new Date(d.created * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "");
+  const base = `einsatz-${d.node.replace("!", "")}-${when}`;
+  if (kind === "gpx") {
+    const name = `${nodeName(d.node)} ${d.path.map(w => w.name).join(" > ")}`;
+    download(`${base}.gpx`, gpx(name, d.path, d.trail), "application/gpx+xml");
+  } else {
+    const rows = d.events.map(e => {
+      const { time, kind: k, lat, lon, snr, what, text, node: _node, ...rest } = e;
+      return { time, kind: k, lat, lon, snr, what, text, details: Object.keys(rest).length ? rest : null };
+    });
+    download(`${base}.csv`, csv(["time", "kind", "lat", "lon", "snr", "what", "text", "details"], rows), "text/csv");
+  }
 }
 
 // One line about the road graph: loaded (with its size and date) or missing.
@@ -217,6 +265,7 @@ async function action(act, node) {
     if (act === "settings") { C.settings = C.settings ? null : { ...C.data.settings, channel: String(C.data.settings.channel) }; render(); return; }
     if (act === "targets") { C.targets = !C.targets; C.api.store.set("coord.targets", C.targets); render(); return; }
     if (act === "areas") { C.areas = !C.areas; C.api.store.set("coord.areas", C.areas); render(); return; }
+    if (act === "archive") { if (C.archive) { C.archive = null; render(); } else loadArchive(); return; }
     if (act === "osm") { openTaskForm("osm"); return; }
     if (act === "focus") { C.api.focusNode(node); return; }
     if (act === "detail") { showDetail(node); return; }
@@ -479,7 +528,21 @@ function areasHTML(d) {
     ${ea && ea.isNew ? areaFormHTML(ea) : ""}
     <div class="sitelist">${places || `<p class="note" style="margin:0">${t("Noch keine Orte.")}</p>`}</div>
     ${ep && ep.isNew ? placeFormHTML(ep) : ""}
-    ${ea || ep ? "" : `<div class="acts"><button class="btn small" data-ar="add">＋ ${t("Gebiet zeichnen")}</button><button class="btn small" data-ar="addp">＋ ${t("Neuer Ort")}</button></div>`}</div>`;
+    ${ea || ep ? "" : `<div class="acts"><button class="btn small" data-ar="add">＋ ${t("Gebiet zeichnen")}</button><button class="btn small" data-ar="addp">＋ ${t("Neuer Ort")}</button></div>`}
+    ${suggestionsHTML(d.suggestions || [])}</div>`;
+}
+// Restricted areas found in OpenStreetMap (task "Sperrgebiete aus OSM suchen"): dashed on the
+// map; each one is taken over or dismissed on its own.
+function suggestionsHTML(list) {
+  const rows = list.map(g => `<div class="site"><div class="txt"><span class="nm">${esc(g.name || t(g.reason))}</span>
+      <span class="sub">${esc(t(g.reason))} · ${fmt(g.area_m2 / 1e4, 1)} ha</span></div>
+      <button class="btn small" data-ar="showg" data-id="${esc(g.id)}" title="${t("Auf der Karte zeigen")}">⌖</button>
+      <button class="btn small" data-ar="acceptg" data-id="${esc(g.id)}" title="${t("Als Sperrgebiet übernehmen")}">⛔</button>
+      <button class="btn small" data-ar="dismissg" data-id="${esc(g.id)}" title="${t("Verwerfen")}">✕</button></div>`).join("");
+  return `<div class="hd2">${t("Vorschläge aus OpenStreetMap")}</div>
+    <p class="note" style="margin:0">${t("Militärische Flächen und Flächen ohne Zugang; gestrichelt auf der Karte. Erst übernommene meidet die Wegführung.")}</p>
+    <div class="sitelist">${rows || `<p class="note" style="margin:0">${t("Keine offenen Vorschläge.")}</p>`}</div>
+    <div class="acts"><button class="btn small" data-ar="searchg">${t("Sperrgebiete aus OSM suchen …")}</button></div>`;
 }
 function areaFormHTML(ea) {
   return `<div class="siteform">
@@ -506,6 +569,16 @@ async function areaAction(act, id) {
     obj[k] = inp.type === "number" ? (inp.value === "" ? null : +inp.value) : inp.value.trim();
   });
   try {
+    if (act === "searchg") { openTaskForm("osm_areas"); return; }
+    if (act === "showg") {
+      const g = d.suggestions.find(x => x.id === id);
+      if (g) C.api.tempMarker(g.lat, g.lon);
+      return;
+    }
+    if (act === "acceptg" || act === "dismissg") {
+      await postJSON(`api/coord/suggestions/${act === "acceptg" ? "accept" : "dismiss"}`, { id });
+      C.api.tempMarker(null); C.api.refreshLayer("coord"); pollSoon(); return;
+    }
     if (act === "add") {
       C.api.pickOnMap(t("Eckpunkte des Gebiets"), points => {
         if (points.length < 3) { C.err = t("Ein Gebiet braucht mindestens drei Eckpunkte"); render(); return; }
@@ -566,11 +639,15 @@ async function areaAction(act, id) {
 }
 
 // ---------------------------------------------------------------- inspector tab
-export function showDetail(node) { C.sel = node; render(); C.api.openInspector("coord"); renderMissionDetail(); }
+export function showDetail(node) { C.sel = node; C.arch = null; render(); C.api.openInspector("coord"); renderMissionDetail(); }
+function showArchived(id) { C.arch = id; C.sel = null; render(); C.api.openInspector("coord"); renderMissionDetail(); }
 export async function renderMissionDetail() {
-  const m = selectedMission(); if (!m) return;
+  let url;
+  if (C.arch) url = `api/coord/archive/${C.arch}`;
+  else { const m = selectedMission(); if (!m) return; url = `api/coord/missions/${m.node}`; }
   let d;
-  try { d = await getJSON(`api/coord/missions/${m.node}`); } catch (e) { $("#t_coord").innerHTML = `<div class="sec"><p class="msg">${esc(e.message)}</p></div>`; return; }
+  try { d = await getJSON(url); } catch (e) { $("#t_coord").innerHTML = `<div class="sec"><p class="msg">${esc(e.message)}</p></div>`; return; }
+  const live = !C.arch && ACTIVE.includes(d.state);
   const k = d.metrics || {};
   const kpi = (label, value, unit = "") => `<div class="kpi"><div class="k">${label}</div><div class="v">${value}<span class="u"> ${unit}</span></div></div>`;
   const rows = d.path.map((w, i) => `<tr class="${i === d.index && ACTIVE.includes(d.state) ? "ens" : ""}"><td>${i + 1}</td><td>${esc(w.name)}</td><td>${w.kind === "via" ? t("Durchgang") : t("Halt")}</td>
@@ -597,8 +674,10 @@ export async function renderMissionDetail() {
         ${kpi(t("Funksprüche"), d.messages.length, t("{n} zugestellt", { n: d.messages.filter(x => x.status === "zugestellt").length }))}
       </div>
       ${k.stale ? `<p class="msg" role="alert">${t("Die letzte Position ist älter als eingestellt; der Knoten ist vielleicht außer Reichweite.")}</p>` : ""}
-      <div class="acts" style="margin-top:8px">${ACTIVE.includes(d.state)
-        ? `<button class="btn small" data-act="status">${t("Status senden")}</button><button class="btn small" data-act="route">${t("Route senden")}</button><button class="btn small" data-act="end">${t("Beenden")}</button>` : ""}</div>
+      ${C.arch ? `<p class="note">${esc(t("Aus dem Archiv, Stand {time}.", { time: stamp(d.archived_at || Date.now() / 1000) }))}</p>` : ""}
+      <div class="acts" style="margin-top:8px">${live
+        ? `<button class="btn small" data-act="status">${t("Status senden")}</button><button class="btn small" data-act="route">${t("Route senden")}</button><button class="btn small" data-act="end">${t("Beenden")}</button>` : ""}
+        <button class="btn small" data-exp="gpx" title="${t("Spur und Wegpunkte als GPX")}">GPX</button><button class="btn small" data-exp="csv" title="${t("Ereignisse als CSV")}">CSV</button></div>
     </div>
     <div class="sec"><h2>${t("Pfad")}</h2><div class="wrap"><table>
       <tr><th>#</th><th>${t("Name")}</th><th>${t("Art")}</th><th>${t("Radius")}</th><th>${t("bis")}</th><th>${t("warten")}</th><th></th></tr>${rows}</table></div>
@@ -609,4 +688,5 @@ export async function renderMissionDetail() {
     <div class="sec"><h2>${t("Ereignisse")}</h2><pre class="log">${events || "—"}</pre>
       <p class="note">${t("{n} Ereignisse; alle stehen in data/coord/events-<Datum>.jsonl.", { n: log.length })}</p></div>`;
   $("#t_coord").querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => action(b.dataset.act, d.node)));
+  $("#t_coord").querySelectorAll("[data-exp]").forEach(b => b.addEventListener("click", () => archiveAction(b.dataset.exp, d.id)));
 }

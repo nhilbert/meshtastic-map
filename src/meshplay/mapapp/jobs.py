@@ -263,6 +263,7 @@ class ProbeWalk(JobKind):
         stats = {"ok": 0, "total": 0}
 
         def on_record(rec: dict) -> None:
+            dev.sent.note("traceroute", 10)  # the request; the answer is the tracker's airtime
             stats["total"] += 1
             stats["ok"] += rec["result"] == "ok"
             line = f"{rec['sentAt'][11:19]} {rec['result']:<8}"
@@ -444,9 +445,9 @@ class CoverageSim(JobKind):
 def all_kinds() -> dict[str, JobKind]:
     """Every task kind. The road-graph download lives with the coordination mode and builds
     on JobKind, so it is imported here, when the manager is created, not at module level."""
-    from meshplay.mapapp.coord.osm import OsmDownload
+    from meshplay.mapapp.coord.osm import OsmAreas, OsmDownload
 
-    return {k.id: k for k in (ProbeWalk(), CoverageSim(), OsmDownload())}
+    return {k.id: k for k in (ProbeWalk(), CoverageSim(), OsmDownload(), OsmAreas())}
 
 
 # ---------------------------------------------------------------- manager

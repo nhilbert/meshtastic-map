@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import statistics
 import threading
 import time
@@ -47,6 +48,7 @@ from meshplay.mapapp.i18n import _
 from meshplay.mapapp.sites_store import NAME_RE
 
 log = logging.getLogger(__name__)
+MISSION_ID_RE = re.compile(r"^[0-9a-f]{8}-\d{1,12}$")
 
 ASSIGNED, UNDERWAY, HOLDING, ARRIVED, ABORTED, ENDED = (
     "zugewiesen",
@@ -72,6 +74,7 @@ REQUEST_GAP_S = 180  # the firmware answers one position request per 3 min
 REQUESTS_PER_STOP = 2  # "should be at the stop" requests per stop
 REQUESTS_UNANSWERED = 3  # then no more requests until a position comes
 ARRIVAL_SLACK_S = 30  # after the expected arrival, before asking where the node is
+STALE_ASK_MAX_S = 2 * 3600  # a node unheard for longer is gone: stale positions are not asked for
 INTERVAL_M = 500  # instruction mode "interval": a route message every this many metres
 
 
@@ -120,6 +123,9 @@ class Mission:
         self.requested_at = 0.0  # last position request
         self.requests_open = 0  # position requests since the last position
         self.stop_requests: dict[str, int] = {}  # "should be at the stop" requests per stop
+        # messages the mission depends on that could not go out (device away): kind -> text,
+        # sent when the device is back
+        self.outbox: dict[str, str] = {}
 
     @property
     def current(self) -> Waypoint:
@@ -151,8 +157,14 @@ class Mission:
     def last(self) -> dict | None:
         return self.positions[-1] if self.positions else None
 
+    @property
+    def id(self) -> str:
+        """Unique over time: a node has one mission at a time, each with its start."""
+        return f"{self.node.lstrip('!')}-{int(self.created)}"
+
     def to_json(self, with_events: bool = False) -> dict:
         out = {
+            "id": self.id,
             "node": self.node,
             "path": [w.to_json() for w in self.path],
             "profile": self.profile,
@@ -173,6 +185,7 @@ class Mission:
             "messages": list(self.messages),
             "last_proactive": self.last_proactive,
             "awaiting_position": self.awaiting_position,
+            "outbox": self.outbox,
             "legend_sent": self.legend_sent,
             "offcourse_from_m": self.offcourse_from_m,
             "route": self.route.to_json() if self.route else None,
@@ -213,6 +226,7 @@ class Mission:
             if k in d:
                 setattr(m, k, d[k])
         m.positions.extend(d.get("positions", []))
+        m.outbox = dict(d.get("outbox") or {})
         m.flags = set(d.get("flags", []))
         m.messages.extend(d.get("messages", []))
         if d.get("route"):
@@ -244,6 +258,9 @@ class Coordinator:
                 self.places.append(parse_place(d, d.get("id")))
             except (ValueError, KeyError) as e:
                 log.warning("Skipping a stored place: %s", e)
+        # restricted-area suggestions from OSM (task osm_areas): items, and the ids taken over
+        # or dismissed, so a new search doesn't offer them again
+        self.suggestions: dict = {"items": [], "done": [], **self.store.read("suggestions", {})}
         self._areaset: AreaSet | None = None
         self._blocked: tuple[tuple, set[int]] | None = None  # (graph key, edge ids)
         self.missions: dict[str, Mission] = {}
@@ -280,6 +297,10 @@ class Coordinator:
                 return self.snapshot()
             if method == "GET" and parts[:1] == ["missions"] and len(parts) == 2:
                 return self._mission(parts[1]).to_json(with_events=True)
+            if method == "GET" and parts == ["archive"]:
+                return {"missions": self.archive_list()}
+            if method == "GET" and parts[:1] == ["archive"] and len(parts) == 2:
+                return self.archive_detail(parts[1])
             if method != "POST":
                 raise KeyError(_("unbekannte Aktion {action}", action="/".join(parts)))
             if parts == ["mode"]:
@@ -298,6 +319,8 @@ class Coordinator:
                 self.edit_area(parts[1], body)
             elif parts[:1] == ["places"] and len(parts) == 2:
                 self.edit_place(parts[1], body)
+            elif parts[:1] == ["suggestions"] and len(parts) == 2:
+                self.edit_suggestion(parts[1], body)
             elif parts == ["missions"]:
                 m = self.assign(
                     str(body.get("node", "")),
@@ -318,6 +341,7 @@ class Coordinator:
         return {
             "enabled": self.enabled,
             "device_state": dev.state if dev else "getrennt",
+            "device_retrying": bool(dev and dev.wanted and dev.state != "verbunden"),
             "settings": self.settings,
             "declarations": [
                 s.to_json() for s in declarations(dev.channels() if dev else [], graphs)
@@ -328,6 +352,14 @@ class Coordinator:
             "paths": self.paths,
             "areas": [a.to_json() for a in self.areas],
             "places": [p.to_json() for p in self.places],
+            "suggestions": [
+                {k: v for k, v in d.items() if k != "polygon"}
+                | {
+                    "lat": sum(p[0] for p in d["polygon"]) / len(d["polygon"]),
+                    "lon": sum(p[1] for p in d["polygon"]) / len(d["polygon"]),
+                }
+                for d in self.open_suggestions()
+            ],
         }
 
     # ------------------------------------------------------------ road graph
@@ -401,6 +433,48 @@ class Coordinator:
         else:
             raise KeyError(_("unbekannte Aktion {action}", action=action))
         self._areas_changed()
+
+    # ------------------------------------------------------------ OSM suggestions
+    def set_suggestions(self, items: list[dict]) -> int:
+        """A new search result; returns how many suggestions are new."""
+        with self._lock:
+            known = {d["id"] for d in self.suggestions["items"]} | set(self.suggestions["done"])
+            self.suggestions["items"] = items
+            self.store.write("suggestions", self.suggestions)
+            return sum(1 for d in items if d["id"] not in known)
+
+    def open_suggestions(self) -> list[dict]:
+        done = set(self.suggestions["done"])
+        return [d for d in self.suggestions["items"] if d["id"] not in done]
+
+    def edit_suggestion(self, action: str, body: dict) -> None:
+        """accept: the suggestion becomes a restricted area (name from OSM or the body);
+        dismiss: it is not offered again."""
+        sid = str(body.get("id") or "")
+        item = next((d for d in self.open_suggestions() if d["id"] == sid), None)
+        if item is None:
+            raise KeyError(_("Vorschlag {id} gibt es nicht", id=sid))
+        if action == "accept":
+            name = str(body.get("name") or "").strip() or self._area_name(item)
+            self.edit_area(
+                "add",
+                {"name": name, "kind": "nogo", "polygon": item["polygon"], "text": f"OSM {sid}"},
+            )
+        elif action != "dismiss":
+            raise KeyError(_("unbekannte Aktion {action}", action=action))
+        self.suggestions["done"].append(sid)
+        self.store.write("suggestions", self.suggestions)
+
+    def _area_name(self, item: dict) -> str:
+        """A free area name from the OSM name (NAME_RE: no spaces, ≤ 24 characters)."""
+        base = re.sub(r"[^A-Za-z0-9ÄÖÜäöüß_-]+", "-", item["name"]).strip("-")[:20]
+        base = base or ("MIL" if item["reason"] == "militärisch" else "SPERR")
+        taken = {a.id for a in self.areas}
+        name, n = base, 1
+        while name.lower() in taken:
+            n += 1
+            name = f"{base}-{n}"
+        return name
 
     def edit_place(self, action: str, body: dict) -> None:
         pid = str(body.get("id") or "")
@@ -586,6 +660,8 @@ class Coordinator:
         path = parse_path(raw_path, now, float(self.settings["arrive_radius_m"]))
         m = Mission(node, path, profile, lang, now, label, origin)
         old = self.missions.get(node)
+        if old is not None:
+            self._archive(old, now)
         if old is not None and old.last is not None and now - old.last["time"] < 3600:
             m.positions.append(old.last)  # keep the node's last known position
         else:
@@ -603,6 +679,59 @@ class Coordinator:
         self._request_position(m, now)
         self._save(force=True)
         return m
+
+    # ------------------------------------------------------------ archive
+    def _archive(self, m: Mission, now: float) -> None:
+        """Keep a mission that leaves the list (replaced or removed) for looking back."""
+        self.store.archive(m.id, {**m.to_json(), "archived_at": now})
+
+    def archive_list(self) -> list[dict]:
+        """Current and archived missions, newest first, as short summaries."""
+
+        def summary(d: dict, current: bool) -> dict:
+            return {
+                "id": d["id"],
+                "node": d["node"],
+                "label": d.get("label", ""),
+                "path": [w["name"] for w in d["path"]],
+                "state": d["state"],
+                "created": d["created"],
+                "arrived_at": d.get("arrived_at"),
+                "archived_at": d.get("archived_at"),
+                "travelled_m": d.get("travelled_m", 0),
+                "messages": len(d.get("messages", [])),
+                "current": current,
+            }
+
+        out = [summary(m.to_json(), True) for m in self.missions.values()]
+        seen = {s["id"] for s in out}
+        out += [summary(d, False) for d in self.store.archived() if d.get("id") not in seen]
+        return sorted(out, key=lambda s: s["created"], reverse=True)
+
+    def archive_detail(self, mission_id: str) -> dict:
+        """A mission, current or archived, with every event of its time from the daily logs
+        and its whole trail (the mission itself keeps only the last 50 positions)."""
+        if not MISSION_ID_RE.match(mission_id):  # it becomes a file name
+            raise KeyError(_("Einsatz {id} gibt es nicht", id=mission_id))
+        m = next((x for x in self.missions.values() if x.id == mission_id), None)
+        d = m.to_json() if m is not None else self.store.read_archived(mission_id)
+        if d is None:
+            raise KeyError(_("Einsatz {id} gibt es nicht", id=mission_id))
+        end = d.get("archived_at") or time.time()
+        # event times are rounded to 0.1 s: the assignment's own may fall just before
+        events = self.store.events_for(d["node"], d["created"] - 1, end)
+        points = [e for e in events if e["kind"] == "position" and "lat" in e]
+        points += d.get("positions", [])  # also the start position from the node database
+        trail = {
+            (p["time"], p["lat"], p["lon"]): {
+                "time": p["time"],
+                "lat": p["lat"],
+                "lon": p["lon"],
+                "snr": p.get("snr"),
+            }
+            for p in points
+        }
+        return {**d, "events": events, "trail": [trail[k] for k in sorted(trail)]}
 
     def mission_action(self, node: str, action: str, body: dict) -> Mission:
         m = self._mission(node)
@@ -629,6 +758,7 @@ class Coordinator:
         elif action == "remove":
             if m.active:
                 raise ValueError(_("Einen laufenden Einsatz erst beenden"))
+            self._archive(m, time.time())
             del self.missions[node]
             self._save(force=True)
             return m
@@ -698,6 +828,24 @@ class Coordinator:
                             "fillOpacity": 0.2,
                             "weight": 2,
                             "dash": "6 4" if nogo else None,
+                        },
+                    )
+                )
+            for d in self.open_suggestions():
+                out.append(
+                    _polygon(
+                        [(lon, lat) for lat, lon in d["polygon"]],
+                        _title=_("Vorschlag: {name}", name=d["name"] or _(d["reason"])),
+                        _fields={
+                            _("Art"): _(d["reason"]),
+                            _("Fläche"): f"{d['area_m2'] / 1e4:.1f} ha",
+                            _("Übernehmen"): _("im Gebiete-Editor der Koordination"),
+                        },
+                        _style={
+                            "color": "#8a6d00",
+                            "fillOpacity": 0.05,
+                            "weight": 1.5,
+                            "dash": "2 5",
                         },
                     )
                 )
@@ -948,10 +1096,8 @@ class Coordinator:
                 self._send(m, "next", self._leg_text(m, "next"), must=True)
             elif m.state == HOLDING:
                 m.flags.discard("early")  # back at the stop: a new early departure warns again
-            elif m.stop_index >= len(m.path) - 1 or not stop.hold_until:
-                self._advance(m, now)
             else:
-                self._hold(m, now)
+                self._arrive(m, now)
             return
         if m.state == HOLDING:
             if stop.hold_until and now < stop.hold_until and "early" not in m.flags:
@@ -1223,6 +1369,13 @@ class Coordinator:
                 must=True,
             )
 
+    def _arrive(self, m: Mission, now: float) -> None:
+        """At the next stop (by position or by the node's word): wait there, or go on."""
+        if m.stop_index >= len(m.path) - 1 or not m.stop.hold_until:
+            self._advance(m, now)
+        else:
+            self._hold(m, now)
+
     def _hold(self, m: Mission, now: float) -> None:
         stop = m.stop
         m.index = m.stop_index
@@ -1245,7 +1398,14 @@ class Coordinator:
         )
 
     def _tick(self, now: float) -> None:
+        dev = self.ctx.device
+        online = self.enabled and dev is not None and dev.state == "verbunden"
         for m in self.missions.values():
+            if m.outbox and online:  # the device is back: what the mission depends on first
+                held, m.outbox = m.outbox, {}
+                for kind, text in held.items():
+                    self._event(m.node, "resend", what=kind)
+                    self._send(m, kind, text, must=True, retried=True)
             if m.retry and now >= m.retry[0]:
                 _, kind, text = m.retry
                 m.retry = None
@@ -1275,6 +1435,9 @@ class Coordinator:
         after 100 m or every 10 min (smart position), so it can reach a stop unheard."""
         if not (self.enabled and self.settings.get("request_positions")) or m.held:
             return
+        dev = self.ctx.device
+        if dev is None or dev.state != "verbunden":  # nothing to ask with; no count either
+            return
         if now - m.requested_at < REQUEST_GAP_S or m.requests_open >= REQUESTS_UNANSWERED:
             return
         reason = self._request_reason(m, now)
@@ -1295,7 +1458,10 @@ class Coordinator:
         last = m.last
         if last is None:
             return "assign"
-        if now - last["time"] > self.settings["stale_min"] * 60:
+        age = now - last["time"]
+        if age > STALE_ASK_MAX_S:
+            return None
+        if age > self.settings["stale_min"] * 60:
             return "stale"
         mt = m.metrics
         if m.state != UNDERWAY or mt.get("eta_s") is None:
@@ -1341,6 +1507,14 @@ class Coordinator:
         elif cmd == "go":
             m.held = False
             self._send(m, "resume", self._leg_text(m, "resume"), reply=True)
+        elif cmd == "arrived":
+            if m.state == HOLDING:  # already there: say how long to wait
+                self._send(m, "status", self._status_text(m), reply=True)
+            else:  # the field knows better than a position that may be 100 m old
+                self._event(
+                    m.node, "arrival_reported", name=m.stop.name, dist=m.metrics.get("dist_m")
+                )
+                self._arrive(m, time.time())
         elif cmd == "abort":
             m.state = ABORTED
             self._send(
@@ -1572,6 +1746,9 @@ class Coordinator:
             rec["status"] = f"nicht gesendet: {e}"
             self._event(m.node, "send_failed", what=kind, text=text, error=str(e))
             m.messages.append(rec)
+            if (must or kind in RETRY_KINDS) and (dev is None or dev.state != "verbunden"):
+                m.outbox[kind] = text  # the latest per kind; sent when the device is back
+                self._dirty = True
             return False
         m.messages.append(rec)
         m.sent[kind] = now

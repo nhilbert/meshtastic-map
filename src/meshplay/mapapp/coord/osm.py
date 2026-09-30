@@ -81,9 +81,9 @@ def overpass_query(bbox) -> str:
     )
 
 
-def download(bbox, raw_path: Path, on_progress=None) -> None:
+def download(bbox, raw_path: Path, on_progress=None, query: str | None = None) -> None:
     """Stream the Overpass answer to raw_path; one retry after a minute on 429/504."""
-    data = overpass_query(bbox).encode("utf-8")
+    data = (query or overpass_query(bbox)).encode("utf-8")
     req = urllib.request.Request(OVERPASS_URL, data=data, headers={"User-Agent": USER_AGENT})
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in (1, 2):
@@ -283,3 +283,133 @@ class OsmDownload(JobKind):
         job.detail = L("fertig: {file}", file=out.name)
         if ctx.coord is not None:
             ctx.coord.graph_changed()
+
+
+# ---------------------------------------------------------------- restricted-area suggestions
+# Military land and areas mapped as closed to the public are offered as restricted areas; the
+# coordinator takes them over one by one (a suggestion never restricts routing by itself).
+MIN_AREA_M2 = 2000.0  # smaller ones (a fenced yard, a bunker) are not worth a detour
+MAX_SUGGESTIONS = 60  # the largest ones
+MILITARY, NO_ACCESS = N_("militärisch"), N_("kein Zugang")
+
+
+def areas_query(bbox) -> str:
+    """Military areas and closed areas without public access (not roads, not barriers)."""
+    s, w, n, e = bbox
+    b = f"({s},{w},{n},{e})"
+    return (
+        "[out:json][timeout:120];\n(\n"
+        f'  way["landuse"="military"]{b};\n  relation["landuse"="military"]{b};\n'
+        f'  way["military"]{b};\n  relation["military"]{b};\n'
+        f'  way["access"="no"][!"highway"][!"barrier"]{b};\n'
+        f'  relation["access"="no"]["type"="multipolygon"]{b};\n'
+        ");\nout body geom;\n"
+    )
+
+
+def suggestions_from_overpass(raw: dict) -> list[dict]:
+    """Closed areas of an areas_query answer, largest first: id ("w123"/"r45"), name,
+    reason, polygon [(lat, lon), …] (not closed) and area in m²."""
+    out = []
+    for el in raw.get("elements", []):
+        tags = el.get("tags", {})
+        if tags.get("landuse") == "military" or "military" in tags:
+            reason = MILITARY
+        elif tags.get("access") == "no":
+            reason = NO_ACCESS
+        else:
+            continue
+        if el.get("type") == "way":
+            pts = [(g["lat"], g["lon"]) for g in el.get("geometry", [])]
+            rings = [pts] if len(pts) >= 4 and pts[0] == pts[-1] else []
+        elif el.get("type") == "relation":
+            pieces = [
+                [(g["lat"], g["lon"]) for g in m.get("geometry", [])]
+                for m in el.get("members", [])
+                if m.get("type") == "way" and m.get("role") in ("outer", "")
+            ]
+            rings = join_rings(pieces)
+        else:
+            continue
+        if not rings:
+            continue
+        ring = max(rings, key=area_m2)  # the main part of a multipolygon
+        size = area_m2(ring)
+        if size < MIN_AREA_M2:
+            continue
+        out.append(
+            {
+                "id": f"{el['type'][0]}{el['id']}",
+                "name": tags.get("name", ""),
+                "reason": reason,
+                "polygon": ring[:-1],
+                "area_m2": round(size),
+            }
+        )
+    out.sort(key=lambda d: d["area_m2"], reverse=True)
+    return out[:MAX_SUGGESTIONS]
+
+
+def join_rings(pieces: list[list[tuple[float, float]]]) -> list[list[tuple[float, float]]]:
+    """Closed rings from the way pieces of a multipolygon (joined end to end, either way
+    round); pieces that don't close are dropped."""
+    pieces = [list(p) for p in pieces if len(p) >= 2]
+    rings = []
+    while pieces:
+        ring = pieces.pop()
+        while ring[0] != ring[-1]:
+            nxt = next((i for i, p in enumerate(pieces) if ring[-1] in (p[0], p[-1])), None)
+            if nxt is None:
+                break
+            p = pieces.pop(nxt)
+            ring += p[1:] if p[0] == ring[-1] else p[-2::-1]
+        if ring[0] == ring[-1] and len(ring) >= 4:
+            rings.append(ring)
+    return rings
+
+
+def area_m2(ring: list[tuple[float, float]]) -> float:
+    """Area of a (lat, lon) ring on a local flat projection (shoelace)."""
+    lat0 = ring[0][0]
+    k = 111_320.0
+    xy = [(lon * k * math.cos(math.radians(lat0)), lat * k) for lat, lon in ring]
+    return abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(xy, xy[1:], strict=False))) / 2
+
+
+class OsmAreas(JobKind):
+    id = "osm_areas"
+    name = N_("Sperrgebiete aus OSM suchen")
+    description = N_(
+        "Sucht in einer Bounding Box nach militärischen Flächen und nach Flächen ohne Zugang "
+        "(access=no) in OpenStreetMap. Sie erscheinen als Vorschläge im Gebiete-Editor der "
+        "Koordination und auf der Karte; übernommen wird nur, was du einzeln bestätigst."
+    )
+
+    def settings(self, ctx: Context) -> list[Setting]:
+        return [s for s in OsmDownload().settings(ctx) if s.name == "bbox"]
+
+    def validate(self, ctx: Context, params: dict) -> None:
+        parse_bbox(str(params["bbox"]))
+
+    def title(self, params: dict) -> L:
+        return L("Sperrgebiete aus OSM")
+
+    def run(self, ctx: Context, job: Job) -> None:
+        bbox = parse_bbox(str(job.params["bbox"]))
+        raw = ctx.data_dir / "osm" / "areas.overpass.json"
+        job.add_log(_("Overpass-Abfrage für {bbox}", bbox=", ".join(f"{v:.2f}" for v in bbox)))
+        job.detail = L("lädt von overpass-api.de …")
+        download(bbox, raw, lambda _got: job.check_stop(), areas_query(bbox))
+        try:
+            with raw.open("rb") as f:
+                data = json.load(f)
+        finally:
+            raw.unlink(missing_ok=True)
+        if "elements" not in data:
+            raise RuntimeError(_("Unerwartete Antwort von Overpass (kein JSON mit elements)"))
+        items = suggestions_from_overpass(data)
+        new = ctx.coord.set_suggestions(items) if ctx.coord is not None else len(items)
+        job.result = {"found": len(items), "new": new}
+        job.add_log(_("{n} Flächen gefunden, {new} neue Vorschläge", n=len(items), new=new))
+        job.progress = 1.0
+        job.detail = L("fertig: {n} Vorschläge", n=new)

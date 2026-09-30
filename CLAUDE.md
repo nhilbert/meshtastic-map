@@ -52,13 +52,14 @@ src/meshplay/mapapp/        server.py (HTTP + API), registry.py (Layer, Setting,
                             layers/ (one module per layer), tools/link.py, jobs.py (background
                             tasks), sites_store.py (sites.json editing), device.py (live USB link,
                             sending texts, packet listeners), fake_device.py (--simulate),
-                            messages.py (message store for the pane), i18n.py (translations),
+                            messages.py (message store for the pane), airtime.py (airtime
+                            panel), i18n.py (translations),
                             tiles.py (map tile cache), coord/ (coordination mode: missions.py
                             decisions + API, phrases.py radio texts, routing.py + osm.py road
                             graph, areas.py, paths.py, settings.py, store.py)
 webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, messages.js,
                             nodelist.js, coord.js, panels.js, map2d.js (Leaflet), map3d.js
-                            (three.js), util.js, icons.js, i18n.js
+                            (three.js), util.js, icons.js, i18n.js, export.js (GPX/CSV)
 webmap/vendor/, i18n/       served libraries and fonts (offline use); translation catalogues
 tests/                      pytest; markers `hardware` and `data` are opt-in; conftest.py has
                             the Coordinator fixture over a fake radio

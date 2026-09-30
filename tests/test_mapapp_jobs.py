@@ -233,7 +233,10 @@ class FakeIface:
 
 class FakeDevice:
     def __init__(self, iface):
+        from meshplay.mapapp.airtime import SendLog
+
         self.iface, self.state, self.error = iface, "verbunden", ""
+        self.sent = SendLog()
 
 
 def test_probe_walk_task_logs_probes(ctx):
@@ -251,6 +254,7 @@ def test_probe_walk_task_logs_probes(ctx):
     assert logged[0]["preset"] == "ShortSlow" and logged[0]["interval"] == 15
     assert logged[0]["snrTowards"] == -2.5 and logged[0]["snrBack"] == -7.25
     assert not iface.responseHandlers or len(iface.responseHandlers) == 0
+    assert ctx.device.sent.summary("ShortSlow")["kinds"]["traceroute"]["packets"] == 2
 
 
 def test_probe_walk_needs_a_device_and_valid_ids(ctx):

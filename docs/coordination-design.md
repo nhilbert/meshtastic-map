@@ -1,10 +1,11 @@
 # Coordination mode – design
 
 Status: implemented 2026-09-29 (phases 1–4 of the plan: core, paths, routing, areas), position
-requests 2026-09-30. Still open: OSM-derived no-go suggestions (section 11 phase 5). Where this text and the code differ, the code and
-docs/mapapp.md are current; notable differences: the direct messages use a channel setting
-(default 1, the private channel) instead of channel 0, and "heading into a no-go area" is
-also checked along the node's own direction of travel, not only along the route.
+requests, OSM no-go suggestions, the arrival command and the mission archive 2026-09-30. Where
+this text and the code differ, the code and docs/mapapp.md are current; notable differences: the
+direct messages use a channel setting (default 1, the private channel) instead of channel 0, and
+"heading into a no-go area" is also checked along the node's own direction of travel, not only
+along the route.
 
 ## 1. Use case
 
@@ -154,6 +155,7 @@ for the marker commands):
 | `?l` | legend | what the codes mean |
 | `?h` or unknown `?…` | help | help line |
 | `ok` | acknowledged | logged, no reply |
+| `da` / `here` | arrived at the stop (smart position may be silent for the last 100 m) | the arrival message, as for a position inside the radius; while waiting: status |
 | `halt` | hold: no proactive messages until `go` | `HALT ok` |
 | `go` | resume | status message |
 | `x` | abort the mission | `#ALPHA abgebrochen`; the coordinator gets a notice |
@@ -298,6 +300,9 @@ data/coord/areas.json        [{"id", "name", "kind": "nogo"|"notice", "polygon":
 data/coord/places.json       [{"id", "name", "lat", "lon", "radius_m", "text"}]
 data/coord/missions.json     current missions (path, current stop, routes, last 50 positions, metrics)
 data/coord/events-<date>.jsonl  every decision, message and accepted position
+data/coord/archive/<id>.json  a mission replaced by a new assignment or removed from the list
+data/coord/suggestions.json  restricted-area suggestions from OSM, and the ids taken over or
+                              dismissed
 data/osm/<name>.json         road graph
 ```
 
@@ -418,7 +423,8 @@ mode off, device not connected, unknown node, no position, a `hold_until` before
    re-route, instruction modes.
 4. **Areas and places**: editors, no-go avoidance, warnings, proximity texts.
 5. **Extras**: periodic confirmations, OSM-derived no-go suggestions (`landuse=military`,
-   `access=no`), position requests from the server (done 2026-09-30, section 5).
+   `military=*`, `access=no`; done 2026-09-30, docs/mapapp.md), position requests from the
+   server (done 2026-09-30, section 5).
 
 ## 12. Decisions taken (owner, 2026-09-29)
 

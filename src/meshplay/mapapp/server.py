@@ -24,9 +24,9 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
-import threading
 import traceback
 import webbrowser
+from contextlib import nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
@@ -178,7 +178,7 @@ def suggest_site(ctx: Context, lat: float, lon: float) -> dict:
 
 
 def make_handler(ctx: Context, scene_dir: Path | None):
-    lock = threading.Lock()  # the models and caches are not written for concurrent use
+    lock = ctx.model_lock
 
     class Handler(BaseHTTPRequestHandler):
         # HTTP/1.1 with Content-Length on every response: keep-alive instead of closing the
@@ -276,9 +276,10 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                         self.send_json(suggest_site(ctx, float(q["lat"]), float(q["lon"])))
                 elif parts[:2] == ["api", "layers"] and len(parts) == 3:
                     layer = BY_ID[parts[2]]
-                    with lock:
+                    with lock if layer.uses_models else nullcontext():
                         values = layer.parse_values(ctx, dict(parse_qsl(url.query)))
-                        self.send_json(layer.data(ctx, values))
+                        data = layer.data(ctx, values)
+                    self.send_json(data)
                 elif parts[:1] == ["scene"] and len(parts) == 2 and parts[1] in SCENE_FILES:
                     if scene_dir is None:
                         self.send_error(404, "no scene")
@@ -378,6 +379,11 @@ def run(
     ctx.jobs = JobManager(ctx)
     ctx.coord = Coordinator(ctx)
     ctx.tiles = TileCache(ctx.data_dir / "tiles")
+    if ctx.coord.enabled and not device:
+        # the mode was left on: it can only work with the device, so connect (retried
+        # until the node is there); nothing is sent before the connection stands
+        print("Coordination mode is on: connecting to the device.")
+        device = "auto"
     if device:
         ctx.device.connect(None if device == "auto" else device)
     scene_dir = ensure_scene_export(ctx, force_export)

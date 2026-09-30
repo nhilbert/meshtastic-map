@@ -2,11 +2,11 @@
 // endpoints, computed in the browser session), the inspector on the right.
 import { Map2D } from "./map2d.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
-import { assignTo, initCoord, renderMissionDetail, selectedMission } from "./coord.js";
+import { assignTo, hasMissionDetail, initCoord, renderMissionDetail } from "./coord.js";
 import { bindInputs, initialValues, inputsHTML } from "./forms.js";
 import { initMessages, openConversation } from "./messages.js";
 import { initNodeList, renderNodeList } from "./nodelist.js";
-import { LANGS, lang, loadCatalogue, setLang, t, translateStatic } from "./i18n.js";
+import { LANGS, lang, loadCatalogue, locale, setLang, t, translateStatic } from "./i18n.js";
 import { renderLink, renderWalk } from "./panels.js";
 import { initSites, renderSites } from "./sites.js";
 import { initTasks, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
@@ -200,7 +200,7 @@ const TABS = [
   ["walk", () => t("Rundgang"), () => !!S.walk],
   ["nodes", () => t("Knoten"), () => !!(S.layers.nodes && S.layers.nodes.enabled && S.layers.nodes.data)],
   ["job", () => t("Aufgabe"), () => !!selectedJob()],
-  ["coord", () => t("Einsatz"), () => !!selectedMission()],
+  ["coord", () => t("Einsatz"), hasMissionDetail],
 ];
 function updateInspector() {
   const focusedTab = $("#tabs").contains(document.activeElement) ? document.activeElement.dataset.tab : null;
@@ -313,6 +313,38 @@ async function refresh(desc, auto = false, user = false) {
 }
 
 // ---------------------------------------------------------------- device
+// Airtime ("Funklast"): what the device measures and what the app itself sent in the last
+// hour (server: airtime.py). Kinds of own packets: coord, text, position_request, traceroute.
+const AIR_KINDS = {
+  coord: () => t("Funksprüche der Koordination"), text: () => t("Nachrichten"),
+  position_request: () => t("Positionsanfragen"), traceroute: () => t("Traceroutes"),
+};
+function renderAirtime(a) {
+  const pct = (v, d = 1) => (v === null || v === undefined) ? "—" : `${fmt(v, d)} %`;
+  $("#telemetryChUtil").textContent = a ? pct(a.device.channel_util_pct) : "—";
+  $("#telemetryAirTx").textContent = a ? pct(a.device.air_util_tx_pct) : "—";
+  $("#airDot").style.background = !a ? "var(--line)" : a.warnings.length ? "var(--bad)" : "var(--ok)";
+  if (!a) { $("#airBox").innerHTML = `<p class="note">${t("Braucht das verbundene Gerät.")}</p>`; return; }
+  const dv = a.device, app = a.app;
+  const row = (label, value) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
+  const kinds = Object.entries(app.kinds).map(([k, v]) =>
+    row((AIR_KINDS[k] || (() => k))(), t("{n} Pakete · {s} s", { n: v.packets, s: fmt(v.airtime_s, 1) }))).join("");
+  $("#airBox").innerHTML = `
+    ${a.warnings.map(w => `<p class="msg" role="alert" style="margin:4px 0">⚠ ${esc(w)}</p>`).join("")}
+    <dl class="telemetry">
+      ${row(t("Kanal belegt (letzte Minute)"), pct(dv.channel_util_pct))}
+      ${row(t("Eigene Sendezeit (letzte Stunde)"), pct(dv.air_util_tx_pct, 2))}
+      ${dv.tx_relay !== null && dv.tx_relay !== undefined ? row(t("Weitergeleitet / gesendet seit Start"), `${dv.tx_relay} / ${dv.packets_tx}`) : ""}
+      ${dv.online_nodes ? row(t("Knoten online"), String(dv.online_nodes)) : ""}
+      ${dv.noise_floor_dbm ? row(t("Grundrauschen"), `${dv.noise_floor_dbm} dBm`) : ""}
+    </dl>
+    <div class="hd2">${t("Von der App gesendet (letzte Stunde)")}</div>
+    <dl class="telemetry">${kinds || row(t("nichts"), "")}
+      ${row(t("Zusammen"), t("{n} Pakete · {s} s · {p} der Zeit", { n: app.packets, s: fmt(app.airtime_s, 1), p: pct(app.share_pct, 2) }))}</dl>
+    ${a.notes.map(n => `<p class="note" style="margin:4px 0">${esc(n)}</p>`).join("")}
+    <p class="note" style="margin:4px 0">${esc(t("Sendezeit geschätzt für {preset}; Bestätigungen und Antworten der Empfänger kommen dazu. Gerätewerte {age}.", {
+      preset: a.preset, age: dv.age_s === null ? t("noch keine") : t("vor {n} s", { n: dv.age_s }) }))}</p>`;
+}
 // The system's serial ports for the port choice; "" = automatic, which the server resolves.
 async function loadPorts() {
   let d;
@@ -350,6 +382,7 @@ async function deviceStatus(action) {
   $("#btnDevice").classList.toggle("simulated", d.port === "sim");
   $("#telemetryDevice").textContent = $("#headerDevText").textContent;
   $("#telemetryPackets").textContent = fmt(d.packets, 0);
+  renderAirtime(d.airtime);
   $("#telemetryLast").textContent = d.last_packet ? t("vor {n} s", { n: Math.max(0, Math.round(Date.now() / 1000 - d.last_packet)) }) : "—";
   const since = d.last_packet ? ", " + t("letztes vor {s} s", { s: Math.round(Date.now() / 1000 - d.last_packet) }) : "";
   // Device states are German codes: t("getrennt") t("verbinde") t("verbunden") t("Fehler")
@@ -357,9 +390,15 @@ async function deviceStatus(action) {
     ? t("{name} auf {port} · {n} Pakete", { name: d.me ? d.me.name : t("verbunden"), port: d.port === "sim" ? t("Simulation") : d.port, n: d.packets }) + since + (d.logging ? " · " + t("Log an") : "")
     : d.state === "Fehler" ? t("Fehler: {error}", { error: d.error }) : t(d.state);
   const connected = d.state === "verbunden" || d.state === "verbinde";
-  $("#devBtn").textContent = connected ? t("Trennen") : t("Verbinden");
-  $("#devBtn").dataset.action = connected ? "disconnect" : "connect";
+  $("#devBtn").textContent = connected || d.retrying ? t("Trennen") : t("Verbinden");
+  $("#devBtn").dataset.action = connected || d.retrying ? "disconnect" : "connect";
   $("#devPort").disabled = connected || S.simulated;
+  // A connection that dropped is retried by the server; say so over the map until it is back.
+  const lost = d.lost_at && d.retrying;
+  $("#devBanner").hidden = !lost;
+  if (lost) $("#devBannerText").textContent = t("Verbindung zum Gerät seit {time} weg: neuer Versuch alle {s} s. Kabel prüfen.", {
+    time: new Date(d.lost_at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }), s: d.retry_s });
+  if (d.retrying && !d.lost_at && d.state === "Fehler") $("#devText").textContent += " · " + t("neuer Versuch alle {s} s", { s: d.retry_s });
   if (!connected && d.state !== S.devState) loadPorts();  // plugged in or out meanwhile?
   if (S.devState !== null && d.state !== S.devState && d.state !== "verbinde") {
     // The live node layer and today's packet log depend on the connection: reload the layer
@@ -558,6 +597,7 @@ function bindUI() {
   $("#devBtn").addEventListener("click", () => deviceStatus($("#devBtn").dataset.action || "connect"));
   $("#devScan").innerHTML = symbolSVG("refresh");
   $("#devScan").addEventListener("click", loadPorts);
+  $("#devBannerStop").addEventListener("click", () => deviceStatus("disconnect"));
   $("#devPort").addEventListener("change", () => store.set("device.port", $("#devPort").value));
   $("#view2d").addEventListener("click", () => setView("2d"));
   $("#view3d").addEventListener("click", () => setView("3d"));

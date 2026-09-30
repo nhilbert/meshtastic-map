@@ -44,7 +44,7 @@ PHRASES = {
         "resume": "Weiter #{target} {dist} {dir}",
         "aborted": "#{target} abgebrochen",
         "help": (
-            "? Status ?R Weg ?Z Ziel ?E Ankunft ?P Pfad ?L Legende HALT GO X=Abbruch. "
+            "? Status ?R Weg ?Z Ziel ?E Ankunft ?P Pfad ?L Legende DA=am Halt HALT GO X=Abbruch. "
             "+D NAME Text=Marke setzen, ?D NAME hinfuehren, ?D zur naechsten"
         ),
         "marker_set": "D {name} gesetzt {label}",
@@ -88,7 +88,8 @@ PHRASES = {
         "resume": "Next #{target} {dist} {dir}",
         "aborted": "#{target} aborted",
         "help": (
-            "? status ?R route ?Z target ?E arrival ?P path ?L legend HALT GO X=abort. "
+            "? status ?R route ?Z target ?E arrival ?P path ?L legend HERE=at the stop HALT GO "
+            "X=abort. "
             "+D NAME text=set marker, ?D NAME guide there, ?D to the nearest"
         ),
         "marker_set": "D {name} set {label}",
@@ -115,6 +116,10 @@ COMMANDS = {
     "?h": "help",
     "?l": "legend",
     "ok": "ok",
+    # "I am at the stop": arrival without waiting for a position (smart position may send
+    # nothing for the last 100 m); both words in every mission language
+    "da": "arrived",
+    "here": "arrived",
     "halt": "halt",
     "go": "go",
     "x": "abort",

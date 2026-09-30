@@ -21,12 +21,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from meshplay.config import DEFAULT_PRESET
+from meshplay.mapapp import airtime
 from meshplay.mapapp.i18n import L, _
 from meshplay.mapapp.messages import MessageStore, check_text, now
 from meshplay.packets import to_plain
 
 log = logging.getLogger(__name__)
 BROADCAST = 0xFFFFFFFF  # "to" of a message for everyone on the channel
+RETRY_S = 5.0  # a wanted connection that dropped or could not be made is tried again this often
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,15 @@ class DeviceLink:
         self.error = ""
         self.packets = 0
         self.last_packet: float | None = None
+        self.sent = airtime.SendLog()  # our own transmissions, for the airtime panel
+        self._telemetry_at: float | None = None  # last device metrics of our own node
+        # The owner asked for a connection: it is kept up, retried after a drop or a failure,
+        # until disconnect(). lost_at: when a working connection dropped (None while it works).
+        self.wanted = False
+        self._want_port: str | None = None
+        self.lost_at: float | None = None
+        self.retries = 0
+        self._busy = False  # a connection attempt is running
         self._lock = threading.Lock()
         self._subscribed = False
         name = "messages-sim.jsonl" if simulate else "messages.jsonl"
@@ -60,18 +72,25 @@ class DeviceLink:
 
     # ------------------------------------------------------------ connection
     def connect(self, port: str | None = None) -> None:
-        """Connect in the background (downloading the node database takes a few seconds)."""
+        """Connect in the background (downloading the node database takes a few seconds) and
+        keep the connection up. port: None = automatic detection."""
         with self._lock:
-            if self.state in ("verbinde", "verbunden"):
+            self.wanted, self._want_port, self.retries = True, port, 0
+            if self._busy or self.state == "verbunden":
                 return
+            self._busy = True
             self.state, self.error = "verbinde", ""
-        threading.Thread(target=self._connect, args=(port,), daemon=True).start()
+        threading.Thread(target=self._connect, args=(True,), daemon=True).start()
 
-    def _connect(self, port: str | None) -> None:
+    def _connect(self, first: bool) -> None:
+        """One attempt. first: the owner's own attempt, where a chosen port that is missing is
+        an error; a retry falls back to automatic detection (the node may come back on another
+        port after being plugged in again)."""
         from pubsub import pub
 
         from meshplay.device import find_port, list_serial_ports
 
+        port = self._want_port
         try:
             if not self._subscribed:
                 pub.subscribe(self._on_receive, "meshtastic.receive")
@@ -87,8 +106,11 @@ class DeviceLink:
                 from meshtastic.serial_interface import SerialInterface
 
                 ports = list_serial_ports()
-                if port and not any(p["device"].lower() == port.lower() for p in ports):
-                    raise RuntimeError(L("Port {port} gibt es nicht (mehr)", port=port))
+                present = port and any(p["device"].lower() == port.lower() for p in ports)
+                if port and not present:
+                    if first:
+                        raise RuntimeError(L("Port {port} gibt es nicht (mehr)", port=port))
+                    port = None
                 port = port or find_port(ports)
                 if not port:
                     raise RuntimeError(
@@ -99,12 +121,35 @@ class DeviceLink:
                     )
                 iface = SerialInterface(devPath=port)
             with self._lock:
+                self._busy = False
+                if not self.wanted:  # disconnected while this attempt ran
+                    _close_quietly(iface)
+                    return
                 self.iface, self.port, self.state = iface, port, "verbunden"
+                self.error, self.lost_at, self.retries = "", None, 0
             log.info("Device connected on %s", port)
         except Exception as e:  # port busy, no device, ...
             with self._lock:
+                self._busy = False
                 self.state, self.error = "Fehler", f"{type(e).__name__}: {e}"
-            log.warning("Device connection failed: %s", e)
+            if first or self.retries % 12 == 0:  # once a minute while retrying
+                log.warning("Device connection failed: %s", e)
+            self._schedule_retry()
+
+    def _schedule_retry(self) -> None:
+        if not self.wanted or self.simulate is not None:
+            return
+        t = threading.Timer(RETRY_S, self._retry)
+        t.daemon = True
+        t.start()
+
+    def _retry(self) -> None:
+        with self._lock:
+            if not self.wanted or self._busy or self.state == "verbunden":
+                return
+            self._busy = True
+            self.retries += 1
+        self._connect(False)
 
     def ports(self) -> dict:
         """The system's serial ports and the one automatic detection would take."""
@@ -116,16 +161,21 @@ class DeviceLink:
     def disconnect(self) -> None:
         with self._lock:
             iface, self.iface, self.state = self.iface, None, "getrennt"
+            self.wanted, self.lost_at, self.error = False, None, ""
         if iface:
-            try:
-                iface.close()
-            except Exception:
-                pass
+            _close_quietly(iface)
 
     def _on_lost(self, interface=None, **_):
+        """The connection dropped (cable, reset): release the port and try again."""
         with self._lock:
-            if interface is self.iface:
-                self.iface, self.state, self.error = None, "Fehler", L("Verbindung verloren")
+            if interface is None or interface is not self.iface:
+                return
+            self.iface, self.state, self.error = None, "Fehler", L("Verbindung verloren")
+            self.lost_at, self.retries = time.time(), 0
+        log.warning("Device connection lost; retrying every %.0f s", RETRY_S)
+        # close() joins the reader thread, which may be the one calling here
+        threading.Thread(target=_close_quietly, args=(interface,), daemon=True).start()
+        self._schedule_retry()
 
     # ------------------------------------------------------------ packets
     def _on_receive(self, packet, interface=None):
@@ -134,6 +184,10 @@ class DeviceLink:
         self.packets += 1
         self.last_packet = time.time()
         plain = to_plain(packet)
+        if plain.get("decoded", {}).get("portnum") == "TELEMETRY_APP" and plain.get(
+            "from"
+        ) == getattr(getattr(interface, "myInfo", None), "my_node_num", None):
+            self._telemetry_at = self.last_packet
         try:
             self._record(plain)
         except Exception as e:  # a malformed packet must not stop the logging below
@@ -246,6 +300,7 @@ class DeviceLink:
             }
             if tag:
                 rec["tag"] = tag
+            self.sent.note("coord" if tag == "coord" else "text", len(text.encode("utf-8")))
             return self.messages.add(rec)
         finally:
             stored.release()
@@ -277,6 +332,7 @@ class DeviceLink:
             wantResponse=True,
             channelIndex=channel,
         )
+        self.sent.note("position_request", pos.ByteSize())
         return sent.id
 
     def names(self, ids) -> dict:
@@ -319,11 +375,34 @@ class DeviceLink:
             state=self.state,
             port=self.port,
             error=str(self.error),
+            retrying=self.wanted and self.state != "verbunden",
+            retry_s=RETRY_S,
+            lost_at=self.lost_at,
             packets=self.packets,
             last_packet=self.last_packet,
             logging=self.log_packets,
             me=me,
+            airtime=self.airtime() if self.state == "verbunden" else None,
         )
+
+    def airtime(self) -> dict:
+        """What we sent in the last hour and what the device measures (airtime.py)."""
+        from meshplay.probe import modem_preset
+
+        iface, preset, own = self.iface, DEFAULT_PRESET, None
+        if iface is not None:
+            try:
+                preset = modem_preset(iface)
+            except AttributeError:  # no config (yet)
+                pass
+            try:
+                own = iface.getMyNodeInfo()
+            except Exception as e:  # the node database is not loaded yet
+                log.debug("No own node info: %s", e)
+        if preset not in airtime.MESHTASTIC_PRESETS:
+            preset = DEFAULT_PRESET  # "custom": estimate with the default
+        age = None if self._telemetry_at is None else time.time() - self._telemetry_at
+        return airtime.report(preset, self.sent.summary(preset), own, age)
 
     def nodes(self) -> tuple[dict, int | None]:
         """Snapshot of the node database (plain dicts) and the own node number."""
@@ -333,3 +412,10 @@ class DeviceLink:
         nodes = to_plain(dict(iface.nodes or {}))
         my_num = getattr(getattr(iface, "myInfo", None), "my_node_num", None)
         return nodes, my_num
+
+
+def _close_quietly(iface) -> None:
+    try:
+        iface.close()
+    except Exception as e:  # the port is gone already
+        log.debug("Closing the old connection: %s", e)

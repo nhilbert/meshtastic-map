@@ -22,6 +22,7 @@ Both may carry "legend": {"title", "items": [[color, label], ...]} or
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass
 from functools import cached_property
 from pathlib import Path
@@ -71,6 +72,9 @@ class Context:
         self.jobs = None  # meshplay.mapapp.jobs.JobManager, set by the server
         self.coord = None  # meshplay.mapapp.coord.missions.Coordinator, set by the server
         self.tiles = None  # meshplay.mapapp.tiles.TileCache, set by the server
+        # The scene, the models and their caches are not written for concurrent use: whatever
+        # touches them holds this lock; everything else (node list, missions, messages) doesn't.
+        self.model_lock = threading.RLock()
 
     @cached_property
     def scene(self):
@@ -120,6 +124,7 @@ class Layer:
     kind = "vector"  # or "raster"
     description = ""
     enabled_by_default = False
+    uses_models = False  # data() touches the scene or the models: runs under ctx.model_lock
 
     def settings(self, ctx: Context) -> list[Setting]:
         return []

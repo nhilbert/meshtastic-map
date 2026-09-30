@@ -133,15 +133,26 @@ simulated radio first.
 - **Mission cards** show the current stop, distance and compass direction, ETA, speed, the age
   of the last position, the last message with its delivery state, and buttons *Status senden*,
   *Route senden*, *Nächster Halt*, *Pfad bearbeiten*, *Beenden*, *Details* (inspector tab
-  **Einsatz** with all metrics, the path, every message and the event log).
+  **Einsatz** with all metrics, the path, every message and the event log, and *GPX* / *CSV*
+  to download the trail with the waypoints or the event log).
+- **Archiv** lists every mission, current ones and those replaced by a new assignment or
+  removed from the list (`data/coord/archive/`), with *Details* and the same downloads. The
+  detail reads the whole event log and trail of the mission's time from
+  `events-<date>.jsonl`; a mission itself keeps only its last 50 positions.
 - **Editing while running** (*Pfad bearbeiten*): waypoints can be added, moved, removed and
   re-timed; passed waypoints stay passed. The node hears about it only when its current leg
   changed (`#C neu 600m NE ~8min`). A path can be saved as a template (*Als Vorlage
   speichern …*, without times) and loaded again under *Wegpunkt hinzufügen*.
 - **The field node** answers with `?` (status), `?r` (route), `?z` (target), `?e` (arrival
   time from the current speed, with the average since the start), `?p` (path), `?h` (help),
-  `?l` (legend), `halt`/`go` (pause the guidance) and `x` (abort). Nodes without a mission
-  are never answered, except for the marker commands below.
+  `?l` (legend), `da` or `here` (arrived at the stop: confirmed like an arrival by position,
+  useful because smart position may send nothing for the last 100 m), `halt`/`go` (pause the
+  guidance) and `x` (abort). Nodes without a mission are never answered, except for the
+  marker commands below.
+- **Device away.** When the connection drops, the server keeps trying (see Live device). The
+  section says the mode is waiting for the device; assignments, arrivals and next legs that
+  could not go out are sent once it is back, other messages are dropped, and position
+  requests pause. A server started with the mode on connects to the device by itself.
 - **Markers by radio.** Targets double as markers the field can set and use: `+d s1 Storage
   Box` stores target `S1` (short name, upper case; the rest is the long name, shown as the
   target's note) at the sender's last position (recent and precise enough, else the answer
@@ -191,6 +202,14 @@ comes in (`i Bahnhof 100m: Treffpunkt Ausgang Nord`), once per entry. All of the
 the map (restricted red, the others blue) and kept in `data/coord/areas.json` and
 `places.json`.
 
+**Vorschläge aus OpenStreetMap**: the task *Sperrgebiete aus OSM suchen* (button at the end of
+the editor) asks Overpass for military land (`landuse=military`, `military=*`) and areas
+tagged `access=no` in a bounding box, keeps closed ones of at least 2000 m² (multipolygons
+joined from their outer pieces), the 60 largest. They are drawn dashed and listed in the
+editor with ⌖ (show), ⛔ (take over as a restricted area, named after the OSM name) and ✕
+(dismiss). Nothing restricts routing until it is taken over; a new search doesn't offer
+taken-over or dismissed ones again (`data/coord/suggestions.json`).
+
 ### Routing over the road network
 
 Without a road graph the guidance is straight-line: compass direction and distance. With one,
@@ -239,7 +258,20 @@ node open. Then:
 
 Only one program can use the serial port. If the web client (Edge, Web Serial), `listen.py` or
 another script is connected, the sidebar shows "Zugriff verweigert"; disconnect the other
-program and press **Verbinden** again.
+program. The server keeps trying every 5 s as long as the connection is wanted: after
+**Verbinden**, after a failed attempt and after the connection drops (cable, reset). It then
+releases the port, a red banner over the map says since when the device is gone, and it
+reconnects on its own, by automatic detection if the chosen port is gone. **Trennen** (or
+*Nicht mehr versuchen* in the banner) stops that.
+
+**Funklast** (airtime, a section in the left column; the footer shows the first two values):
+what the device measures, channel utilisation of the last minute and its own transmit share
+of the last hour (which includes relaying other nodes' packets), plus relayed/sent packets,
+nodes online and the noise floor from its local statistics; and what the app itself sent in
+the last hour by kind (coordination messages, other texts, position requests, traceroutes)
+with the time on air estimated for the preset. Warnings: channel above 25 % (the firmware then
+holds back its own positions), own airtime above 8 % (the EU limit is 10 %), the app alone
+above 2 %. The recipients' acknowledgements and answers are their airtime and not counted.
 
 ### Simulated radio
 
@@ -289,7 +321,10 @@ Default on/off state and default settings per layer: copy
 
 In comparison mode the walk layer scores every direct packet (and with a GPX track every time
 slot) against all model families, like `scripts/sim_compare_walk.py`. The first run takes about
-a second per packet; results are cached in `data/mapapp/cache/walk/`.
+a second per packet; it runs in the background (the layer shows SNR colours and a note until
+then, and asks again every 3 s), and results are cached in `data/mapapp/cache/walk/`. Only
+work on the scene and the models holds the server's model lock (`ctx.model_lock`; a layer sets
+`uses_models`), so the node list, missions and messages don't wait for it.
 
 ## Structure
 

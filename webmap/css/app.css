@@ -165,7 +165,8 @@ ul.src li{margin:3px 0}
 .jobstart{display:flex;flex-wrap:wrap;gap:6px}
 .jobform{border:1px solid var(--accent);border-radius:3px;padding:8px;margin-top:8px;display:flex;flex-direction:column;gap:6px}
 .jobform[hidden]{display:none}
-.jobform .hd,.sitemgr .hd2{font-weight:600;font-size:12px}
+.jobform .hd,.sitemgr .hd2,#airBox .hd2{font-weight:600;font-size:12px}
+#airBox .hd2{margin-top:8px}
 .joblist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .job{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:7px;background:var(--bg2)}
 .job.sel{border-color:var(--accent)}
@@ -196,6 +197,7 @@ pre.log{font-family:var(--mono);font-size:11px;line-height:1.45;background:var(-
 .banner{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:1100;display:flex;align-items:center;gap:10px;
   background:var(--accent);color:var(--accent-ink);padding:6px 8px 6px 12px;border-radius:3px;box-shadow:var(--shadow);font-size:12px;max-width:calc(100% - 20px)}
 .banner[hidden]{display:none}
+.banner.lost{background:var(--bad);color:#fff}
 .banner .btn{background:var(--panel-solid);color:var(--ink)}
 /* messaging pane (under the map) */
 #msgpane{flex:none;display:flex;flex-direction:column;border-top:1px solid var(--line);background:var(--panel-solid);height:40px}

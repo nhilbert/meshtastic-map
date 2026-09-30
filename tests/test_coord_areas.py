@@ -147,3 +147,85 @@ def test_route_avoids_nogo_and_warns_ahead(coord, tmp_path):
     feed(coord, position(*pt(0.5, 0)))
     feed(coord, position(*pt(1.2, 0)))  # 30 m before the square, off the detour route
     assert any(t.startswith("!SPERR Sperr") and "voraus" in t for t in sent_texts(coord))
+
+
+# ---------------------------------------------------------------- suggestions from OSM
+def geom(points):
+    return [{"lat": lat, "lon": lon} for lat, lon in points]
+
+
+def overpass_answer():
+    big = square(1, 1, 2, 2)  # 100 m x 100 m: 1 ha
+    return {
+        "elements": [
+            {
+                "type": "way",
+                "id": 11,
+                "tags": {"landuse": "military", "name": "Kaserne Nord"},
+                "geometry": geom([*big, big[0]]),
+            },
+            {  # 10 m x 10 m: too small
+                "type": "way",
+                "id": 12,
+                "tags": {"access": "no"},
+                "geometry": geom([pt(3, 3), pt(3.1, 3), pt(3.1, 3.1), pt(3, 3.1), pt(3, 3)]),
+            },
+            {  # not closed
+                "type": "way",
+                "id": 13,
+                "tags": {"access": "no"},
+                "geometry": geom([pt(0, 0), pt(1, 0), pt(1, 1)]),
+            },
+            {  # a multipolygon whose outer ring comes in two pieces, one reversed
+                "type": "relation",
+                "id": 21,
+                "tags": {"access": "no", "type": "multipolygon"},
+                "members": [
+                    {
+                        "type": "way",
+                        "role": "outer",
+                        "geometry": geom([pt(3, 0), pt(4, 0), pt(4, 2)]),
+                    },
+                    {
+                        "type": "way",
+                        "role": "outer",
+                        "geometry": geom([pt(3, 0), pt(3, 2), pt(4, 2)]),
+                    },
+                    {
+                        "type": "way",
+                        "role": "inner",
+                        "geometry": geom([pt(3.2, 0.2), pt(3.3, 0.2)]),
+                    },
+                ],
+            },
+            {"type": "way", "id": 14, "tags": {"building": "yes"}, "geometry": geom(big)},
+        ]
+    }
+
+
+def test_suggestions_from_overpass():
+    found = osm.suggestions_from_overpass(overpass_answer())
+    assert [(d["id"], d["reason"]) for d in found] == [
+        ("r21", "kein Zugang"),  # 2 ha: largest first
+        ("w11", "militärisch"),
+    ]
+    assert found[1]["name"] == "Kaserne Nord" and abs(found[1]["area_m2"] - 10_000) < 200
+    assert len(found[1]["polygon"]) == 4  # the ring without its closing point
+    assert "military" in osm.areas_query((50.7, 7.0, 50.8, 7.1))
+
+
+def test_suggestions_are_taken_over_or_dismissed(coord):
+    items = osm.suggestions_from_overpass(overpass_answer())
+    assert coord.set_suggestions(items) == 2
+    snap = coord.api("GET", [], {}, {})
+    assert [s["id"] for s in snap["suggestions"]] == ["r21", "w11"]
+    assert "polygon" not in snap["suggestions"][0] and "lat" in snap["suggestions"][0]
+    assert sum(1 for f in coord.layer_features() if "Vorschlag" in f["properties"]["_title"]) == 2
+    coord.api("POST", ["suggestions", "accept"], {}, {"id": "w11"})
+    (area,) = coord.areas
+    assert (area.name, area.kind, area.text) == ("Kaserne-Nord", "nogo", "OSM w11")
+    coord.api("POST", ["suggestions", "dismiss"], {}, {"id": "r21"})
+    assert coord.api("GET", [], {}, {})["suggestions"] == []
+    assert coord.set_suggestions(items) == 0  # a new search does not offer them again
+    with pytest.raises(KeyError):
+        coord.api("POST", ["suggestions", "accept"], {}, {"id": "w11"})
