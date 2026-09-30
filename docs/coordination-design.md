@@ -1,8 +1,7 @@
 # Coordination mode – design
 
-Status: implemented 2026-09-29 (phases 1–4 of the plan: core, paths, routing, areas). Still
-open: the extras of section 11 phase 5 (periodic confirmation exists; OSM-derived no-go
-suggestions and position requests do not). Where this text and the code differ, the code and
+Status: implemented 2026-09-29 (phases 1–4 of the plan: core, paths, routing, areas), position
+requests 2026-09-30. Still open: OSM-derived no-go suggestions (section 11 phase 5). Where this text and the code differ, the code and
 docs/mapapp.md are current; notable differences: the direct messages use a channel setting
 (default 1, the private channel) instead of channel 0, and "heading into a no-go area" is
 also checked along the node's own direction of travel, not only along the route.
@@ -41,8 +40,11 @@ interest, and confirms every stop. All of that works while the coordinator keeps
 **Preconditions and limits.**
 
 - The coordinated node shares its position on a channel the server node has, with *precise
-  location* and a short interval (README, "Position broadcasts"; 30 s is right). Reduced
-  precision (< 24 bits ≈ coarser than 3 m … 90 m) makes guidance meaningless; the mission shows
+  location* and **smart position**: position interval 10 min, smart minimum distance 100 m,
+  smart minimum interval 60 s, GPS update interval ≤ 60 s (else smart position can't react
+  faster). A fixed 30 s interval would flood the city mesh: every position is relayed up to
+  the tracker's hop limit. The server fills the gaps with position requests (section 5).
+  Reduced precision (< 24 bits ≈ coarser than 3 m … 90 m) makes guidance meaningless; the mission shows
   the precision and refuses off-course logic below the threshold.
 - The field person needs a screen: T1000-E users read and type in the phone app.
 - Routing needs an OSM extract of the area, downloaded once (section 6). Without it the mode
@@ -100,7 +102,8 @@ combines several pending things into one message, and keeps texts under ~80 byte
 200, the existing `check_text`). Replies to commands are always answered. Messages the mission
 depends on (assignment, arrival, next leg, a changed leg, end) are never rate-limited; no-go,
 off-course and schedule warnings jump the queue but stay ≥ 30 s apart from the last
-unrequested message.
+unrequested message. Position requests (section 5) cost a packet and the answer, so they go
+out only where a position is missing, at most every 3 min per node.
 
 **Codes.** Compass letters are English in every language (`N NE E SE S SW W NW`). Turns are
 relative to the route's own direction, which is well defined whatever the walker's heading:
@@ -211,14 +214,36 @@ combined message goes out if anything is due):
    the ETA is back within the deadline.
 7. **Places**: entering `radius_m` of a place → its text once; re-armed after leaving 1.5 × radius.
 8. **Leg instructions** by the `instructions` setting: `request` (only on `?r`), `turns`
-   (default: when passing within 40 m of the next turn point, send the next legs), `interval`
-   (every N metres travelled).
+   (default: the next turn is announced once it is closer than the node gets before its next
+   position, speed × 90 s, at least 40 m; the message starts with the distance to it
+   (`R: E70m Hauptstr L50m Z`), within 40 m with the turn itself. Turns a message covered
+   are not announced again; one held back by the rate limit goes out with the next
+   position), `interval` (every N metres travelled).
 9. **Confirmation**: `confirm_every_min` (default 0 = off) → status message while on course.
 
-Time-based, from a 10 s tick thread: `hold_until` reached → next leg; position older than
-`stale_min` (default 5) → notice on the page, none on the radio; an undelivered assignment,
-arrival or next-leg message is retried once after 60 s; `halt` suppresses everything proactive
-until `go`.
+Time-based, from a 5 s tick thread: `hold_until` reached → next leg; position older than
+`stale_min` (default 15; a node standing still sends only every 10 min) → notice on the page,
+none on the radio; an undelivered assignment, arrival or next-leg message is retried once after
+60 s; `halt` suppresses everything proactive until `go`.
+
+**Position requests** (setting `request_positions`, default on). With smart position a node
+can reach a stop unheard: it broadcasts only after 100 m, so the last 100 m and the wait at
+the stop may send nothing for 10 min. The server then asks: a position packet with
+`want_response` as a direct message on the channel of the settings, which the node's
+firmware answers by itself with its current position; nobody types anything. It asks
+
+- right after an assignment without a position of the node;
+- when the node should be at the stop: the rest of the way (route or straight line, minus
+  the radius) is at most 100 m, and the expected time for it plus 30 s has passed since the
+  last position; twice per stop at most;
+- when the last position is older than `stale_min`.
+
+At most one request per node every 3 min (the firmware answers one request per 3 min anyway,
+whoever asks), and after three unanswered ones none until a position comes. Not while `halt`
+or with the mode off. The request carries the server node's own position, as the phone apps
+do: the firmware also takes a position packet sent over the API as its own, so an empty one
+could clear the server node's position. The answer is an ordinary position packet addressed
+to the server node; the mission takes it like a broadcast.
 
 State machine: `assigned` → `underway` (first position) → `holding` ⇄ `underway` → `arrived`
 | `aborted` (by `x`) | `ended` (by the coordinator); `held` is a flag on top. One mission per
@@ -282,8 +307,8 @@ suggests ≤ 8 because the name goes into every message. Ad-hoc clicks get `P1`,
 **Settings** (edited in the page, `Setting` declarations like a layer): `lang` (de/en),
 `profile`, `arrive_radius_m` 30 (default for new waypoints), `off_route_m` 75, `min_gap_s`
 120, `instructions` (request/turns/interval), `legs_per_message` 3, `confirm_every_min` 0,
-`late_warn_min` 3, `stale_min` 5, `min_precision_bits` 24, `speed_kmh` per profile,
-`end_message` on/off, `channel` (the device channel the direct messages use; default 1, the
+`late_warn_min` 3, `stale_min` 15, `request_positions` on, `min_precision_bits` 24,
+`speed_kmh` per profile, `end_message` on/off, `channel` (the device channel the direct messages use; default 1, the
 private channel, so the public mesh sees nothing). The hop limit is the device's.
 
 ## 8. Server side
@@ -393,8 +418,7 @@ mode off, device not connected, unknown node, no position, a `hold_until` before
    re-route, instruction modes.
 4. **Areas and places**: editors, no-go avoidance, warnings, proximity texts.
 5. **Extras**: periodic confirmations, OSM-derived no-go suggestions (`landuse=military`,
-   `access=no`), position requests from the server (off by default; the firmware's behaviour
-   with an empty position needs a test first).
+   `access=no`), position requests from the server (done 2026-09-30, section 5).
 
 ## 12. Decisions taken (owner, 2026-09-29)
 
@@ -402,6 +426,8 @@ mode off, device not connected, unknown node, no position, a `hold_until` before
 - No callsign; the app shows the sender.
 - Hop limit: the device's default, no setting.
 - Overpass download: explained in section 6; the import script is the offline alternative.
-- Position requests from the server: not now, kept as a phase 5 option.
+- Position requests from the server: not now, kept as a phase 5 option. Revised 2026-09-30:
+  trackers use smart position (10 min, 60 s / 100 m) instead of a 30 s interval, to spare the
+  city mesh; the server asks for a position where one is missing (section 5), on by default.
 - One mission per node, but a mission carries an editable path: waypoints with via/stop kinds,
   `arrive_by` and `hold_until` times.

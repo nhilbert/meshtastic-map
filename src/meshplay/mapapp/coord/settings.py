@@ -23,7 +23,8 @@ DEFAULTS = {
     "legs_per_message": 3,
     "confirm_every_min": 0,
     "late_warn_min": 3,
-    "stale_min": 5,
+    "stale_min": 15,
+    "request_positions": True,
     "min_precision_bits": 24,
     "speed_foot_kmh": 4.5,
     "speed_bike_kmh": 15,
@@ -154,6 +155,18 @@ def declarations(
             min=1,
             max=60,
             step=1,
+            help=_("Mit Smart-Position meldet sich ein stehender Knoten nur alle 10 min"),
+        ),
+        Setting(
+            "request_positions",
+            _("Position beim Knoten anfragen, wenn eine fehlt"),
+            "bool",
+            DEFAULTS["request_positions"],
+            help=_(
+                "Nur an Knoten mit Einsatz, höchstens alle 3 min: nach der Zuweisung ohne "
+                "Position, wenn der Knoten am Halt sein müsste, und wenn die Position veraltet "
+                "ist. Die Firmware des Knotens antwortet von selbst."
+            ),
         ),
         Setting(
             "min_precision_bits",

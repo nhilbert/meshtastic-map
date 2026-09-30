@@ -14,8 +14,9 @@ data/packets/<date>.jsonl like scripts/listen.py does (switch off with --no-log)
 program can use the serial port: close the web client and listen.py first.
 
 --simulate replaces the device by a simulated radio: nothing is transmitted, a fake tracker
-(!fa4e0001) walks the given GPX track (at --sim-speed times its pace) or stays near home, sent
-messages are acknowledged, and a direct message to the tracker starting with ">" is spoken by
+(!fa4e0001) walks the given GPX track (at --sim-speed times its pace) or stays near home,
+broadcasting like smart position and answering position requests, sent messages are
+acknowledged, and a direct message to the tracker starting with ">" is spoken by
 the tracker (">?" arrives as "?"). For trying the messaging pane and the coordination mode.
 
 Needs the simulation extras: pip install -e ".[sim]". The 3D view and the link calculator also

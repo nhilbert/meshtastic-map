@@ -104,13 +104,17 @@ const eta = s => (s === null || s === undefined) ? "–" : `~${Math.max(1, Math.
 const stateChip = s => `<span class="chip ${STATE_CLASS[s] || ""}">${esc(t(s))}</span>`;
 function metricsHTML(m) {
   const k = m.metrics || {};
-  if (k.dist_m == null) return `<p class="note" style="margin:0">${t("noch keine Position vom Knoten")}</p>`;
+  if (k.dist_m == null) {
+    const asked = k.requested_s != null ? " · " + t("Position angefragt {ago}", { ago: ago(k.requested_s) }) : "";
+    return `<p class="note" style="margin:0">${t("noch keine Position vom Knoten")}${esc(asked)}</p>`;
+  }
   const readings = [[t("Distanz"), `${dist(k.dist_m)} ${k.compass || ""}`],
     [t("Ankunft"), eta(k.eta_s)], [t("Tempo"), `${fmt(k.speed_kmh, 1)} km/h`]];
   const parts = [t("Position {ago}", { ago: ago(k.position_age_s) })];
   if (k.mode === "route") parts.unshift(t("{d} auf der Straße", { d: dist(k.route_left_m) }) + (k.off_route_m > 30 ? ` (${t("{d} daneben", { d: dist(k.off_route_m) })})` : ""));
   if (k.margin_min !== undefined) parts.push(k.margin_min >= 0 ? t("{n} min vor Plan", { n: k.margin_min }) : t("{n} min hinter Plan", { n: -k.margin_min }));
   if (k.stale) parts.push("⚠ " + t("Position veraltet"));
+  if (k.requested_s != null) parts.push(t("Position angefragt {ago}", { ago: ago(k.requested_s) }));
   return `<dl class="telemetry">${readings.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>
     <div class="meta${k.stale ? " st bad" : ""}">${esc(parts.join(" · "))}</div>`;
 }

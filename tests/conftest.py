@@ -28,5 +28,6 @@ def coord(tmp_path, monkeypatch):
     c.set_enabled(True)
     c.settings["min_gap_s"] = 120
     c.settings["send_legend"] = False  # the legend test switches it on
+    c.settings["request_positions"] = False  # so does the position request test
     yield c
     c.shutdown()

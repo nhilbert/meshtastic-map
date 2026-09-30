@@ -167,7 +167,10 @@ def feed(coord, packet):
 
 
 def sent_texts(coord):
-    return [s["data"].decode() for s in coord.ctx.device.iface.sent]
+    from meshtastic.protobuf import portnums_pb2
+
+    text = portnums_pb2.PortNum.TEXT_MESSAGE_APP
+    return [s["data"].decode() for s in coord.ctx.device.iface.sent if s["port"] == text]
 
 
 def test_assign_guides_and_confirms_arrival(coord):
@@ -401,17 +404,17 @@ def test_guidance_over_the_road_graph(coord, tmp_path):
     assert "offcourse" in m.flags
     assert sent_texts(coord)[-1] == "!KURS 100m ab. R: E40m Row1str R100m Col2 L100m Row0str Z"
     assert abs(m.route.length_m - 240) < 5  # east on Row1, down Col2, east on Row0
-    # back on the new route: the flag re-arms; the turn 40 m ahead is announced once
+    # back on the new route: the flag re-arms; the turn 10 m ahead is announced once, and
+    # the message covers the turn after it too
     feed(coord, position(*pt(1.9, 1)))
     assert "offcourse" not in m.flags and m.off_count == 0
     assert sent_texts(coord)[-1] == "R: R100m Col2 L100m Row0str Z"
     k = len(sent_texts(coord))
     feed(coord, position(*pt(1.95, 1)))  # still before the same turn: no repeat
     assert len(sent_texts(coord)) == k
-    feed(coord, position(*pt(2, 0.5)))  # on Col2, the next turn is 50 m away: quiet
-    assert len(sent_texts(coord)) == k
+    feed(coord, position(*pt(2, 0.5)))  # on Col2: the next turn was in the last message
     feed(coord, position(*pt(2, 0.3)))
-    assert sent_texts(coord)[-1] == "R: L100m Row0str Z"
+    assert len(sent_texts(coord)) == k
     feed(coord, position(*pt(3, 0.2)))
     assert m.state == ARRIVED
 
@@ -432,10 +435,11 @@ def test_vias_with_a_route_are_silent(coord, tmp_path):
     # the route runs through the via to the stop, the message names the stop
     assert abs(m.route.length_m - 400) < 3
     assert sent_texts(coord)[-1] == "#Z 280m NE ~5min R: E200m Row0str L200m Col2 Z"
-    feed(coord, position(*pt(1, 0)))
-    feed(coord, position(*pt(1.7, 0)))  # 30 m before the turn at the via
-    assert sent_texts(coord)[-1] == "R: L200m Col2 Z"
+    feed(coord, position(*pt(1, 0)))  # the turn at the via 100 m ahead: said with the distance
+    assert sent_texts(coord)[-1] == "R: E100m Row0str L200m Col2 Z"
     n = len(sent_texts(coord))
+    feed(coord, position(*pt(1.7, 0)))  # 30 m before it: already said
+    assert len(sent_texts(coord)) == n
     feed(coord, position(*pt(2.1, 0.1)))  # past the via: silently done, same route
     assert m.index == 1 and len(sent_texts(coord)) == n
     assert [e["kind"] for e in m.events if e["kind"] == "via"] == ["via"]
@@ -581,3 +585,86 @@ def test_api_dispatch_and_targets(coord):
     coord.ctx.device.state = "getrennt"
     with pytest.raises(ValueError, match="nicht verbunden"):
         coord.api("POST", ["mode"], {}, {"on": True})
+
+
+def test_turns_are_announced_before_the_next_position(coord, tmp_path):
+    """Smart position sends every 100 m: a turn is said while it is closer than the node gets
+    in NEXT_POSITION_S, with the distance to it; a rate-limited one is said at the next."""
+    from meshplay.mapapp.coord import osm
+    from tests.test_coord_routing import grid_ways, pt
+
+    osm.write_graph(osm.build_graph(grid_ways()), tmp_path / "osm" / "roads.json.gz")
+    coord.settings["min_gap_s"] = 0
+    coord.assign(NODE, [{"name": "Z", "lat": pt(3, 0.5)[0], "lon": pt(3, 0.5)[1]}], "foot", "de")
+    feed(coord, position(*pt(0, 0)))
+    m = coord.missions[NODE]
+    assert sent_texts(coord)[-1] == "#Z 300m E ~5min R: E300m Row0str L50m Col3 Z"
+    n = len(sent_texts(coord))
+    feed(coord, position(*pt(1, 0)))  # 200 m to the turn: more than 90 s at 4.5 km/h
+    assert len(sent_texts(coord)) == n
+    coord.settings["min_gap_s"] = 120
+    feed(coord, position(*pt(2, 0)))  # 100 m: due, but the rate limit holds it back
+    assert len(sent_texts(coord)) == n and m.announced == 0
+    coord.settings["min_gap_s"] = 0
+    feed(coord, position(*pt(2.3, 0)))
+    assert sent_texts(coord)[-1] == "R: E70m Row0str L50m Col3 Z"
+    feed(coord, position(*pt(2.8, 0)))  # the same turn: said once
+    assert len(sent_texts(coord)) == n + 1
+
+
+def test_position_requests(coord):
+    """The node is asked for its position without one, when it should be at the stop, and
+    when its position is stale; at most every REQUEST_GAP_S, a few times, never with the
+    mode off."""
+    from meshtastic.protobuf import mesh_pb2, portnums_pb2
+
+    from meshplay.mapapp.coord.missions import REQUEST_GAP_S
+
+    iface = coord.ctx.device.iface
+    iface.getMyNodeInfo = lambda: {
+        "user": {"id": "!11112222"},
+        "position": dict(zip(("latitude", "longitude"), HOME, strict=True)),
+    }
+
+    def requests():
+        return [s for s in iface.sent if s["port"] == portnums_pb2.PortNum.POSITION_APP]
+
+    def tick(age_s=0.0, wait=True):
+        """A tick, with the last position age_s older; wait: the request gap has passed."""
+        with coord._lock:
+            m = coord.missions[NODE]
+            if m.positions:
+                m.positions[-1]["time"] -= age_s
+            if wait:
+                m.requested_at -= REQUEST_GAP_S
+            coord._tick(time.time())
+
+    coord.settings["request_positions"] = True
+    coord.assign(NODE, [{"name": "A", "lat": north(300)[0], "lon": HOME[1]}], "foot", "de")
+    (req,) = requests()  # asked right away: no position of the node
+    assert (req["to"], req["channel"], req["want_response"]) == (NODE, 1, True)
+    own = mesh_pb2.Position.FromString(req["data"])  # ours goes along
+    assert own.latitude_i == round(HOME[0] * 1e7) and own.longitude_i == round(HOME[1] * 1e7)
+    tick(wait=False)
+    assert len(requests()) == 1  # not again within the gap
+    feed(coord, position(*HOME))  # 300 m to go: it broadcasts on the way, no need to ask
+    tick(age_s=120)
+    assert len(requests()) == 1
+    feed(coord, position(*north(250)))  # 50 m to go, then silence past the expected arrival
+    tick(age_s=20)
+    assert len(requests()) == 1  # 40 s at 4.5 km/h plus the slack: not yet
+    for _ in range(3):
+        tick(age_s=60)
+    assert len(requests()) == 3  # "should be there" twice per stop, not more
+    tick(age_s=16 * 60)
+    assert len(requests()) == 4  # stale
+    tick()
+    assert len(requests()) == 4  # three unanswered: wait for a position
+    reasons = [e["reason"] for e in coord.missions[NODE].events if e["kind"] == "position_request"]
+    assert reasons == ["assign", "arrival", "arrival", "stale"]
+    feed(coord, position(*north(290)))
+    assert coord.missions[NODE].state == ARRIVED
+    coord.set_enabled(False)
+    coord.assign(NODE, [{"name": "B", "lat": north(900)[0], "lon": HOME[1]}], "foot", "de")
+    tick(age_s=16 * 60)
+    assert len(requests()) == 4  # the mode is off: nothing goes out

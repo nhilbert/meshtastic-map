@@ -1,10 +1,12 @@
 """A simulated radio for the map app (scripts/mapapp.py --simulate): nothing is transmitted.
 
 FakeInterface stands in for meshtastic's SerialInterface: it has a node database with a fake
-tracker and a fake client, acknowledges every sent packet after a moment, answers traceroutes,
-and publishes packets on the same pubsub topic as the real interface, so DeviceLink, the
-messaging pane, the node layer and the coordination mode work unchanged. The tracker walks a
-GPX track (scripts/mapapp.py --simulate walk.gpx) or stays put near home.
+tracker and a fake client, acknowledges every sent packet after a moment, answers traceroutes
+and position requests, and publishes packets on the same pubsub topic as the real interface, so
+DeviceLink, the messaging pane, the node layer and the coordination mode work unchanged. The
+tracker walks a GPX track (scripts/mapapp.py --simulate walk.gpx) or stays put near home, and
+broadcasts its position like the firmware's smart position: after 100 m (at most once a
+minute) or every 10 min, in track time.
 
 A direct message to the tracker whose text starts with ">" is spoken by the tracker instead:
 ">?" arrives as "?" from the tracker, which is how commands are tried without a second device.
@@ -24,7 +26,9 @@ TRACKER_NUM = 0xFA4E0001
 CLIENT_NUM = 0xFA4E0002
 BROADCAST = 0xFFFFFFFF
 ACK_DELAY_S = 0.5
-IDLE_INTERVAL_S = 30.0  # position broadcasts of a tracker that is not walking a track
+BROADCAST_S = 600.0  # the tracker's position interval
+SMART_S, SMART_M = 60.0, 100.0  # smart position: after this distance, at most this often
+REPLY_GAP_S = 180.0  # the firmware answers one position request per 3 min
 
 
 def node_id(num: int) -> str:
@@ -41,12 +45,14 @@ class FakeInterface:
         home: tuple[float, float],
         track: list[dict] | None = None,
         speed: float = 1.0,
-        idle_interval_s: float = IDLE_INTERVAL_S,
+        broadcast_s: float = BROADCAST_S,
     ):
         self.home = home
         self.track = track or []
         self.speed = max(speed, 0.01)
-        self.idle_interval_s = idle_interval_s
+        self.broadcast_s = broadcast_s
+        self._replied = 0.0  # monotonic time of the last position reply
+        self._at: tuple[float, float] = home  # where the tracker is, heard or not
         self.sent: list[dict] = []
         self.responseHandlers: dict = {}
         self._next_id = 1000
@@ -142,6 +148,10 @@ class FakeInterface:
                     "decoded": {"routing": {"errorReason": "NONE"}},
                 }
                 self._later(ACK_DELAY_S, self._respond, packet_id, ack)
+        if portNum == portnums_pb2.PortNum.POSITION_APP and wantResponse and dest == TRACKER_NUM:
+            if time.monotonic() - self._replied >= REPLY_GAP_S / self.speed or not self._replied:
+                self._replied = time.monotonic()
+                self._later(1.0, self._position_reply, channelIndex)
         if portNum == portnums_pb2.PortNum.TEXT_MESSAGE_APP and dest == TRACKER_NUM:
             text = data.decode("utf-8", errors="replace")
             if text.startswith(">"):
@@ -158,7 +168,9 @@ class FakeInterface:
         """A text from a fake node arrives (direct to us by default)."""
         self._publish(sender, to, 0, {"portnum": "TEXT_MESSAGE_APP", "text": text})
 
-    def position_packet(self, lat: float, lon: float, speed_ms: float | None = None) -> None:
+    def position_packet(
+        self, lat: float, lon: float, speed_ms: float | None = None, to: int = BROADCAST, channel=1
+    ) -> None:
         """The tracker reports a position: node database and a POSITION_APP packet."""
         self._set_tracker(lat, lon)
         pos = {
@@ -169,9 +181,14 @@ class FakeInterface:
         }
         if speed_ms is not None:
             pos["groundSpeed"] = int(round(speed_ms))
-        self._publish(TRACKER_NUM, BROADCAST, 1, {"portnum": "POSITION_APP", "position": pos})
+        self._publish(TRACKER_NUM, to, channel, {"portnum": "POSITION_APP", "position": pos})
+
+    def _position_reply(self, channel: int) -> None:
+        """The tracker answers a position request: its current position, to us."""
+        self.position_packet(*self._at, None, HOME_NUM, channel)
 
     def _set_tracker(self, lat: float, lon: float) -> None:
+        self._at = (lat, lon)
         node = self.nodes[node_id(TRACKER_NUM)]
         node["position"] = {"latitude": lat, "longitude": lon, "precisionBits": 32}
         node["lastHeard"] = int(time.time())
@@ -240,29 +257,39 @@ class FakeInterface:
         t.start()
 
     def _walk(self) -> None:
-        """Replay the track at its own pace times `speed`, or idle near home."""
-        if not self.track:
-            while not self._stop.wait(self.idle_interval_s):
-                pos = self.nodes[node_id(TRACKER_NUM)]["position"]
-                self.position_packet(pos["latitude"], pos["longitude"], 0.0)
-            return
-        t0, start = self.track[0]["time"], time.monotonic()
-        prev = None
-        for p in self.track:
-            due = start + (p["time"] - t0).total_seconds() / self.speed
-            if self._stop.wait(max(0.0, due - time.monotonic())):
-                return
-            speed = None
-            if prev is not None:
-                dt = (p["time"] - prev["time"]).total_seconds()
-                if dt > 0:
-                    d = math.hypot(
-                        (p["lat"] - prev["lat"]) * 111_320,
-                        (p["lon"] - prev["lon"]) * 111_320 * math.cos(math.radians(p["lat"])),
-                    )
-                    speed = d / dt
-            self.position_packet(p["lat"], p["lon"], speed)
-            prev = p
+        """Replay the track at its own pace times `speed`, then stay at its end (or near home
+        without a track); broadcast like smart position. A position request is answered with
+        where the tracker is, heard or not."""
+        if self.track:
+            t0, start = self.track[0]["time"], time.monotonic()
+            prev = sent = None
+            for p in self.track:
+                due = start + (p["time"] - t0).total_seconds() / self.speed
+                if self._stop.wait(max(0.0, due - time.monotonic())):
+                    return
+                speed = None
+                if prev is not None:
+                    dt = (p["time"] - prev["time"]).total_seconds()
+                    if dt > 0:
+                        speed = _metres(prev, p) / dt
+                prev = p
+                if sent is not None:
+                    since = (p["time"] - sent["time"]).total_seconds()
+                    smart = _metres(sent, p) >= SMART_M and since >= SMART_S
+                    if not smart and since < self.broadcast_s:
+                        self._at = (p["lat"], p["lon"])  # not heard: the node database stays
+                        continue
+                self.position_packet(p["lat"], p["lon"], speed)
+                sent = p
+        while not self._stop.wait(self.broadcast_s / self.speed):
+            self.position_packet(*self._at, 0.0)
+
+
+def _metres(a: dict, b: dict) -> float:
+    return math.hypot(
+        (b["lat"] - a["lat"]) * 111_320,
+        (b["lon"] - a["lon"]) * 111_320 * math.cos(math.radians(b["lat"])),
+    )
 
 
 def load_track(path: Path | None) -> list[dict]:

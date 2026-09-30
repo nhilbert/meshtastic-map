@@ -63,7 +63,15 @@ RETRY_KINDS = ("assign", "reached", "next", "changed")
 MOVE_MIN_M = 15  # smaller steps are GPS noise: not counted, not used for the speed
 SPEED_DT_S = (20, 300)  # a leg between two positions counts for the speed only in this range
 OFF_STEP_M = 50  # straight-line off-course: the distance grew by this on three positions in a row
-TURN_AHEAD_M = 40  # instruction mode "turns": announce the next legs this close to the turn
+TURN_AHEAD_M = 40  # instruction mode "turns": at the turn, the message starts with it
+# A moving tracker's next position comes within this (smart broadcast, 60 s / 100 m): a turn
+# closer than this at the current speed is announced now, with the distance to it.
+NEXT_POSITION_S = 90
+SMART_DISTANCE_M = 100  # the tracker's smart broadcast distance: a shorter move sends nothing
+REQUEST_GAP_S = 180  # the firmware answers one position request per 3 min
+REQUESTS_PER_STOP = 2  # "should be at the stop" requests per stop
+REQUESTS_UNANSWERED = 3  # then no more requests until a position comes
+ARRIVAL_SLACK_S = 30  # after the expected arrival, before asking where the node is
 INTERVAL_M = 500  # instruction mode "interval": a route message every this many metres
 
 
@@ -107,8 +115,11 @@ class Mission:
         self.route_ahead: list[list] = []  # coordinates of the later segments, for the map
         self.off_count = 0  # positions in a row off the route
         self.area_state = AreaState()  # entered areas and announced places (not persisted)
-        self.announced = 0  # legs left when the last turn instruction went out
+        self.announced = 0  # legs left at the last turn a route message covered (0 = none)
         self.instr_at_m = 0.0  # travelled distance at the last interval instruction
+        self.requested_at = 0.0  # last position request
+        self.requests_open = 0  # position requests since the last position
+        self.stop_requests: dict[str, int] = {}  # "should be at the stop" requests per stop
 
     @property
     def current(self) -> Waypoint:
@@ -589,6 +600,7 @@ class Coordinator:
         self._send(m, "assign", self._leg_text(m, "assign"))
         if not m.awaiting_position:
             self._send_legend(m)
+        self._request_position(m, now)
         self._save(force=True)
         return m
 
@@ -836,6 +848,7 @@ class Coordinator:
             if step >= MOVE_MIN_M:
                 m.travelled_m += step
         m.positions.append(rec)
+        m.requests_open = 0
         self._event(m.node, "position", lat=rec["lat"], lon=rec["lon"], snr=rec["snr"])
         if not m.active:
             self._update_metrics(m, now)
@@ -870,6 +883,8 @@ class Coordinator:
             "travelled_m": round(m.travelled_m),
             "elapsed_s": round(now - m.assigned_at),
             "stale": last is not None and now - last["time"] > self.settings["stale_min"] * 60,
+            # an unanswered position request, for the card
+            "requested_s": round(now - m.requested_at) if m.requests_open else None,
             "mode": "line",
         }
         if last is not None:
@@ -1131,13 +1146,27 @@ class Coordinator:
                 return
         mode = self.settings["instructions"]
         legs = m.route.legs(m.metrics["along_m"])
-        if mode == "turns" and len(legs) >= 2 and legs[0].dist_m <= TURN_AHEAD_M:
-            if m.announced != len(legs):
-                m.announced = len(legs)
-                self._send(m, "route", phrases.phrase(m.lang, "route", legs=legs_text(legs[1:], n)))
+        if mode == "turns" and len(legs) >= 2:
+            self._announce_turn(m, legs, n)
         elif mode == "interval" and m.travelled_m - m.instr_at_m >= INTERVAL_M and len(legs) > 1:
             m.instr_at_m = m.travelled_m
             self._send(m, "route", phrases.phrase(m.lang, "route", legs=legs_text(legs, n)))
+
+    def _announce_turn(self, m: Mission, legs: list, n: int) -> None:
+        """Instruction mode "turns": the next turn before the node's next position could be past
+        it. At the turn the message starts with it, earlier with the distance to it. Turns a
+        message covered are not announced again. A turn is known by the legs left while it is
+        the next one (legs[i] starts with the turn len(legs) - i + 1)."""
+        if m.announced and len(legs) >= m.announced:
+            return
+        speed, _source = self._speed(m)
+        if legs[0].dist_m > max(TURN_AHEAD_M, speed * NEXT_POSITION_S):
+            return
+        first = 1 if legs[0].dist_m <= TURN_AHEAD_M else 0
+        shown = min(n, len(legs) - first)
+        text = phrases.phrase(m.lang, "route", legs=legs_text(legs[first:], n))
+        if self._send(m, "route", text):
+            m.announced = len(legs) - (first + shown - 1) + 1
 
     def _advance(self, m: Mission, now: float, skipped: bool = False) -> None:
         """The next stop is done (reached, or skipped by the coordinator): the one after it
@@ -1226,6 +1255,7 @@ class Coordinator:
             if not m.active:
                 continue
             self._update_metrics(m, now)
+            self._request_position(m, now)
             if m.state == HOLDING and m.stop.hold_until and now >= m.stop.hold_until:
                 self._event(m.node, "hold_over", name=m.stop.name)
                 m.flags.clear()
@@ -1238,6 +1268,46 @@ class Coordinator:
                     self._update_metrics(m, now)
                     self._send(m, "next", self._leg_text(m, "next"), must=True)
                 self._dirty = True
+
+    # ------------------------------------------------------------ position requests
+    def _request_position(self, m: Mission, now: float) -> None:
+        """Ask the node where it is when a position is missing: its tracker broadcasts only
+        after 100 m or every 10 min (smart position), so it can reach a stop unheard."""
+        if not (self.enabled and self.settings.get("request_positions")) or m.held:
+            return
+        if now - m.requested_at < REQUEST_GAP_S or m.requests_open >= REQUESTS_UNANSWERED:
+            return
+        reason = self._request_reason(m, now)
+        if reason is None:
+            return
+        m.requested_at = now
+        m.requests_open += 1
+        if reason == "arrival":
+            m.stop_requests[m.guide.name] = m.stop_requests.get(m.guide.name, 0) + 1
+        try:
+            self.ctx.device.request_position(m.node, int(self.settings.get("channel", 0)))
+        except Exception as e:  # not connected: counts as unanswered, tried again after the gap
+            self._event(m.node, "request_failed", reason=reason, error=str(e))
+            return
+        self._event(m.node, "position_request", reason=reason)
+
+    def _request_reason(self, m: Mission, now: float) -> str | None:
+        last = m.last
+        if last is None:
+            return "assign"
+        if now - last["time"] > self.settings["stale_min"] * 60:
+            return "stale"
+        mt = m.metrics
+        if m.state != UNDERWAY or mt.get("eta_s") is None:
+            return None
+        to_go = mt["route_left_m"] if mt.get("mode") == "route" else mt["dist_m"]
+        if to_go - m.guide.radius_m > SMART_DISTANCE_M:
+            return None  # it broadcasts on the way there
+        if now - last["time"] < mt["eta_s"] + ARRIVAL_SLACK_S:
+            return None
+        if m.stop_requests.get(m.guide.name, 0) >= REQUESTS_PER_STOP:
+            return None
+        return "arrival"
 
     # ------------------------------------------------------------ commands
     def _on_text(self, node: str, text: str) -> None:

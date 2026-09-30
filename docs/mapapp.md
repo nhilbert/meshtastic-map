@@ -167,8 +167,16 @@ simulated radio first.
   `events-<date>.jsonl`).
 
 The tracker must share its position on a channel the server node has, with *precise location*
-and a short interval (30 s); positions coarser than the setting *Mindestgenauigkeit* are
-ignored.
+and smart position: position interval 10 min, smart minimum distance 100 m, smart minimum
+interval 60 s, GPS update interval ≤ 60 s. Not a short fixed interval: every position is
+relayed through the city mesh. Positions coarser than the setting *Mindestgenauigkeit* are
+ignored. Because a tracker that moves less than 100 m stays quiet for up to 10 min, the server
+asks it for its position where one is missing (setting *Position beim Knoten anfragen*, on by
+default): after an assignment without a position, when the node should be at the stop by now,
+and when its position is stale; at most every 3 min per node, only nodes with a mission. The
+firmware answers by itself; the card shows an open request. Turns are announced before the
+node's next position could be past them (speed × 90 s ahead), with the distance to the turn.
+See docs/coordination-design.md, section 5.
 
 ### Areas and places
 
@@ -240,7 +248,9 @@ python scripts/mapapp.py --open --simulate data/tracks/walk.gpx --sim-speed 4
 
 `--simulate` replaces the device by a fake one (`mapapp/fake_device.py`): nothing is
 transmitted. Its node list has a fake tracker `!fa4e0001` (a favourite) that walks the given
-GPX track at `--sim-speed` times its pace, or reports the same position near home every 30 s.
+GPX track at `--sim-speed` times its pace (then stays at its end), or stays near home. It
+broadcasts like smart position (after 100 m at most once a minute, else every 10 min, in track
+time) and answers a position request with where it is, once per 3 min.
 Sent messages are acknowledged after half a second, traceroutes are answered, and a direct
 message to the tracker that starts with `>` is spoken by the tracker: `>?` arrives as `?` from
 it. Messages go to `data/messages-sim.jsonl`, packets are not logged. This is how the messaging

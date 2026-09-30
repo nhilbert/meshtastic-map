@@ -31,17 +31,22 @@ class FakeIface:
         data,
         destinationId,
         portNum,
-        wantAck,
-        onResponse,
-        onResponseAckPermitted,
-        channelIndex,
+        wantAck=False,
+        onResponse=None,
+        onResponseAckPermitted=False,
+        channelIndex=0,
+        wantResponse=False,
     ):
+        if hasattr(data, "SerializeToString"):  # a protobuf, as the real interface takes it
+            data = data.SerializeToString()
         self.sent.append(
             dict(
                 data=data,
                 to=destinationId,
+                port=portNum,
                 channel=channelIndex,
                 ack=wantAck,
+                want_response=wantResponse,
                 on_response=onResponse,
             )
         )

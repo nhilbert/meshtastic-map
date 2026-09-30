@@ -85,11 +85,12 @@ for that action. Test probe and messaging logic with a fake interface (`tests/te
 `tests/test_mapapp_messages.py`); for the page, run the server with the simulated radio
 (`python scripts/mapapp.py --simulate [track.gpx]`, see docs/mapapp.md) instead of the real
 device. Sending a text from the messaging pane is the owner's own action, and so is switching
-the coordination mode on: from then on the server messages nodes with a mission by itself
-(`coord/missions.py`), never nodes without one; the only exception is the answer to a node's
-own marker command (`+D`/`?D`, setting *Markierungen per Funk*), and only for nodes on the
-private channel of its settings. Walk traffic goes on a private channel with hop limit 0; coordination messages are direct messages on the channel of its settings
-(default 1, the private channel).
+the coordination mode on: from then on the server messages nodes with a mission by itself (texts
+and position requests, `coord/missions.py`), never nodes without one; the only exception is the
+answer to a node's own marker command (`+D`/`?D`, setting *Markierungen per Funk*), and only for
+nodes on the private channel of its settings. Walk traffic goes on a private channel with hop
+limit 0; coordination messages are direct messages on the channel of its settings (default 1,
+the private channel).
 
 **Modem preset.** The owner's mesh runs **ShortSlow**; `DEFAULT_PRESET` in `config.py` is the
 single default. Never hardcode LongFast. A preset (and interval) recorded in a log wins over the

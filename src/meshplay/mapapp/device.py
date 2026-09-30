@@ -237,6 +237,35 @@ class DeviceLink:
         finally:
             stored.release()
 
+    def request_position(self, to: str, channel: int) -> int:
+        """Ask a node for its position: a position packet with want_response, which the node's
+        firmware answers by itself with its current one (at most once per 3 min). The packet
+        carries our own position, as the phone apps do: the firmware also takes a position
+        sent over the API as its own, so an empty one could clear it. Returns the packet id."""
+        from meshtastic.protobuf import mesh_pb2, portnums_pb2
+
+        iface = self.iface
+        if iface is None or self.state != "verbunden":
+            raise ValueError(_("Gerät nicht verbunden: oben unter „Gerät (USB)“ verbinden"))
+        channel = int(channel)
+        if channel not in {c["index"] for c in self.channels()}:
+            raise ValueError(_("Kanal {n} gibt es auf dem Gerät nicht", n=channel))
+        if not (to.startswith("!") and len(to) == 9):
+            raise ValueError(_("Empfänger: Node-ID wie !abcd1234"))
+        own = (iface.getMyNodeInfo() or {}).get("position") or {}
+        pos = mesh_pb2.Position()
+        if "latitude" in own and "longitude" in own:
+            pos.latitude_i = round(own["latitude"] * 1e7)
+            pos.longitude_i = round(own["longitude"] * 1e7)
+        sent = iface.sendData(
+            pos,
+            destinationId=to,
+            portNum=portnums_pb2.PortNum.POSITION_APP,
+            wantResponse=True,
+            channelIndex=channel,
+        )
+        return sent.id
+
     def names(self, ids) -> dict:
         """Short and long names of the given node IDs from the device's node list."""
         iface = self.iface
