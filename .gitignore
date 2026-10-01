@@ -21,3 +21,6 @@ data/*
 .idea/
 Thumbs.db
 .DS_Store
+
+# raw screenshots before redaction (published ones are in docs/images/)
+screens/

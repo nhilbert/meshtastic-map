@@ -87,7 +87,7 @@ scores the protocol against the newest frozen prediction: log score, 80 % interv
 Brier score of delivery, model weights, noise floor estimate, and a fit of the distance
 exponent n over the corridor points.
 
-**Coverage walk**: record a walk (see the README: traceroutes with `probe_walk.py` or the map
+**Coverage walk**: record a walk (see [walks.md](walks.md): traceroutes with `probe_walk.py` or the map
 app, or position broadcasts with `listen.py`), then
 
 ```powershell

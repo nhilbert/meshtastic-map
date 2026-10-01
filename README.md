@@ -1,65 +1,52 @@
-# meshplay — a Meshtastic playground
+# meshplay
 
-Scripts, a browser map app and a radio coverage simulation around a
-[Meshtastic](https://meshtastic.org) node connected over USB. It grew out of one question:
-*where can my home node actually be reached?* — and answers it two ways, by measuring on a walk
-and by simulating the radio links over a laser scan of the city.
+**A map app and toolbox for your [Meshtastic](https://meshtastic.org) node: see your mesh,
+measure and simulate where your radio reaches, and guide people in the field.**
 
-What you can do with it:
+Connect a Meshtastic node over USB, open the map in your browser, and you get the mesh live on
+a 2D map or a 3D city model built from laser-scan data. It started with one question —
+*where can my home node actually be reached?* — and answers it two ways: by measuring on a
+walk, and by simulating the radio links over every building and tree.
 
-- **Talk to your node from Python**: node info, node list export, live packet log, send text.
-- **Measure coverage on a walk**: your home node traceroutes a tracker you carry (or listens
-  to its position broadcasts); your phone records the route; the result is a map of where the
-  home node was reachable, with the signal quality in both directions.
-- **Use the map app** (browser, 2D OpenStreetMap or 3D laser scan): layers for your sites, the
-  live node list, walks and simulated coverage; a link calculator between any two points;
-  start walks and simulations as background tasks; edit your sites; send and read messages on
-  your channels or directly to a node picked on the map, and watch the packet traffic;
-  coordinate people in the field: assign a node a target or a path, and the app guides it
-  there over the streets by short messages and answers its questions. Works offline.
-- **Simulate coverage** with ITU-R propagation models over a 3D scene built from open
-  laser-scan data, and score the models against your measurements.
+![The map app: nodes, own sites and a restricted area on the 2D map](docs/images/map.png)
 
-The code is tested on Windows with a Seeed Wio Tracker L1 Pro as home node and a Seeed T1000-E as
-walking tracker. Other Meshtastic devices with USB serial should work; Linux and macOS should
-work too (the commands below are PowerShell), but haven't been tried.
+## Features
 
-## Contents
+| | |
+|---|---|
+| 🗺️ **Live map** | Every node your device hears, on OpenStreetMap or in 3D; a sortable node list with signal, hops and battery; traceroute and position request with one click. |
+| 💬 **Messages** | Read and send on your channels or directly to a node; delivery state for each message; the packet traffic as it arrives. |
+| 🚶 **Coverage walks** | Your home node traceroutes a tracker you carry; with the GPX track from your phone you get a map of where the link works, with the signal in both directions. |
+| 🏙️ **3D laser-scan scenes** | Terrain, buildings and trees at 1 m from open government data (North Rhine-Westphalia, Lower Saxony, Schleswig-Holstein), downloaded and built from the map. |
+| 📡 **Coverage simulation** | Seven ITU-R propagation models predict the coverage around a site and the quality of any link, scored against your own measurements. |
+| 🧭 **Coordination** | Assign a node a target or a route; the app guides it there over the streets with short radio messages, tracks arrival and schedule, and answers its questions. |
+| 🔌 **Works offline** | Libraries are bundled and map tiles are cached once seen. A simulated radio lets you try everything without a device. |
 
-- [Requirements](#requirements)
-- [Getting started](#getting-started)
-- [Scripts](#scripts)
-- [Coverage walks](#coverage-walks)
-- [Map app](#map-app)
-- [3D laser-scan data](#3d-laser-scan-data)
-- [Coverage simulation](#coverage-simulation)
-- [Official web client](#official-web-client)
-- [Configuration](#configuration)
-- [Project layout and data](#project-layout-and-data)
-- [Troubleshooting](#troubleshooting)
-- [Writing your own code](#writing-your-own-code)
-- [Development](#development)
-- [Credits and data sources](#credits-and-data-sources)
-- [Licence](#licence)
+The interface is available in German, English and French.
 
-## Requirements
+<table>
+<tr>
+<td><img src="docs/images/coverage.png" alt="Simulated coverage around a site on the 2D map"></td>
+<td><img src="docs/images/coverage3d.png" alt="The same coverage on the 3D laser-scan scene"></td>
+</tr>
+<tr>
+<td align="center">Simulated coverage around a site …</td>
+<td align="center">… and on the 3D laser-scan scene</td>
+</tr>
+<tr>
+<td><img src="docs/images/coordination.png" alt="Coordination mode: missions, route and radio messages"></td>
+<td><img src="docs/images/messages.png" alt="Messages and node list"></td>
+</tr>
+<tr>
+<td align="center">Coordination: missions, route and radio messages</td>
+<td align="center">Messages and node list</td>
+</tr>
+</table>
 
-- **Python 3.10 or newer** ([python.org](https://www.python.org/downloads/); on Windows tick
-  "Add python.exe to PATH" during installation).
-- **Git** to get the code, or download the repository as a ZIP.
-- **A Meshtastic node with a USB data cable.** For walks, a second node that you carry (a
-  tracker such as the T1000-E, or any node) and a phone app that records a GPX track.
-- **For the simulation and the 3D view:** about 1–2 GB of disk space and 2 GB of RAM for a
-  3 × 3 km scene. The laser-scan tiles come from **Geobasis NRW**, so the scene can only be
-  built for North Rhine-Westphalia (Germany) without extra work; see
-  [3D laser-scan data](#3d-laser-scan-data). Everything else works anywhere.
-- Optional: **Docker Desktop** for a local copy of the official Meshtastic web client.
+## Quick start
 
-## Getting started
-
-These steps take you from nothing to a running map app. Commands are for PowerShell.
-
-**1. Get the code and create a virtual environment**
+You need Python 3.10 or newer. A Meshtastic node with a USB data cable is optional for a
+first look. Commands are for PowerShell on Windows (tested); Linux and macOS should work too.
 
 ```powershell
 git clone https://github.com/nhilbert/meshtastic-map.git
@@ -67,459 +54,68 @@ cd meshtastic-map
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[sim,dev]"
+Copy-Item .env.example .env        # optional: set MESHPLAY_HOME to your position (lat,lon)
 ```
 
-If activation fails with "running scripts is disabled", run
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once and try again. Activate the
-environment (`.\.venv\Scripts\Activate.ps1`) in every new terminal before using the scripts.
-
-`.[sim,dev]` installs everything: the scripts, the map app, the simulation and the test tools.
-The device scripts alone need only `python -m pip install -e .`. To get exactly the tested
-versions: `python -m pip install -r requirements.lock`, then `python -m pip install -e . --no-deps`.
-
-**2. Configure**
+**Try it without a device** — a simulated radio with three nodes (add a GPX file to make the
+tracker walk it):
 
 ```powershell
-Copy-Item .env.example .env
+python scripts/mapapp.py --simulate --open
 ```
 
-Open `.env` in an editor. Set `MESHPLAY_HOME` to your home node's position as `lat,lon` (e.g.
-copied from a map), and `MESHTASTIC_PORT` if the node isn't found automatically (see
-[Configuration](#configuration)).
-
-**3. Connect the node and check**
-
-Plug the node in over USB and close every other program that uses it (the Meshtastic web client
-in Chrome/Edge, other scripts). Then
+**With your node** — plug it in over USB, close other programs that use it (e.g. the
+Meshtastic web client), then:
 
 ```powershell
-python scripts/node_info.py
+python scripts/mapapp.py --device --open
 ```
 
-prints your node's name, ID, hardware, firmware, battery and the number of known nodes. If it
-says the port is busy or no device was found, see [Troubleshooting](#troubleshooting).
+The map opens at http://localhost:8770. Without a laser-scan scene, the 3D view and the
+simulation say what's missing; everything else works right away. Stuck? See
+[Troubleshooting](docs/setup.md#troubleshooting).
 
-**4. Watch the mesh**
+## Be kind to the mesh
 
-```powershell
-python scripts/listen.py          # every received packet; Ctrl+C stops
-python scripts/export_nodes.py    # the node's node list -> data/exports/
-```
+Meshtastic is a shared radio network: whatever you send reaches other people's devices and
+uses their airtime. meshplay never transmits on its own unless you ask it to (a message, a
+traceroute, a walk, or switching the coordination mode on). For walks and tests, use a
+**private channel** and **hop limit 0**, so nobody else has to relay your test traffic
+([walks.md](docs/walks.md)).
 
-**5. Open the map app**
+## Documentation
 
-```powershell
-python scripts/mapapp.py --open --device
-```
-
-opens http://localhost:8770 in your browser and connects to the node, so the node layer shows
-the mesh live. Until you have prepared the laser-scan data, the 3D view and the link calculator
-explain what's missing; the rest works. [docs/mapapp.md](docs/mapapp.md) has a tour.
-
-**6. Next steps**
-
-- Measure your coverage: [Coverage walks](#coverage-walks).
-- Get the laser-scan data for the 3D view and the simulation:
-  [3D laser-scan data](#3d-laser-scan-data) (North Rhine-Westphalia, Lower Saxony,
-  Schleswig-Holstein).
-
-## Scripts
-
-All scripts are in `scripts/`, print their options with `--help`, and take `--port COM8` where
-they talk to the device (otherwise `MESHTASTIC_PORT` from `.env` or auto-detection).
-
-| Script | What it does |
+| Guide | What's in it |
 |---|---|
-| **Device** | |
-| `node_info.py` | summary of the connected node |
-| `listen.py` | prints received packets and appends them to `data/packets/<date>.jsonl` (`--text-only`) |
-| `export_nodes.py` | node list of the device → `data/exports/nodes-<time>.json` and `.csv` |
-| `send_text.py` | send a text: `send_text.py "hello"` broadcasts on channel 0; `--to !1234abcd`, `--channel 1` |
-| **Walks and measurements** | |
-| `probe_walk.py` | traceroutes a walking node every 60 s and logs the answers → `data/probes/` |
-| `coverage_map.py` | map of a walk (positions, or traceroutes with `--probes`) and the phone's GPX track → `data/maps/` |
-| `measure_logger.py` | fixed-point link test: one device sends numbered packets, the other logs them |
-| **Map app** | |
-| `mapapp.py` | the browser map app (`--open`, `--device`, `--port 8770`; `--simulate [track.gpx]` for a fake radio) |
-| `coord_import_osm.py` | road graph for the coordination mode from an `.osm` file instead of the Overpass download |
-| `make_basemap.py` | rebuilds the offline overview map (`webmap/vendor/basemap/`) from Natural Earth |
-| **Simulation** | |
-| `sim_fetch_tiles.py` | lists and downloads the elevation tiles of an area (NRW, Lower Saxony, Schleswig-Holstein; [details](#3d-laser-scan-data)) |
-| `sim_build_scene.py` | builds a named 3D scene (terrain, buildings, trees) for NRW, Lower Saxony or Schleswig-Holstein, `--download` fetches the tiles; lists and switches scenes |
-| `sim_coverage_map.py` | predicted coverage around a site, per model |
-| `sim_compare_walk.py` | scores a walk against the models |
-| `sim_predict.py`, `sim_score.py` | frozen predictions for fixed links, scored against `measure_logger.py` results |
-| `sim_relay_search.py` | searches roofs for the best relay between two sites |
-| `sim_validate_p1812.py` | checks the ITU-R P.1812 port against the official validation data |
-
-The official Meshtastic CLI is installed as well: `meshtastic --port COM8 --info`.
-
-## Coverage walks
-
-Map where your home node can reach a node you carry. Two methods:
-
-| | Traceroutes from home (recommended) | Position broadcasts |
-|---|---|---|
-| Who transmits | home node asks, tracker answers | tracker only |
-| Tracker needs a GPS fix | no (the phone's GPX track gives the position) | yes |
-| Result | reachable or not, SNR in **both** directions | whether home heard the tracker (one direction) |
-| Airtime | two short packets per minute | one position every 30 s |
-
-**Be nice to the public mesh.** A walk sends a packet every 30–60 s for an hour or more. Use a
-**private channel** (other nodes can't read it) and set the tracker's **hop limit to 0** for the
-walk, so no other node relays your test traffic. Set it back afterwards (default 3).
-
-### Traceroutes from home
-
-1. **Tracker** (Meshtastic app): add your private channel (same name and key as on the home
-   node, e.g. as channel 1) and set LoRa → hop limit **0**. Position sharing can stay off.
-2. **At home:** in the map app open *Aufgaben → ＋ Traceroute-Rundgang*, enter the tracker's
-   node ID and the private channel, *Starten*. Or on the command line:
-
-   ```powershell
-   python scripts/probe_walk.py --to !abcd1234 --channel 1
-   ```
-
-   Wait for the first answers before you leave (tracker next to the home node). Keep the laptop
-   awake and plugged in.
-3. **Walk** with the tracker in your pocket and a GPX recording on your phone.
-4. **Back home:** stop the task (or Ctrl+C), then choose *GPX-Spur hochladen …* on the finished
-   task in the map app: the walk layer shows the route coloured by reachability and every probe
-   with both SNR values. Or save the GPX file to `data/tracks/` and run
-
-   ```powershell
-   python scripts/coverage_map.py --tracker !abcd1234 --probes --gpx data/tracks/walk.gpx --open
-   ```
-
-### Position broadcasts
-
-1. **Tracker:** on the private channel turn position sharing on with **precise location**, on
-   the primary channel off (positions go out on the first channel that shares them); smart
-   position off, broadcast interval 30 s, GPS update interval 30 s; hop limit 0.
-2. **At home:** `python scripts/listen.py` (or the map app with `--device`, which logs the same).
-   Wait for the tracker's first position before you leave.
-3. **Walk** with a GPX recording on your phone; afterwards save the file to `data/tracks/`.
-4. **Map:** `python scripts/coverage_map.py --tracker !abcd1234 --gpx data/tracks/walk.gpx --open`,
-   or choose the tracker and the track in the map app's walk layer.
-
-`coverage_map.py` writes `data/maps/coverage-<id>-<date>.html` (`probes-…` with `--probes`) and a
-CSV and prints the share of
-the walked distance with direct coverage. `--open` serves the map on http://localhost:8765
-(opened as a file, the map background stays blank: OpenStreetMap refuses `file://` pages).
-
-To compare a walk with the simulation:
-`python scripts/sim_compare_walk.py --tracker !abcd1234 --probes --gpx data/tracks/walk.gpx --home-indoor none`
-(see [docs/simulation.md](docs/simulation.md)), or colour the map app's walk layer by
-*Messung − Modell*.
-
-## Map app
-
-```powershell
-python scripts/mapapp.py --open            # add --device to connect to the node
-```
-
-One map, switchable between 2D (OpenStreetMap) and 3D (laser-scan scene), with layers: a
-direct-link calculator, your sites (editable), the Meshtastic nodes (live from the device or from
-an export, also as a list), walks, simulated coverage and the scene extent. A messaging pane
-under the map sends and shows texts on your channels and to single nodes, and lists the packet
-traffic. Long jobs — a traceroute walk, a coverage simulation — run as background tasks, started
-and followed in the browser. A coordination mode guides field nodes to targets by short direct
-messages (assignment, distance and direction, arrival, answers to their questions). The
-interface is in English, German and French (switch DE|EN|FR under Einstellungen). Tour, all features,
-and how to add layers, tasks or translations:
-[docs/mapapp.md](docs/mapapp.md). `--simulate` replaces the device by a simulated radio for
-trying things without transmitting. The app works offline: libraries are served locally and
-map tiles are cached once seen (docs/mapapp.md, "Offline use").
-
-## 3D laser-scan data
-
-The 3D view, the link calculator, the coverage simulation and the comparison of walks with the
-models all work on a **scene**: 1 m rasters of terrain, surface height, buildings and trees,
-built from an airborne laser scan. A scene is a square of 1–5 km; you can keep several (home
-town, holiday area) and switch between them. Without any scene the map app still runs — the 2D
-map, nodes, walks, sites and traceroute walks work; the parts that need the scene say so.
-
-### The data
-
-Each German state publishes its own elevation data, in its own form. Three are supported, one
-module each in `src/meshplay/sim/sources/`; the scene's centre decides which one is used:
-
-| State | Data | Licence | Download interface | Per km² |
-|---|---|---|---|---|
-| North Rhine-Westphalia | classified laser-scan points (Geobasis NRW, 3D-Messdaten) | dl-de/zero-2-0 | folder with fixed file names | ~95 MB |
-| Lower Saxony | DGM1 and DOM1, 1 m rasters from the laser scan (LGLN) | CC BY 4.0 | STAC API | ~8 MB |
-| Schleswig-Holstein | DGM1 (1 m) and image-based surface bDOM (20 cm) (LVermGeo SH) | CC BY 4.0 | published GeoJSON tile index | ~130 MB |
-
-From the points (NRW), the share of last and multiple returns separates roofs from trees. The
-raster states have no points, so their buildings come from OpenStreetMap footprints (Overpass,
-only the area's box is sent); if Overpass can't be reached, roofs are told from trees by the
-smoothness of the surface, which finds only about half of the buildings (the scene records
-which way was used). Schleswig-Holstein's surface comes from aerial images, so trees are less
-exact than from a laser scan. Other states publish their data only through portals, shops or
-for a fee, or in UTM zone 33, which the app doesn't handle yet; they need their own module.
-The licences ask for attribution; the scene list and the scene's popup show it.
-
-The North Rhine-Westphalia tiles in detail:
-
-- **Tiles:** 1 km × 1 km, compressed LAS (`.laz`), about 60–130 MB each, named
-  `3dm_32_<E>_<N>_1_nw.laz`. `<E>` and `<N>` are the easting and northing of the tile's
-  south-west corner in kilometres, in UTM zone 32N (ETRS89, EPSG:25832).
-- **Download folder:** <https://www.opengeodata.nrw.de/produkte/geobasis/hm/3dm_l_las/3dm_l_las/>.
-  Opened in a browser it lists every tile with size and date; the tile itself is that address
-  plus the file name. The same folder has `3dm_meta.zip` with the official documentation.
-- **How much:** a scene of 3 × 3 km usually touches 16 tiles (the square rarely lines up with
-  the kilometre grid), so 1–1.6 GB to download. The scene itself is much smaller (about 70 MB
-  for 3 × 4 km); the tiles are only needed to build it and can be deleted afterwards.
-
-Choose the area generously: coverage simulations, links and walks can only be computed where the
-scene has data. 3 × 3 km is a good start for a town; 5 × 5 km is the most the map app offers
-(about 0.5 GB of memory in the server).
-
-### In the map app (recommended)
-
-1. *Aufgaben* → **Laserscan-Szene erstellen** (or right click on the map → *Szene hier
-   erstellen*, or layer *Laserscan-Szene* → ⚙ → **＋ Neue Szene**), click the centre on the map,
-   give it a name and an edge length. The form draws the square and names the state's source,
-   how many tiles the area needs, how many are here, and the size of the rest against the free
-   disk space.
-2. Leave **Fehlende Kacheln herunterladen** ticked and press *Herunterladen und erstellen*: a
-   background task (*Aufgaben*) fetches the missing files through the state's interface
-   (resumable: a cancelled or broken download continues next time), builds the scene in a
-   separate process and prepares the 3D view. Tiles still missing are interpolated (the layer
-   shows those areas). With *Danach verwenden* the new scene is used right away.
-3. If a download fails (servers change), *Selbst herunterladen* lists the files with their links
-   (*Liste kopieren*) and the folder to put them in unchanged; *Erneut prüfen* updates the
-   count and *Erstellen* builds from what is there.
-
-The same list shows all scenes: *Verwenden* switches (the page reloads, the 3D view is built for
-one scene), ✕ deletes one, *Kacheln löschen* frees the space of the downloaded tiles.
-
-### With the scripts
-
-Set `MESHPLAY_HOME` in `.env` first (or pass `--center LAT,LON`); the area is a square around
-it.
-
-```powershell
-python scripts/sim_fetch_tiles.py --radius 1500              # list: names, sizes, what you have
-python scripts/sim_fetch_tiles.py --radius 1500 --download   # download (data/sim/laz/ or tiles/)
-python scripts/sim_build_scene.py --name home --radius 1500  # build data/sim/scenes/home/
-python scripts/sim_build_scene.py --name kiel --center 54.315,10.1315 --size 3000 --download
-python scripts/sim_build_scene.py --list                     # scenes; * = the one in use
-python scripts/sim_build_scene.py --use home                 # switch
-```
-
-The list shows each file with its link and marks those you already have; tiles the source
-doesn't offer (outside its state) are named as such. The download skips files that are present,
-continues a leftover `*.part` file and reports a file the server doesn't have instead of
-stopping. `sim_build_scene.py --download` fetches and builds in one go. If a server changed,
-download by hand (below).
-
-The build reads the tiles and writes `data/sim/scenes/<name>/` (`scene_raw.npz`,
-`scene_cls2.npz`, `scene_meta.json`): terrain from the ground points, surface from the points
-above ground, and per 1 m cell whether it is a building or vegetation (the laser scan has no
-building class; the share of last returns and of multiple returns separates roofs from trees).
-Missing tiles are reported and their area interpolated; cells without any data are marked as
-not measured. A 3 × 3 km scene takes about a minute and about 1 GB of RAM. The first scene is
-used automatically, later ones with `--activate` or `--use`; `--force` replaces a scene of the
-same name. A scene in the old single folder `data/sim/scene/` is moved to
-`data/sim/scenes/default/` on first use.
-
-The simulation scripts (`sim_coverage_map.py`, `sim_predict.py`, `sim_compare_walk.py`,
-`sim_relay_search.py`) use the scene in use, or the one named with `--scene`.
-
-### By hand
-
-The map app's form lists the names you need. Without it:
-
-1. **Find the tile names.** Convert your position to UTM32, e.g. with the project's own
-   converter (longitude first):
-
-   ```powershell
-   python -c "from meshplay.sim.sites import to_utm; print(to_utm(7.0988, 50.7374))"
-   # (365847.2..., 5622347.1...)  ->  E = 365, N = 5622  ->  3dm_32_365_5622_1_nw.laz
-   ```
-
-   That is the tile you stand in; add its neighbours (E ± 1, N ± 1, …) until the area is
-   covered. `python scripts/sim_fetch_tiles.py --radius 1500` (without `--download`) prints the
-   exact list for a radius, even if you then download by hand.
-2. **Download** each file from the download folder above (browser, or any download manager).
-3. **Put the files** unchanged into `data/sim/laz/` (create the folder) and build the scene in
-   the map app (it finds them) or with `sim_build_scene.py`.
-
-### Use it
-
-- the 3D view shows terrain, buildings and trees of the scene in use; the layer
-  *Laserscan-Szene* shows the outlines of all scenes and the unmeasured areas;
-- the layer *Strecke A → B* computes links;
-- *Aufgaben → ＋ Abdeckung simulieren* computes coverage maps (on any scene that contains the
-  site), and the walk layer can compare measurements with the models (*Messung − Modell*).
-
-### Outside North Rhine-Westphalia
-
-The code reads the NRW product only. Other airborne laser scans (several German states and many
-countries publish them) can work, but need their own import: `Scene` in
-`src/meshplay/sim/scene.py` expects 1 m rasters of terrain, surface height above ground,
-building and vegetation masks and a measured mask, and the building/tree separation relies on
-the NRW point classes (class 20 = last return, not ground). A second importer is a welcome
-contribution.
-
-## Coverage simulation
-
-Predicts link quality with seven ITU-R model families over the scene, and scores them against
-measurements. Models, pipeline and the review of the original code:
-[docs/simulation.md](docs/simulation.md).
-
-With a scene in place (see above):
-
-```powershell
-Copy-Item config\sites.example.json data\sim\sites.json     # then enter your own sites,
-                                                            # or add them in the map app
-python scripts/sim_coverage_map.py --site HOME              # coverage map per model
-```
-
-Coverage maps are easier from the map app: *Aufgaben → ＋ Abdeckung simulieren* (5–15 minutes
-for 800 m at 25 m), then *Anzeigen*. Sites are added and edited in the map app (layer *Eigene
-Standorte*, ⚙). For fixed-point measurements, frozen predictions and the relay search, see
-[docs/simulation.md](docs/simulation.md).
-
-## Official web client
-
-The official Meshtastic web client can run locally in Docker (Docker Desktop must be running):
-
-```powershell
-docker compose up -d        # then open http://localhost:8080 in Chrome or Edge
-docker compose pull; docker compose up -d   # update
-docker compose down         # stop
-```
-
-In the page choose **New Connection → Serial** and pick your node's port (Web Serial works in
-Chrome and Edge only). While the page is connected, the port is busy for the scripts and the
-map app. The same client is hosted at https://client.meshtastic.org.
-
-## Configuration
-
-`.env` (copy from `.env.example`; not committed):
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `MESHTASTIC_PORT` | auto | serial port, e.g. `COM8` (Windows) or `/dev/ttyACM0` (Linux); used only while it exists, else auto-detection |
-| `MESHPLAY_HOME` | – | home node position as `lat,lon`: map centre, distances, nearest site, tile area |
-| `MESHPLAY_DATA_DIR` | `data` | where logs, exports and simulation data go |
-| `MESHPLAY_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-
-Also configurable:
-
-- **Modem preset:** the simulation, the map app and the walk analyses assume **ShortSlow**
-  (the preset of the author's local mesh) unless a log records the preset or `--preset` is
-  given. Change `DEFAULT_PRESET` in `src/meshplay/config.py` if your mesh uses another one.
-- **Sites:** `data/sim/sites.json`, from [config/sites.example.json](config/sites.example.json)
-  or the map app's sites editor.
-- **Map app layer defaults:** `data/mapapp/layers.json`, from
-  [config/mapapp.example.json](config/mapapp.example.json).
-
-## Project layout and data
-
-```
-src/meshplay/          shared code: device connection, settings, packets, walks, probes
-src/meshplay/sim/      coverage simulation: ITU models, LiDAR scene, link prediction
-src/meshplay/mapapp/   map app server: layers/, tools/, background tasks, sites editor,
-                       messaging, coord/ (coordination mode), tile cache, simulated radio
-webmap/                map app page (HTML, CSS, JavaScript modules, vendor/ libraries and fonts)
-scripts/               command-line tools (see Scripts)
-config/                example configuration
-docs/                  longer documentation
-experiments/           throwaway explorations, one dated folder each (copy _template/)
-tests/                 pytest tests
-data/                  everything local (not committed, see below)
-```
-
-`data/` is never committed; it holds your measurements and everything personal:
-
-| Path | Content |
-|---|---|
-| `data/packets/<date>.jsonl` | every received packet (`listen.py`, map app with `--device`) |
-| `data/probes/<date>.jsonl` | traceroute results of walks |
-| `data/tracks/*.gpx` | phone GPX tracks |
-| `data/maps/` | walk maps from `coverage_map.py` |
-| `data/exports/` | node list exports |
-| `data/sim/` | sites, laser-scan tiles, scenes, predictions, coverage grids ([details](docs/simulation.md#data-not-committed)) |
-| `data/messages.jsonl` | messages sent and received in the map app (`messages-sim.jsonl` with `--simulate`) |
-| `data/coord/` | coordination mode: settings, targets, paths, areas, places, missions, event log |
-| `data/osm/` | road graphs for the coordination mode (from Overpass or `coord_import_osm.py`) |
-| `data/tiles/` | cached OpenStreetMap tiles for offline use |
-| `data/mapapp/` | map app: 3D export per scene, caches, background task logs, layer defaults |
-
-## Troubleshooting
-
-- **"could not open port … PermissionError" (German Windows: "Zugriff verweigert"):** another
-  program holds the serial port — usually the web client in Chrome/Edge (close the tab, not just
-  *Disconnect*), `listen.py`, or a map app started earlier with `--device`. Only one program at a
-  time can use it.
-- **"No Meshtastic device found":** check the cable (some are charge-only). Auto-detection
-  takes the first port of a known board vendor (Seeed, Adafruit, Espressif, WCH, Silicon Labs),
-  else the only other USB serial port; it never takes Bluetooth serial ports ("Standard Serial
-  over Bluetooth link"), and a `MESHTASTIC_PORT` that no longer exists is skipped. Otherwise
-  pick the port in the map app (*Gerät (USB)* lists all ports) or pass `--port`. On Windows the
-  port is listed in Device Manager → Ports (COM & LPT).
-- **Map background blank:** open maps with `--open` (a local web server), not as a file.
-- **3D view empty or "Keine Laserscan-Szene":** create a scene (layer *Laserscan-Szene* →
-  *＋ Neue Szene*, or [3D laser-scan data](#3d-laser-scan-data)). The 3D view also needs WebGL in
-  the browser.
-- **"not available" or "No tiles for this area" (script or scene task):** the area is outside
-  North Rhine-Westphalia, or `MESHPLAY_HOME` / the centre is wrong (latitude first).
-- **The map app doesn't show a change:** reload with Ctrl+F5; after updating the code, restart
-  `mapapp.py`.
-- **A traceroute walk gets no answers:** tracker switched on, same private channel (name and
-  key) on both nodes, same LoRa region and preset, home node connected (map app: *Gerät (USB)*).
-
-## Writing your own code
-
-```python
-from meshplay import connect
-
-with connect() as iface:  # finds the port like the scripts do
-    print(iface.getMyNodeInfo())
-    iface.sendText("hello")
-```
-
-`iface` is a `meshtastic.serial_interface.SerialInterface` from the
-[Meshtastic Python library](https://python.meshtastic.org). For a quick exploration, copy
-`experiments/_template/` to `experiments/<date>-<name>/` (see
-[experiments/README.md](experiments/README.md)).
-
-## Development
-
-```powershell
-pytest                 # unit tests, no device needed
-pytest -m hardware     # tests that talk to a connected device
-pytest -m data         # regression test against a local reference scene (data/sim/reference/)
-ruff check .           # lint
-ruff format .          # format
-```
-
-After adding or upgrading dependencies in `pyproject.toml`, refresh the lock file:
-
-```powershell
-python -m pip freeze --exclude-editable | Out-File -Encoding utf8 requirements.lock
-```
-
-## Credits and data sources
+| [Setup](docs/setup.md) | requirements, installation options, configuration, your data, troubleshooting |
+| [Map app](docs/mapapp.md) | tour of every view and feature, offline use, adding layers, tasks and translations |
+| [Coverage walks](docs/walks.md) | measuring where your node reaches, step by step |
+| [Laser-scan scenes](docs/scenes.md) | which data, how to build a scene, by map or by script |
+| [Simulation](docs/simulation.md) | the propagation models, the pipeline and how they score |
+| [Coordination](docs/coordination-design.md) | design and radio protocol of the coordination mode |
+| [Scripts](docs/scripts.md) | every command-line tool, and using the code from Python |
+
+## Contributing
+
+Issues and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) has the development
+setup and the few ground rules (above all: no personal data in the repository, and no
+transmitting while testing). Open ideas are in [docs/backlog.md](docs/backlog.md).
+
+## Credits
 
 - The simulation, the fixed-point logger and the 3D viewer are ported from the *Mesh Bonn*
-  project (state 2026-09-20); what was changed and why is in
-  [docs/simulation.md](docs/simulation.md#review-of-the-original-code).
+  project; what changed and why is in [docs/simulation.md](docs/simulation.md#review-of-the-original-code).
 - ITU-R P.1812-6 is a Python translation of the ITU-R WP 3K reference implementation
   ([eeveetza/p1812](https://github.com/eeveetza/p1812)) and reproduces its 63 official
-  validation cases; it keeps the ITU licence.
-- Laser-scan data: Geobasis NRW, *3D-Messdaten Laserscanning*,
-  [dl-de/zero-2-0](https://www.govdata.de/dl-de/zero-2-0).
-- Map tiles: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
+  validation cases.
+- Elevation data: Geobasis NRW ([dl-de/zero-2-0](https://www.govdata.de/dl-de/zero-2-0)),
+  LGLN Lower Saxony and LVermGeo Schleswig-Holstein (CC BY 4.0).
+- Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors; overview
+  map from [Natural Earth](https://www.naturalearthdata.com) (public domain).
 - [Meshtastic](https://meshtastic.org) and its Python library; Leaflet, three.js, proj4js.
 
 ## Licence
 
-[MIT](LICENSE), with one exception: `src/meshplay/sim/p1812.py`, a Python translation of the
-ITU-R P.1812 reference implementation, stays under the ITU's licence
-([LICENSE-ITU-P1812.txt](LICENSE-ITU-P1812.txt)). The data you download (laser scan, map tiles)
-keeps its own licence (see above). Contributions and forks are welcome; for coding agents, the entry
-point is [CLAUDE.md](CLAUDE.md).
+[MIT](LICENSE), with one exception: `src/meshplay/sim/p1812.py` stays under the ITU's licence
+([LICENSE-ITU-P1812.txt](LICENSE-ITU-P1812.txt)). Downloaded data (elevation, map tiles) keeps
+its own licence.

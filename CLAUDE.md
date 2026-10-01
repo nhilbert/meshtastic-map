@@ -1,8 +1,10 @@
 # CLAUDE.md
 
 Entry point for coding agents working in this repository. Read this first, then the doc for the
-area you touch: [README.md](README.md) (setup, scripts, walks), [docs/mapapp.md](docs/mapapp.md)
-(map app), [docs/simulation.md](docs/simulation.md) (propagation models). Open work:
+area you touch: [README.md](README.md) (overview), [docs/setup.md](docs/setup.md) (install,
+config, data, troubleshooting), [docs/scripts.md](docs/scripts.md), [docs/walks.md](docs/walks.md),
+[docs/scenes.md](docs/scenes.md) (laser-scan scenes), [docs/mapapp.md](docs/mapapp.md) (map app),
+[docs/simulation.md](docs/simulation.md) (propagation models), [CONTRIBUTING.md](CONTRIBUTING.md). Open work:
 [docs/backlog.md](docs/backlog.md).
 
 ## What this is

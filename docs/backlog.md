@@ -1,7 +1,7 @@
 # Backlog
 
 Open work, roughly by value. Background for the elevation items: the research of 2026-10-01 on
-which states publish what (summarised in the README, section "3D laser-scan data", and in
+which states publish what (summarised in [scenes.md](scenes.md), and in
 `src/meshplay/sim/sources/`).
 
 ## Elevation data and scenes

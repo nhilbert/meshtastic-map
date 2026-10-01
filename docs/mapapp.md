@@ -10,7 +10,7 @@ python scripts/mapapp.py --open          # http://localhost:8770
 
 The map app needs the simulation extras (`pip install -e ".[sim]"`). The 3D view, the link
 calculator and the coverage simulation also need a laser-scan scene (layer *Laserscan-Szene* →
-*＋ Neue Szene*, or `scripts/sim_build_scene.py`, see the README); without one they stay empty
+*＋ Neue Szene*, or `scripts/sim_build_scene.py`, see [scenes.md](scenes.md)); without one they stay empty
 and the rest works. The first use of a new scene exports its 3D data (about a minute,
 `data/mapapp/scene/<name>/`). The page is
 in German, English and French (see [Languages](#languages)).
