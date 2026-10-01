@@ -3,7 +3,7 @@
 import { Map2D } from "./map2d.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
 import { assignTo, hasMissionDetail, initCoord, renderMissionDetail } from "./coord.js";
-import { bindInputs, initialValues, inputsHTML } from "./forms.js";
+import { bindInputs, initialValues, inputsHTML, setFormMap } from "./forms.js";
 import { initMessages, openConversation } from "./messages.js";
 import { initNodeList, renderNodeList } from "./nodelist.js";
 import { LANGS, lang, loadCatalogue, locale, setLang, t, translateStatic } from "./i18n.js";
@@ -442,14 +442,16 @@ function focusNode(id) {
 // ---------------------------------------------------------------- map pick, toasts
 // A one-off click on the map for another tool (placing a site); it wins over the link layer.
 // With multi: clicks collect points until "Fertig" (cb gets the list) or Esc (nothing).
-function pickOnMap(label, cb, { multi = false } = {}) {
+// With count: finished after that many clicks; two make a rectangle (a bounding box).
+function pickOnMap(label, cb, { multi = false, count = 0 } = {}) {
   const fromRail = document.body.classList.contains("rail-open") && matchMedia("(max-width: 700px)").matches;
   const finish = (...args) => { if (fromRail) setRail(true); cb(...args); };
-  S.mapPick = { label, cb: finish, multi, points: [], fromRail };
+  if (count) multi = true;
+  S.mapPick = { label, cb: finish, multi, count, points: [], fromRail };
   setRail(false, false);
   $("#pickBanner").hidden = false;
   $("#pickText").textContent = t("Klick in die Karte: {label}", { label });
-  $("#pickDone").hidden = !multi;
+  $("#pickDone").hidden = !multi || !!count;
   document.body.classList.add("picking");
   $("#pickCancel").focus();
 }
@@ -470,6 +472,7 @@ function mapClick(lat, lon) {
     const pick = S.mapPick;
     if (pick.multi) {
       pick.points.push([lat, lon]); map2d.setTempPath(pick.points);
+      if (pick.count && pick.points.length >= pick.count) { finishMapPick(); return true; }
       $("#pickText").textContent = t("Klick in die Karte: {label} ({n} Punkte)", { label: pick.label, n: pick.points.length });
       return true;
     }
@@ -477,6 +480,14 @@ function mapClick(lat, lon) {
   }
   if (S.pick) { setEndpoint(S.pick, endpointAt(lat, lon, S.pick)); return true; }
   return false;
+}
+
+// The rectangle from the first corner to the mouse while the second one is picked.
+function mapMove(lat, lon) {
+  const pick = S.mapPick;
+  if (!pick || pick.count !== 2 || pick.points.length !== 1) return;
+  const [a, b] = pick.points[0];
+  map2d.setTempPath([[a, b], [a, lon], [lat, lon], [lat, b]]);
 }
 
 // Short notices at the bottom right; errors stay until closed. action: [label, fn]
@@ -650,9 +661,9 @@ function bindUI() {
     $("#headerDevDot").style.background = "var(--bad)";
     return;
   }
-  const center = S.app.home || { lat: 50.7374, lon: 7.0982 };
-  map2d = new Map2D($("#map2d"), center, {
+  map2d = new Map2D($("#map2d"), S.app.home || null, {
     onClick: (lat, lon) => mapClick(lat, lon),
+    onMove: (lat, lon) => mapMove(lat, lon),
     onFeatureAction: (f, which) => {
       if (which === "msg") { openConversation("dm:" + f.properties._node_id); return; }
       if (which === "coord") { assignTo(f.properties._node_id); return; }
@@ -679,6 +690,14 @@ function bindUI() {
     $("#loading .bar").hidden = true;
   }
   initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast });
+  // areas of task forms are picked on the 2D map: the rectangle and preview are drawn there
+  setFormMap({
+    pick: (label, count, cb) => {
+      if (document.body.classList.contains("is3d")) setView("2d");
+      pickOnMap(label, count === 1 ? (lat, lon) => cb([[lat, lon]]) : cb, { count: count > 1 ? count : 0 });
+    },
+    preview: ring => map2d.setPreview(ring),
+  });
   initScenes({ pickOnMap, toast, tempArea: pts => map2d.setTempPath(pts),
     taskStarted: job => { toast(t("Gestartet: {title}", { title: job.title })); pollSoon(); } });
   initNodeList({ store, toast, focusNode, message: id => openConversation("dm:" + id), assign: assignTo,

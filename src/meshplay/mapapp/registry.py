@@ -36,15 +36,16 @@ from meshplay.mapapp.i18n import _
 class Setting:
     name: str
     label: str
-    type: str  # "select", "number", "bool", "text"
+    type: str  # "select", "number", "bool", "text"; "point", "bbox": text picked on the map
     default: Any = None
     options: list | None = None  # [[value, label], ...] for select
     depends_on: str | None = None  # select whose options depend on another setting's value
     options_map: dict | None = None  # {other_value: [[value, label], ...]}
     min: float | None = None
-    max: float | None = None
+    max: float | None = None  # "bbox": the largest side in degrees
     step: float | None = None
     help: str = ""
+    square_km_from: str | None = None  # "point": preview a square, edge [km] from that setting
 
     def to_json(self) -> dict:
         return {k: v for k, v in asdict(self).items() if v is not None and v != ""}

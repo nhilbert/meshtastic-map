@@ -78,7 +78,6 @@
   "Bewuchs": "Végétation",
   "Bewuchs {h} m ü. Grund": "Végétation {h} m au-dessus du sol",
   "Bias und MAE in dB, Bias = Messung − Modell (negativ: Modell zu optimistisch). „80 %“ = Anteil der Messungen im 80-%-Band des Modells. Brier bewertet die vorhergesagte Empfangswahrscheinlichkeit je Zeitfenster (0 = perfekt). Einstellungen im ⚙ der Ebene „Rundgang“.": "Biais et MAE en dB, biais = mesure − modèle (négatif : modèle trop optimiste). « 80 % » = part des mesures dans la bande de 80 % du modèle. Brier évalue la probabilité de réception prévue par créneau (0 = parfait). Réglages sous ⚙ de la couche « Parcours ».",
-  "Bounding Box (Süd, West, Nord, Ost)": "Bounding box (sud, ouest, nord, est)",
   "Bounding Box zu groß: höchstens {deg}° je Seite": "Bounding box trop grande : au plus {deg}° par côté",
   "Bounding Box: Süd < Nord und West < Ost": "Bounding box : sud < nord et ouest < est",
   "Bounding Box: vier Zahlen Süd, West, Nord, Ost": "Bounding box : quatre nombres sud, ouest, nord, est",
@@ -495,7 +494,6 @@
   "Verkehr": "Trafic",
   "Verschieben: Klick in die Karte": "Déplacer : cliquez sur la carte",
   "Verspätung melden ab [min]": "Signaler un retard à partir de [min]",
-  "Vorgabe: 3 km um den Heimstandort, auf ein 1-km-Raster gerundet": "Par défaut : 3 km autour du site de base, arrondi à une grille de 1 km",
   "Vorhergesagte Empfangswahrscheinlichkeit eines Pakets je Modellfamilie (Aufgaben → Abdeckung simulieren, oder scripts/sim_coverage_map.py).": "Probabilité prévue de réception d'un paquet par famille de modèles (Tâches → Simuler la couverture, ou scripts/sim_coverage_map.py).",
   "Vorlage laden: {name}": "Charger le modèle : {name}",
   "Vorlage {name} gespeichert": "Modèle {name} enregistré",
@@ -826,7 +824,6 @@
   "liest Kachel {k}/{n} …": "lit la dalle {k}/{n} …",
   "trennt Gebäude und Bäume …": "sépare bâtiments et arbres …",
   "verwendet": "utilisée",
-  "z. B. 50.94130, 6.95828; Vorschläge: die eigenen Standorte": "p. ex. 50.94130, 6.95828 ; suggestions : vos propres sites",
   "z. B. innenstadt": "p. ex. centre-ville",
   "Alle heruntergeladenen Laserscan-Kacheln löschen ({size})? Die Szenen bleiben; für einen Neubau müssen die Kacheln erneut heruntergeladen werden.": "Supprimer toutes les dalles du scan laser téléchargées ({size}) ? Les scènes restent ; pour en reconstruire une, il faudra télécharger à nouveau les dalles.",
   "Baut aus den Laserscan-Kacheln in data/sim/laz/ die Szene: Gelände, Gebäude und Bäume im 1-m-Raster (3 × 3 km: ein bis zwei Minuten). Die Kacheln lädst du vorher selbst bei Geobasis NRW herunter; welche gebraucht werden, zeigt „＋ Neue Szene“ in der Ebene „Laserscan-Szene“. Fehlende Kacheln werden interpoliert. Nur Nordrhein-Westfalen.": "Construit la scène à partir des dalles du scan laser dans data/sim/laz/ : terrain, bâtiments et arbres sur une grille de 1 m (3 × 3 km : une à deux minutes). Téléchargez d'abord vous-même les dalles chez Geobasis NRW ; « ＋ Nouvelle scène » dans la couche « Scène du scan laser » indique lesquelles sont nécessaires. Les dalles manquantes sont interpolées. Rhénanie-du-Nord-Westphalie uniquement.",
@@ -840,5 +837,13 @@
   "Was fehlt, wird interpoliert.": "Ce qui manque est interpolé.",
   "{n} Kacheln, alle schon da.": "{n} dalles, toutes déjà là.",
   "{n} Kacheln, {have} schon da. Es fehlen {missing} (etwa {size}, frei: {free}):": "{n} dalles, {have} déjà là. Il en manque {missing} (environ {size}, {free} libres) :",
-  "{n} Kacheln, {have} vorhanden, {missing} fehlen (werden interpoliert)": "{n} dalles, {have} présentes, {missing} manquantes (interpolées)"
+  "{n} Kacheln, {have} vorhanden, {missing} fehlen (werden interpoliert)": "{n} dalles, {have} présentes, {missing} manquantes (interpolées)",
+  "Auf der Karte wählen": "Choisir sur la carte",
+  "Auf der Karte wählen oder eintippen, z. B. 50.94130, 6.95828": "Choisir sur la carte ou saisir, p. ex. 50.94130, 6.95828",
+  "Auf der Karte zwei gegenüberliegende Ecken anklicken; Vorgabe: 3 km um den Heimstandort": "Cliquer deux coins opposés sur la carte ; par défaut : 3 km autour du domicile",
+  "Format nicht erkannt": "Format non reconnu",
+  "Gebiet (Süd, West, Nord, Ost)": "Zone (sud, ouest, nord, est)",
+  "zwei gegenüberliegende Ecken von „{label}“": "deux coins opposés de « {label} »",
+  "{w} × {h} km": "{w} × {h} km",
+  "{w} × {h} km: zu groß, höchstens {deg}° je Seite. Weiter hineinzoomen und neu wählen.": "{w} × {h} km : trop grand, au plus {deg}° par côté. Zoomer davantage et choisir à nouveau."
 }

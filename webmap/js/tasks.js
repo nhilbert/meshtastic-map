@@ -1,7 +1,7 @@
 // Background tasks: start forms built from the server's task kinds, the task list with progress,
 // the log view in the inspector, and notifications when a task ends. The server runs the tasks;
 // the page only polls /api/jobs (every 2 s while one is active, else every 8 s).
-import { bindInputs, initialValues, inputsHTML } from "./forms.js";
+import { bindInputs, clearFormPreview, initialValues, inputsHTML } from "./forms.js";
 import { locale, t } from "./i18n.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { showSection } from "./workspace.js";
@@ -50,7 +50,7 @@ async function openForm(kindId) {
 }
 function renderForm() {
   const box = $("#jobForm");
-  if (!T.form) { box.innerHTML = ""; box.hidden = true; return; }
+  if (!T.form) { box.innerHTML = ""; box.hidden = true; clearFormPreview(); return; }
   const { kind, values } = T.form;
   box.hidden = false;
   box.innerHTML = `<div class="hd">${esc(kind.name)}</div>

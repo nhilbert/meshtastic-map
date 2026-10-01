@@ -280,6 +280,20 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
 .leaflet-container{background:var(--bg2);font-family:var(--sans)}
 /* Only base tiles are toned; coverage rasters, marker colors and legends stay faithful. */
 .leaflet-tile-pane{filter:var(--map-filter)}
+/* offline overview map (Natural Earth) under the tiles */
+.bm{fill:none;stroke:var(--ink3);stroke-width:1}
+.bm-country{fill:var(--bg);fill-opacity:1;stroke:var(--line);stroke-width:1.5}
+.bm-country.de{fill:var(--panel-solid);stroke:var(--ink2);stroke-width:2}
+.bm-state{stroke:var(--line);stroke-dasharray:4 3}
+.bm-river{stroke:#5b9bd5;stroke-opacity:.7}
+.bm-lake{fill:#5b9bd5;fill-opacity:.35;stroke:#5b9bd5;stroke-opacity:.6}
+.bm-city i{position:absolute;left:-3px;top:-3px;width:6px;height:6px;border-radius:50%;background:var(--ink2)}
+.bm-city span{position:absolute;left:6px;top:-8px;white-space:nowrap;font-size:11px;color:var(--ink2);text-shadow:0 0 3px var(--bg2)}
+.bm-city.big span{font-size:12px;font-weight:600;color:var(--ink)}
+.bm-far .bm-city:not(.big){display:none}
+.pickfield{display:flex;gap:6px}
+.pickfield input{flex:1;min-width:0}
+.pickfield .btn{white-space:nowrap}
 .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel-solid);color:var(--ink)}
 .leaflet-popup-content-wrapper{border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}
 .leaflet-container a.leaflet-popup-close-button{color:var(--ink3)}

@@ -78,7 +78,6 @@
   "Bewuchs": "Vegetation",
   "Bewuchs {h} m ü. Grund": "Vegetation {h} m above ground",
   "Bias und MAE in dB, Bias = Messung − Modell (negativ: Modell zu optimistisch). „80 %“ = Anteil der Messungen im 80-%-Band des Modells. Brier bewertet die vorhergesagte Empfangswahrscheinlichkeit je Zeitfenster (0 = perfekt). Einstellungen im ⚙ der Ebene „Rundgang“.": "Bias and MAE in dB, bias = measurement − model (negative: model too optimistic). “80 %” = share of measurements within the model's 80 % band. Brier scores the predicted reception probability per time slot (0 = perfect). Settings under ⚙ of the layer “Walk”.",
-  "Bounding Box (Süd, West, Nord, Ost)": "Bounding box (south, west, north, east)",
   "Bounding Box zu groß: höchstens {deg}° je Seite": "Bounding box too large: at most {deg}° per side",
   "Bounding Box: Süd < Nord und West < Ost": "Bounding box: south < north and west < east",
   "Bounding Box: vier Zahlen Süd, West, Nord, Ost": "Bounding box: four numbers south, west, north, east",
@@ -495,7 +494,6 @@
   "Verkehr": "Traffic",
   "Verschieben: Klick in die Karte": "Move: click on the map",
   "Verspätung melden ab [min]": "Report a delay from [min]",
-  "Vorgabe: 3 km um den Heimstandort, auf ein 1-km-Raster gerundet": "Default: 3 km around the home site, rounded to a 1 km grid",
   "Vorhergesagte Empfangswahrscheinlichkeit eines Pakets je Modellfamilie (Aufgaben → Abdeckung simulieren, oder scripts/sim_coverage_map.py).": "Predicted probability that a packet is received, per model family (Tasks → Simulate coverage, or scripts/sim_coverage_map.py).",
   "Vorlage laden: {name}": "Load template: {name}",
   "Vorlage {name} gespeichert": "Template {name} saved",
@@ -826,7 +824,6 @@
   "liest Kachel {k}/{n} …": "reading tile {k}/{n} …",
   "trennt Gebäude und Bäume …": "separating buildings and trees …",
   "verwendet": "in use",
-  "z. B. 50.94130, 6.95828; Vorschläge: die eigenen Standorte": "e.g. 50.94130, 6.95828; suggestions: your own sites",
   "z. B. innenstadt": "e.g. downtown",
   "Alle heruntergeladenen Laserscan-Kacheln löschen ({size})? Die Szenen bleiben; für einen Neubau müssen die Kacheln erneut heruntergeladen werden.": "Delete all downloaded laser-scan tiles ({size})? The scenes stay; to rebuild one, the tiles have to be downloaded again.",
   "Baut aus den Laserscan-Kacheln in data/sim/laz/ die Szene: Gelände, Gebäude und Bäume im 1-m-Raster (3 × 3 km: ein bis zwei Minuten). Die Kacheln lädst du vorher selbst bei Geobasis NRW herunter; welche gebraucht werden, zeigt „＋ Neue Szene“ in der Ebene „Laserscan-Szene“. Fehlende Kacheln werden interpoliert. Nur Nordrhein-Westfalen.": "Builds the scene from the laser-scan tiles in data/sim/laz/: terrain, buildings and trees on a 1 m grid (3 × 3 km: one to two minutes). Download the tiles yourself from Geobasis NRW first; “＋ New scene” in the layer “Laser-scan scene” shows which ones are needed. Missing tiles are interpolated. North Rhine-Westphalia only.",
@@ -840,5 +837,13 @@
   "Was fehlt, wird interpoliert.": "Whatever is missing gets interpolated.",
   "{n} Kacheln, alle schon da.": "{n} tiles, all already there.",
   "{n} Kacheln, {have} schon da. Es fehlen {missing} (etwa {size}, frei: {free}):": "{n} tiles, {have} already there. Missing: {missing} (about {size}, {free} free):",
-  "{n} Kacheln, {have} vorhanden, {missing} fehlen (werden interpoliert)": "{n} tiles, {have} present, {missing} missing (interpolated)"
+  "{n} Kacheln, {have} vorhanden, {missing} fehlen (werden interpoliert)": "{n} tiles, {have} present, {missing} missing (interpolated)",
+  "Auf der Karte wählen": "Pick on the map",
+  "Auf der Karte wählen oder eintippen, z. B. 50.94130, 6.95828": "Pick on the map or type, e.g. 50.94130, 6.95828",
+  "Auf der Karte zwei gegenüberliegende Ecken anklicken; Vorgabe: 3 km um den Heimstandort": "Click two opposite corners on the map; default: 3 km around the home position",
+  "Format nicht erkannt": "Format not recognised",
+  "Gebiet (Süd, West, Nord, Ost)": "Area (south, west, north, east)",
+  "zwei gegenüberliegende Ecken von „{label}“": "two opposite corners of “{label}”",
+  "{w} × {h} km": "{w} × {h} km",
+  "{w} × {h} km: zu groß, höchstens {deg}° je Seite. Weiter hineinzoomen und neu wählen.": "{w} × {h} km: too large, at most {deg}° per side. Zoom in further and pick again."
 }

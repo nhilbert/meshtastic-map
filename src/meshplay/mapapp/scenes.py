@@ -207,10 +207,11 @@ class SceneBuild(JobKind):
             Setting(
                 "center",
                 _("Mitte (Breite, Länge)"),
-                "text",
+                "point",
                 default_center(ctx),
                 options=options,
-                help=_("z. B. 50.94130, 6.95828; Vorschläge: die eigenen Standorte"),
+                help=_("Auf der Karte wählen oder eintippen, z. B. 50.94130, 6.95828"),
+                square_km_from="size",
             ),
             Setting(
                 "size",

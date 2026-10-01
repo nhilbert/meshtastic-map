@@ -1,12 +1,15 @@
 // 2D view: Leaflet with OpenStreetMap. Draws layer payloads and the current link.
 import { t } from "./i18n.js";
 import { badgeHTML } from "./icons.js";
-import { featureHTML, fmt } from "./util.js";
+import { esc, featureHTML, fmt } from "./util.js";
 
 export class Map2D {
   constructor(el, center, handlers) {
-    this.h = handlers;          // { onClick(lat, lon), onFeatureAction(feature, "a"|"b") }
-    this.map = L.map(el, { zoomControl: true }).setView([center.lat, center.lon], 15);
+    this.h = handlers;          // { onClick(lat, lon), onMove(lat, lon), onFeatureAction(feature, "a"|"b") }
+    this.map = L.map(el, { zoomControl: true });
+    // without a home position: Germany, to find the own area
+    if (center) this.map.setView([center.lat, center.lon], 15); else this.map.setView([51.2, 10.4], 6);
+    this.addBasemap();
     // The server caches the OpenStreetMap tiles under data/tiles/ (works offline for areas
     // seen before); the attribution is OSM's and stays.
     L.tileLayer("tiles/{z}/{x}/{y}.png", {
@@ -16,6 +19,7 @@ export class Map2D {
     this.nodeMarkers = {};  // node ID -> marker, for the node list
     this.linkGroup = L.layerGroup().addTo(this.map);
     this.map.on("click", e => this.h.onClick(e.latlng.lat, e.latlng.lng));
+    this.map.on("mousemove", e => this.h.onMove?.(e.latlng.lat, e.latlng.lng));
     this.popupOpen = false;  // live layers skip their refresh while a popup is open
     this.map.on("popupopen", () => { this.popupOpen = true; });
     this.map.on("popupclose", () => { this.popupOpen = false; });
@@ -96,6 +100,31 @@ export class Map2D {
     if (lat === null || lat === undefined) return;
     this.temp = L.circleMarker([lat, lon], { radius: 9, color: "#00707f", weight: 3, fillColor: "#2cc4d6",
       fillOpacity: 0.6, dashArray: "3 3", bubblingMouseEvents: false }).addTo(this.map);
+  }
+  // Offline overview under the tiles (Natural Earth, public domain; scripts/make_basemap.py):
+  // borders, states, rivers and cities show where tiles are missing (offline, never viewed).
+  async addBasemap() {
+    let data;
+    try { data = await (await fetch("vendor/basemap/germany.json")).json(); } catch (_) { return; }
+    this.map.createPane("basemap").style.zIndex = 150;  // below the tiles (200)
+    L.geoJSON(data, {
+      pane: "basemap", interactive: false,
+      style: f => ({ className: `bm bm-${f.properties.k}${f.properties.de ? " de" : ""}` }),
+      pointToLayer: (f, ll) => L.marker(ll, { pane: "basemap", interactive: false, icon: L.divIcon({
+        className: `bm-city${f.properties.pop >= 400000 ? " big" : ""}`, iconSize: [0, 0],
+        html: `<i></i><span>${esc(f.properties.name)}</span>` }) }),
+    }).addTo(this.map);
+    const zoom = () => this.map.getContainer().classList.toggle("bm-far", this.map.getZoom() < 8);
+    this.map.on("zoomend", zoom); zoom();
+  }
+  // The area of an open form (point or bounding box), null removes it.
+  setPreview(ring) {
+    if (this.preview) { this.map.removeLayer(this.preview); this.preview = null; }
+    if (!ring || !ring.length) return;
+    this.preview = ring.length === 1
+      ? L.circleMarker(ring[0], { radius: 7, color: "#c2410c", weight: 3, fillOpacity: 0.3, interactive: false })
+      : L.polygon(ring, { color: "#c2410c", weight: 2, fillOpacity: 0.08, interactive: false });
+    this.preview.addTo(this.map);
   }
   // The points of a polygon being drawn (multi pick), null removes them.
   setTempPath(points) {

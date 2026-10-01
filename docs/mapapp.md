@@ -344,6 +344,12 @@ Two things need the internet once:
   off grid, pan over the area at the zooms you need. There is no bulk download: OSM's tile
   usage policy asks for that, and the attribution stays on the map.
 
+Under the tiles lies an overview map that needs no internet: borders, the German states,
+larger cities, rivers and lakes from Natural Earth (public domain), 250 KB in
+`webmap/vendor/basemap/germany.json`, built by `scripts/make_basemap.py`. Where tiles are
+missing it still shows where you are, enough to pick the area of a scene or a road graph.
+Without a home position the map starts on Germany.
+
 ## Layers
 
 | Layer | Source | Settings |
@@ -439,7 +445,10 @@ class GatewaysLayer(Layer):
 ```
 
 The page builds the settings form from `settings()` (types `select`, `number`, `bool`, `text`;
-a select can take its options from another setting via `depends_on` / `options_map`) and draws
+a select can take its options from another setting via `depends_on` / `options_map`; `point`
+and `bbox` are text fields with a button to pick them on the map, as `lat, lon` and
+`south, west, north, east`, previewed on the map, with `square_km_from` and `max` for the
+square around a point and the largest side of a box) and draws
 the result on both views. Feature conventions (`_style`, `_title`, `_fields`, `_label`, `_z`,
 `_icon`, `_endpoint`) and raster payloads are documented in `registry.py`. `_icon` draws a badge
 with a symbol (router, tracker, client, sensor, home) and a short text instead of a circle, in

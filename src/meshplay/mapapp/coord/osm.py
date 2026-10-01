@@ -224,10 +224,14 @@ class OsmDownload(JobKind):
         return [
             Setting(
                 "bbox",
-                _("Bounding Box (Süd, West, Nord, Ost)"),
-                "text",
+                _("Gebiet (Süd, West, Nord, Ost)"),
+                "bbox",
                 "" if box is None else ", ".join(f"{v:.2f}" for v in box),
-                help=_("Vorgabe: 3 km um den Heimstandort, auf ein 1-km-Raster gerundet"),
+                max=MAX_SPAN_DEG,  # per side, checked by the page as well
+                help=_(
+                    "Auf der Karte zwei gegenüberliegende Ecken anklicken; Vorgabe: 3 km um den "
+                    "Heimstandort"
+                ),
             ),
             Setting(
                 "name",

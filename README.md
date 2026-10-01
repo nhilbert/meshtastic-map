@@ -141,6 +141,7 @@ they talk to the device (otherwise `MESHTASTIC_PORT` from `.env` or auto-detecti
 | **Map app** | |
 | `mapapp.py` | the browser map app (`--open`, `--device`, `--port 8770`; `--simulate [track.gpx]` for a fake radio) |
 | `coord_import_osm.py` | road graph for the coordination mode from an `.osm` file instead of the Overpass download |
+| `make_basemap.py` | rebuilds the offline overview map (`webmap/vendor/basemap/`) from Natural Earth |
 | **Simulation** | |
 | `sim_fetch_tiles.py` | lists and downloads the NRW laser-scan tiles around home ([details](#3d-laser-scan-data)) |
 | `sim_build_scene.py` | builds a named 3D scene (terrain, buildings, trees) from the tiles; lists and switches scenes |
