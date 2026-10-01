@@ -50,6 +50,8 @@ function registerMapActions() {
     return [m ? showMission(ref.id)
       : { label: t("Ziel zuweisen …"), short: t("Ziel …"), icon: "target", group: G.work, run: () => assignTo(ref.id) }];
   });
+  for (const type of ["target", "site", "place"]) registerActions(type, (ref, f) => C.form && C.form.step === 2
+    ? [{ label: t("Als Wegpunkt hinzufügen"), short: t("Wegpunkt"), icon: "plus", group: G.main, run: () => addFromFeature(f) }] : []);
   registerActions("target", ref => [
     edit(() => inEditor("targets", () => targetAction("edit", ref.id))),
     { label: t("Verschieben"), icon: "move", group: G.work, run: () => targetAction("move", ref.id) },
@@ -435,10 +437,12 @@ function formHTML(d) {
   } else if (f.step === 2) {
     const targets = Object.keys(d.targets || {}).map(n => `<option value="t:${esc(n)}">${esc(n)}</option>`).join("");
     const sites = (C.api.sites() || []).map(s => `<option value="s:${esc(s.name)}">${esc(s.name)}</option>`).join("");
+    const places = (d.places || []).map(p => `<option value="o:${esc(p.id)}">${esc(p.name)}</option>`).join("");
     const templates = Object.keys(d.paths || {}).map(n => `<option value="p:${esc(n)}">${esc(n)}</option>`).join("");
     body = `<div class="wpadd"><button class="btn small" data-form="map">${symbolSVG("pin")}${t("Auf der Karte")}</button>
         <select data-f="add" aria-label="${t("Wegpunkt hinzufügen …")}"><option value="">${t("Hinzufügen …")}</option>
           ${targets ? `<optgroup label="${t("Ziele")}">${targets}</optgroup>` : ""}${sites ? `<optgroup label="${t("Eigene Standorte")}">${sites}</optgroup>` : ""}
+          ${places ? `<optgroup label="${t("Orte")}">${places}</optgroup>` : ""}
           ${templates ? `<optgroup label="${t("Vorlagen")}">${templates}</optgroup>` : ""}</select></div>
       <div class="wplist">${f.path.map((w, i) => wpHTML(w, i, f, d)).join("") || `<p class="note" style="margin:0">${t("Noch kein Wegpunkt.")}</p>`}</div>
       ${f.path.length ? `<button class="lnk" data-form="template">${t("Als Vorlage speichern …")}</button>` : ""}`;
@@ -456,6 +460,27 @@ function formHTML(d) {
   const back = f.step > 1 && !(f.edit && f.step === 2) ? `<button class="btn" data-form="back">${t("Zurück")}</button>` : `<button class="btn" data-form="cancel">${t("Abbrechen")}</button>`;
   return `<div class="jobform" data-mission><div class="hd">${f.edit ? t("Pfad bearbeiten") : t("Neuer Einsatz")}</div>${stepsHTML(f)}
     ${body}<div class="msg" role="alert">${esc(f.msg)}</div><div class="row2">${back}${next}</div></div>`;
+}
+const wp = (name, lat, lon, radius_m = null) => ({ name: name.slice(0, 24), lat, lon, kind: "stop", radius_m, arrive_by: "", hold_until: "" });
+// A waypoint from a map object or a list entry: a target keeps its name and arrival radius, a
+// place and a site their name (a place's radius is where its notice is sent, not an arrival);
+// anything else is a new numbered point at the clicked spot.
+function wpFrom(feature, lat, lon) {
+  const d = C.data || {}, p = (feature && feature.properties) || {}, ref = p._ref || {};
+  const tg = ref.type === "target" && (d.targets || {})[ref.id];
+  if (tg) return wp(ref.id, tg.lat, tg.lon, tg.radius_m);
+  const pl = ref.type === "place" && (d.places || []).find(x => x.id === ref.id);
+  if (pl) return wp(pl.name, pl.lat, pl.lon);
+  if (ref.type === "site" && lat != null) return wp(p._title || ref.id, lat, lon);
+  return wp(`P${C.form.path.length + 1}`, lat, lon);
+}
+function addFromFeature(feature) {
+  const g = feature && feature.geometry, point = g && g.type === "Point";
+  const form = $("#coordBox .jobform[data-mission]");
+  if (form) readForm(form);
+  C.form.path.push(wpFrom(feature, point ? g.coordinates[1] : null, point ? g.coordinates[0] : null));
+  showSection("missions");
+  render();
 }
 function readForm(box) {
   const f = C.form;
@@ -488,21 +513,17 @@ function bindForm(box, d) {
   // each click on the map adds the next waypoint
   form.querySelector("[data-form=map]")?.addEventListener("click", () => {
     readForm(form);
-    C.api.pickOnMap(t("Position des Wegpunkts"), (lat, lon) => {
-      f.path.push({ name: `P${f.path.length + 1}`, lat, lon, kind: "stop", radius_m: null, arrive_by: "", hold_until: "" });
-      render();
-    });
+    C.api.pickOnMap(t("Position des Wegpunkts"), (lat, lon, feature) => { f.path.push(wpFrom(feature, lat, lon)); render(); });
   });
   form.querySelector("[data-f=add]")?.addEventListener("change", e => {
     readForm(form);
     const v = e.target.value; e.target.value = "";
     if (v.startsWith("p:")) f.path = (d.paths[v.slice(2)] || []).map(w => ({ ...w, arrive_by: "", hold_until: "" }));
-    else if (v.startsWith("t:")) {
-      const tg = d.targets[v.slice(2)];
-      f.path.push({ name: v.slice(2), lat: tg.lat, lon: tg.lon, kind: "stop", radius_m: tg.radius_m, arrive_by: "", hold_until: "" });
-    } else if (v.startsWith("s:")) {
+    else if (v.startsWith("t:")) f.path.push(wpFrom({ properties: { _ref: { type: "target", id: v.slice(2) } } }));
+    else if (v.startsWith("o:")) f.path.push(wpFrom({ properties: { _ref: { type: "place", id: v.slice(2) } } }));
+    else if (v.startsWith("s:")) {
       const s = C.api.sites().find(x => x.name === v.slice(2));
-      if (s) f.path.push({ name: s.name, lat: s.lat, lon: s.lon, kind: "stop", radius_m: null, arrive_by: "", hold_until: "" });
+      if (s) f.path.push(wp(s.name, s.lat, s.lon));
     }
     render();
   });
@@ -833,7 +854,7 @@ export async function renderMissionDetail() {
       ${live ? `<div class="mkv">${val("target", esc(stop.name), t("Nächster Halt"))}${val("ruler", `${dist(k.dist_m)} <small>${esc(k.compass || "")}</small>`, t("Distanz"))}
         ${val("clock", a.time + devHTML(a.dev), t("Ankunft"))}${val("antenna", `${k.snr == null ? "–" : fmt(k.snr, 1) + " dB"} <small>${esc(ago(k.position_age_s))}</small>`, t("Signal und letzte Position"), k.stale ? "bad" : "")}</div>` : ""}
     </div>
-    <div class="dtabs" role="tablist">${[["route", t("Route")], ["radio", t("Funk") + ` <span class="count">${radioCount}</span>`], ["more", t("Details")]].map(([id, label]) =>
+    <div class="dtabs" role="tablist">${[["route", t("Route")], ["radio", t("Funk") + ` <span class="count" title="${esc(t("{n} Funknachrichten", { n: radioCount }))}">${radioCount}</span>`], ["more", t("Details")]].map(([id, label]) =>
       `<button class="dtab ${tab === id ? "on" : ""}" role="tab" aria-selected="${tab === id}" data-dtab="${id}">${label}</button>`).join("")}</div>
     <div class="sec">${tab === "route" ? routeHTML(d) : tab === "radio" ? radioHTML(d) : detailsHTML(d)}</div>`;
   const box = $("#t_coord");

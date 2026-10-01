@@ -6,7 +6,7 @@ import { esc, featureHTML, fmt } from "./util.js";
 
 export class Map2D {
   constructor(el, center, handlers) {
-    this.h = handlers;          // { onClick(lat, lon), onMove(lat, lon), onSelect(feature) }
+    this.h = handlers;          // { onClick(lat, lon), onMove(lat, lon), onSelect(feature), featurePick(feature, latlng) }
     this.map = L.map(el, { zoomControl: true });
     // without a home position: Germany, to find the own area
     if (center) this.map.setView([center.lat, center.lon], 15); else this.map.setView([51.2, 10.4], 6);
@@ -69,8 +69,12 @@ export class Map2D {
           const p = f.properties;
           if (p._node_id) this.nodeMarkers[p._node_id] = lyr;
           if (p._label) lyr.bindTooltip(p._label, { permanent: true, direction: "right", className: "lbl", offset: [6, 0] });
+          // while another tool waits for a map click, a click on an object goes to that tool
+          // (registered before the popup's own click handler, which then shows nothing)
+          lyr.on("click", e => { if (this.h.featurePick?.(f, e.latlng)) this.pickedAt = Date.now(); });
           // built on every opening: the actions depend on the moment (device connected, mission)
           if (p._title || p._fields) lyr.bindPopup(() => {
+            if (Date.now() - (this.pickedAt || 0) < 300) { setTimeout(() => this.map.closePopup()); return document.createElement("div"); }
             const el = document.createElement("div");
             el.innerHTML = featureHTML(p);
             const acts = actionsFor(p._ref, f), box = el.querySelector(".acts");

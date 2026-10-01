@@ -888,5 +888,8 @@
   "geplant bis {time}": "prévu avant {time}",
   "wartet auf das Gerät": "attend l'appareil",
   "zugewiesen um": "affectée à",
-  "übersprungen": "sauté"
+  "übersprungen": "sauté",
+  "{n} Funknachrichten": "{n} messages radio",
+  "Als Wegpunkt hinzufügen": "Ajouter comme point de passage",
+  "Wegpunkt": "Point de passage"
 }

@@ -888,5 +888,8 @@
   "geplant bis {time}": "planned by {time}",
   "wartet auf das Gerät": "waiting for the device",
   "zugewiesen um": "assigned at",
-  "übersprungen": "skipped"
+  "übersprungen": "skipped",
+  "{n} Funknachrichten": "{n} radio messages",
+  "Als Wegpunkt hinzufügen": "Add as waypoint",
+  "Wegpunkt": "Waypoint"
 }

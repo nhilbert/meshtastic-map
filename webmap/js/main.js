@@ -518,7 +518,7 @@ function finishMapPick() {
   clearMapPick(false);
   if (pick.multi) pick.cb(pick.points);
 }
-function mapClick(lat, lon) {
+function mapClick(lat, lon, feature = null) {
   if (S.mapPick) {
     const pick = S.mapPick;
     if (pick.multi) {
@@ -527,10 +527,17 @@ function mapClick(lat, lon) {
       $("#pickText").textContent = t("Klick in die Karte: {label} ({n} Punkte)", { label: pick.label, n: pick.points.length });
       return true;
     }
-    clearMapPick(false); pick.cb(lat, lon); return true;
+    clearMapPick(false); pick.cb(lat, lon, feature); return true;
   }
   if (S.pick) { setEndpoint(S.pick, endpointAt(lat, lon, S.pick)); return true; }
   return false;
+}
+// A click on a map object while a pick waits: a point object gives its own position, an area
+// the clicked spot; the tool gets the object too (a waypoint takes a target's name).
+function featurePick(f, ll) {
+  if (!S.mapPick) return false;
+  const point = f.geometry && f.geometry.type === "Point";
+  return mapClick(point ? f.geometry.coordinates[1] : ll.lat, point ? f.geometry.coordinates[0] : ll.lng, f);
 }
 
 // The rectangle from the first corner to the mouse while the second one is picked.
@@ -719,6 +726,7 @@ function bindUI() {
   }
   map2d = new Map2D($("#map2d"), S.app.home || null, {
     onClick: (lat, lon) => mapClick(lat, lon),
+    featurePick: (f, ll) => featurePick(f, ll),
     onMove: (lat, lon) => mapMove(lat, lon),
     onSelect: f => { S.sel = f; renderSelection(); updateInspector(); },
   });

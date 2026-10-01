@@ -534,6 +534,9 @@ details.manual[open]{display:flex;flex-direction:column;gap:6px}
 .dtab{all:unset;padding:8px 4px;margin-right:10px;font-size:12.5px;color:var(--ink3);border-bottom:2px solid transparent;cursor:pointer;display:flex;gap:6px;align-items:center}
 .dtab.on{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}
 .dtab:focus-visible{outline:2px solid var(--accent)}
+.dtab .count{min-width:16px;height:16px;padding:0 5px;box-sizing:border-box;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
+  font:600 10px var(--mono);background:var(--line);color:var(--ink2)}
+.dtab.on .count{background:var(--accent);color:var(--accent-ink)}
 /* the route as a timeline */
 .tl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 .tl li{position:relative;display:grid;grid-template-columns:20px minmax(0,1fr);column-gap:10px;padding-bottom:14px}
