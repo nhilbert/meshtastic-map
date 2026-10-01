@@ -39,7 +39,8 @@ class NodeRequests:
         with self._lock:
             for kinds in self._items.values():
                 for item in kinds.values():
-                    if item["state"] == "läuft" and now > item["at"] + item["wait_s"]:
+                    # >=: on Windows time.time() can return the same value twice in a row
+                    if item["state"] == "läuft" and now >= item["at"] + item["wait_s"]:
                         item.update(state="keine Antwort", done=now)
                         expired.append(item.get("packet"))
             out = {n: {k: dict(v) for k, v in kinds.items()} for n, kinds in self._items.items()}
