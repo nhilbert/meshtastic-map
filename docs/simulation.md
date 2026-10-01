@@ -12,7 +12,7 @@ project's notes, kept locally in `data/sim/reference/2026-09-20/` (`PROJEKT.md`,
 ## Pipeline
 
 ```
-NRW laser-scan tiles (LAZ)     sim_fetch_tiles.py
+elevation tiles (per state)    sim_fetch_tiles.py, sim_build_scene.py --download
         │
         ▼
 scene: terrain, surface,       sim_build_scene.py      data/sim/scenes/<name>/
@@ -169,6 +169,7 @@ What was carried over unchanged, what was changed, and why.
 |---|---|
 | `data/sim/sites.json` | sites and scenarios |
 | `data/sim/laz/` | NRW laser-scan tiles (`sim_fetch_tiles.py --download`) |
+| `data/sim/tiles/<source>/` | tiles of the other states, and Schleswig-Holstein's tile indexes |
 | `data/sim/reference/2026-09-20/` | Mesh Bonn notes, coordinates, frozen outputs, PDFs |
 | `data/sim/scenes/<name>/` | scene rasters (`sim_build_scene.py` or the map app); `active.txt` names the one in use |
 | `data/sim/predictions/` | frozen predictions |

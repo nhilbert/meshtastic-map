@@ -157,6 +157,27 @@ def test_coverage_task_runs_on_the_chosen_scene_not_the_active_one(ctx, monkeypa
     assert any("Scene: dom" in line for line in map(str, job.log))
 
 
+def test_coverage_radius_is_cut_to_the_scene(ctx):
+    from meshplay.mapapp.jobs import scene_reach
+    from meshplay.sim.sites import to_utm
+
+    (ctx.sim_dir).mkdir(parents=True, exist_ok=True)
+    (ctx.sim_dir / "sites.json").write_text(
+        '{"sites": {"DOM": {"lat": 50.9413, "lon": 6.95828, "height_m": [3, 4], "clutter_m": 10}}}',
+        encoding="utf-8",
+    )
+    x, y = to_utm(CATHEDRAL[1], CATHEDRAL[0])
+    around = (round(x) - 300.0, round(y) - 300.0, round(x) + 300.0, round(y) + 300.0)
+    small_scene(around).save(scenes.scenes_dir(ctx.sim_dir) / "dom", {"name": "dom"})
+    assert scene_reach((x, y), around) == 450  # the corner is 424 m away
+    kind = JobManager(ctx).kinds["coverage"]
+    radius = next(s for s in kind.settings(ctx) if s.name == "radius")
+    assert radius.default == 450  # fits the scene in use instead of 800 m
+    params = {"site": "DOM", "scene": "dom", "radius": 2000.0}
+    kind.validate(ctx, params)
+    assert (params["radius"], params["radius_asked"]) == (450.0, 2000.0)
+
+
 # ---------------------------------------------------------------- download (script) and build
 class TileServer:
     """Serves {name: bytes} with HEAD, 404 and Range requests, like the Geobasis server."""
@@ -203,22 +224,21 @@ class TileServer:
         self.httpd.shutdown()
 
 
-def test_download_continues_a_part_file(tmp_path, monkeypatch):
+def test_download_continues_a_part_file(tmp_path):
     from meshplay.sim import lidar
 
     # small: some Windows network filters (seen with Norton) drop the end of loopback sends
     data = bytes(range(256)) * 40
     server = TileServer({"t.laz": data})
-    monkeypatch.setattr(lidar, "TILE_URL", server.url)
     try:
         (tmp_path / "t.part").write_bytes(data[:1000])
         seen = []
-        path = lidar.download_tile("t.laz", tmp_path, lambda done, total: seen.append(total))
+        path = lidar.download_url(
+            server.url + "t.laz", tmp_path / "t.laz", lambda done, total: seen.append(total)
+        )
         assert path.read_bytes() == data
         assert ("GET", "t.laz", "bytes=1000-") in server.requests
         assert seen[-1] == len(data)
-        assert lidar.remote_size("t.laz") == len(data)
-        assert lidar.remote_size("other.laz") is None
     finally:
         server.close()
 
@@ -247,13 +267,6 @@ def synthetic_tile(e_km: int, n_km: int) -> bytes:
 
 
 def test_scene_task_builds_from_local_tiles_and_activates(ctx, monkeypatch):
-    from meshplay.sim import lidar
-
-    def no_network(*args, **kwargs):
-        raise AssertionError("the app must not download")
-
-    monkeypatch.setattr(lidar, "download_tile", no_network)
-    monkeypatch.setattr(lidar, "remote_size", no_network)
     e_km, n_km = 356, 5645
     lon, lat = to_lonlat(e_km * 1000 + 500, n_km * 1000 + 500)
     # without "download" ticked the task never fetches anything
@@ -273,6 +286,7 @@ def test_scene_task_builds_from_local_tiles_and_activates(ctx, monkeypatch):
     wait_for(lambda: job.state in (DONE, FAILED), timeout=240)
     assert job.state == DONE, (job.error, list(job.log)[-8:])
     assert job.result == {"name": "dom", "active": True}
+    assert not any("--download" in str(line) for line in job.log)  # not ticked: no download
     assert ctx.scene_name == "dom"
     s = ctx.scene
     assert s.shape == (1000, 1000)

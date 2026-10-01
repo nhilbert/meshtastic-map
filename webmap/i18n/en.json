@@ -871,5 +871,7 @@
   "prüft die Kacheln …": "checking the tiles …",
   "{n} Kacheln, {have} schon da. Es fehlen {files} Dateien, etwa {size} (frei: {free}).": "{n} tiles, {have} already here. {files} files are missing, about {size} (free: {free}).",
   "Über {interface}; ein abgebrochener Download macht beim nächsten Mal weiter.": "Through {interface}; an interrupted download continues next time.",
-  "{n} Kacheln, {have} vorhanden; fehlende Dateien: {missing} (etwa {mb} MB)": "{n} tiles, {have} here; missing files: {missing} (about {mb} MB)"
+  "{n} Kacheln, {have} vorhanden; fehlende Dateien: {missing} (etwa {mb} MB)": "{n} tiles, {have} here; missing files: {missing} (about {mb} MB)",
+  "Radius von {asked} m auf {radius} m gekürzt: weiter reicht die Szene „{scene}“ nicht.": "Radius cut from {asked} m to {radius} m: the scene “{scene}” doesn't reach further.",
+  "Reicht er über die Szene hinaus, wird er beim Start auf die Szene gekürzt.": "If it reaches beyond the scene, it is cut to the scene when the task starts."
 }

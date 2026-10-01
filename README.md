@@ -144,7 +144,7 @@ they talk to the device (otherwise `MESHTASTIC_PORT` from `.env` or auto-detecti
 | `coord_import_osm.py` | road graph for the coordination mode from an `.osm` file instead of the Overpass download |
 | `make_basemap.py` | rebuilds the offline overview map (`webmap/vendor/basemap/`) from Natural Earth |
 | **Simulation** | |
-| `sim_fetch_tiles.py` | lists and downloads the NRW laser-scan tiles around home ([details](#3d-laser-scan-data)) |
+| `sim_fetch_tiles.py` | lists and downloads the elevation tiles of an area (NRW, Lower Saxony, Schleswig-Holstein; [details](#3d-laser-scan-data)) |
 | `sim_build_scene.py` | builds a named 3D scene (terrain, buildings, trees) for NRW, Lower Saxony or Schleswig-Holstein, `--download` fetches the tiles; lists and switches scenes |
 | `sim_coverage_map.py` | predicted coverage around a site, per model |
 | `sim_compare_walk.py` | scores a walk against the models |
@@ -301,16 +301,18 @@ it.
 
 ```powershell
 python scripts/sim_fetch_tiles.py --radius 1500              # list: names, sizes, what you have
-python scripts/sim_fetch_tiles.py --radius 1500 --download   # download into data/sim/laz/
+python scripts/sim_fetch_tiles.py --radius 1500 --download   # download (data/sim/laz/ or tiles/)
 python scripts/sim_build_scene.py --name home --radius 1500  # build data/sim/scenes/home/
 python scripts/sim_build_scene.py --name kiel --center 54.315,10.1315 --size 3000 --download
 python scripts/sim_build_scene.py --list                     # scenes; * = the one in use
 python scripts/sim_build_scene.py --use home                 # switch
 ```
 
-The list marks tiles you already have and tiles the server doesn't have (outside NRW). The
-download skips tiles that are present and continues a leftover `*.part` file. It relies on the
-server's current folder and file names; if it fails, download by hand (below).
+The list shows each file with its link and marks those you already have; tiles the source
+doesn't offer (outside its state) are named as such. The download skips files that are present,
+continues a leftover `*.part` file and reports a file the server doesn't have instead of
+stopping. `sim_build_scene.py --download` fetches and builds in one go. If a server changed,
+download by hand (below).
 
 The build reads the tiles and writes `data/sim/scenes/<name>/` (`scene_raw.npz`,
 `scene_cls2.npz`, `scene_meta.json`): terrain from the ground points, surface from the points

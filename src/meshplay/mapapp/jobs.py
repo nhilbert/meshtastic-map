@@ -333,6 +333,15 @@ PRESETS = [
 ]
 
 
+def scene_reach(xy, bbox) -> int:
+    """Radius from xy to the scene's farthest corner, up to the next 50 m: beyond it the
+    simulation has no data, so a larger radius only adds empty cells."""
+    d = max(
+        math.hypot(cx - xy[0], cy - xy[1]) for cx in (bbox[0], bbox[2]) for cy in (bbox[1], bbox[3])
+    )
+    return max(100, math.ceil(d / 50) * 50)
+
+
 class CoverageSim(JobKind):
     id = "coverage"
     name = N_("Abdeckung simulieren")
@@ -351,6 +360,14 @@ class CoverageSim(JobKind):
             home = nearest_site(ctx.sites, *ctx.settings.home)
         from meshplay.sim import scenes
 
+        radius = 800  # about 10-15 minutes at 25 m
+        if home in ctx.sites and ctx.scene_name:
+            radius = min(
+                radius,
+                scene_reach(
+                    ctx.sites[home]["utm"], scenes.meta(ctx.sim_dir, ctx.scene_name)["bbox"]
+                ),
+            )
         return [
             Setting("site", _("Standort"), "select", home, options=sites),
             Setting(
@@ -370,7 +387,18 @@ class CoverageSim(JobKind):
             Setting(
                 "preset", _("Preset"), "select", DEFAULT_PRESET, options=[[p, p] for p in PRESETS]
             ),
-            Setting("radius", _("Radius [m]"), "number", 800, min=100, max=3000, step=50),
+            Setting(
+                "radius",
+                _("Radius [m]"),
+                "number",
+                radius,
+                min=100,
+                max=3000,
+                step=50,
+                help=_(
+                    "Reicht er über die Szene hinaus, wird er beim Start auf die Szene gekürzt."
+                ),
+            ),
             Setting("step", _("Raster [m]"), "number", 25, min=5, max=100, step=5),
             Setting("draws", _("Ziehungen je Zelle"), "number", 600, min=100, max=4000, step=100),
             Setting("leafless", _("Bäume ohne Laub (Winter)"), "bool", False),
@@ -400,6 +428,10 @@ class CoverageSim(JobKind):
                     name=params["scene"],
                 )
             )
+        reach = scene_reach((x, y), b)
+        if params["radius"] > reach:
+            params["radius_asked"] = params["radius"]
+            params["radius"] = float(reach)
 
     def title(self, params: dict) -> L:
         indoor = L(dict(INDOOR)[params["site_indoor"]])
@@ -412,6 +444,16 @@ class CoverageSim(JobKind):
 
     def run(self, ctx: Context, job: Job) -> None:
         p = job.params
+        if p.get("radius_asked"):
+            job.add_log(
+                _(
+                    "Radius von {asked} m auf {radius} m gekürzt: weiter reicht die "
+                    "Szene „{scene}“ nicht.",
+                    asked=f"{p['radius_asked']:g}",
+                    radius=f"{p['radius']:g}",
+                    scene=p["scene"],
+                )
+            )
         args = [
             "scripts/sim_coverage_map.py",
             "--site",

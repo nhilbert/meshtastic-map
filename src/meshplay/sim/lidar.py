@@ -1,5 +1,4 @@
-"""Downloads of elevation tiles: the NRW laser-scan tiles and, through download_url, the files
-of the other sources (meshplay.sim.sources).
+"""Downloads of elevation tiles for the sources in meshplay.sim.sources.
 
 A download goes to <file>.part first and continues where it stopped (HTTP Range), so an
 interrupted or cancelled download costs nothing; a server that ignores the range starts over.
@@ -11,27 +10,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from meshplay.sim.scene import TILE_URL
-
 CHUNK = 1 << 20
 USER_AGENT = "meshplay/0.1 (https://github.com/nhilbert/meshtastic-map)"
-
-
-def remote_size(name: str, timeout: float = 30) -> int | None:
-    """Size of a tile on the server in bytes, or None if the server doesn't have it."""
-    req = urllib.request.Request(TILE_URL + name, method="HEAD")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return int(r.headers.get("Content-Length", 0))
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None
-        raise
-
-
-def download_tile(name: str, laz_dir: Path, on_progress=None, timeout: float = 60) -> Path:
-    """Download one NRW tile into laz_dir (resuming a .part file); returns the path."""
-    return download_url(TILE_URL + name, Path(laz_dir) / name, on_progress, timeout)
 
 
 def download_url(url: str, target: Path, on_progress=None, timeout: float = 60) -> Path:

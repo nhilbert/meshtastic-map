@@ -871,5 +871,7 @@
   "prüft die Kacheln …": "vérifie les tuiles …",
   "{n} Kacheln, {have} schon da. Es fehlen {files} Dateien, etwa {size} (frei: {free}).": "{n} tuiles, {have} déjà présentes. Il manque {files} fichiers, environ {size} (libre : {free}).",
   "Über {interface}; ein abgebrochener Download macht beim nächsten Mal weiter.": "Via {interface} ; un téléchargement interrompu reprend la fois suivante.",
-  "{n} Kacheln, {have} vorhanden; fehlende Dateien: {missing} (etwa {mb} MB)": "{n} tuiles, {have} présentes ; fichiers manquants : {missing} (environ {mb} Mo)"
+  "{n} Kacheln, {have} vorhanden; fehlende Dateien: {missing} (etwa {mb} MB)": "{n} tuiles, {have} présentes ; fichiers manquants : {missing} (environ {mb} Mo)",
+  "Radius von {asked} m auf {radius} m gekürzt: weiter reicht die Szene „{scene}“ nicht.": "Rayon réduit de {asked} m à {radius} m : la scène « {scene} » ne va pas plus loin.",
+  "Reicht er über die Szene hinaus, wird er beim Start auf die Szene gekürzt.": "S'il dépasse la scène, il est réduit à la scène au démarrage."
 }
