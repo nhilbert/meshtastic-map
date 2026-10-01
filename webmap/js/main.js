@@ -1,7 +1,7 @@
 // Wiring: layer panel (settings forms from the server's declarations), the link layer (A/B
 // endpoints, computed in the browser session), the inspector on the right.
 import { Map2D } from "./map2d.js";
-import { G, actionsFor, openMenu, registerActions } from "./actions.js";
+import { G, actionsFor, bindToolbar, openMenu, registerActions, toolbarHTML } from "./actions.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
 import { assignTo, hasMissionDetail, initCoord, renderMissionDetail } from "./coord.js";
 import { bindInputs, initialValues, inputsHTML, setFormMap } from "./forms.js";
@@ -11,9 +11,9 @@ import { LANGS, lang, loadCatalogue, locale, setLang, t, translateStatic } from 
 import { renderLink, renderWalk } from "./panels.js";
 import { initScenes, openNewScene, renderScenes } from "./scenes.js";
 import { initSites, renderSites } from "./sites.js";
-import { initTasks, pollSoon, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
-import { $, css, esc, fmt, getJSON, grade, legendHTML, postJSON } from "./util.js";
-import { initWorkspace, setRail, showSection } from "./workspace.js";
+import { initTasks, openTaskForm, pollSoon, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
+import { $, css, esc, featureHTML, fmt, getJSON, grade, legendHTML, postJSON } from "./util.js";
+import { initWorkspace, setBadge, setRail, showSection } from "./workspace.js";
 import { buttonLabel, symbolSVG } from "./icons.js";
 
 const status = (msg, bad) => { const s = $("#status"); s.textContent = msg; s.style.color = bad ? "var(--bad)" : ""; };
@@ -201,6 +201,7 @@ const TABS = [
   ["models", () => t("Modelle"), () => !!S.res],
   ["walk", () => t("Rundgang"), () => !!S.walk],
   ["nodes", () => t("Knoten"), () => !!(S.layers.nodes && S.layers.nodes.enabled && S.layers.nodes.data)],
+  ["sel", () => t("Auswahl"), () => !!S.sel],
   ["job", () => t("Aufgabe"), () => !!selectedJob()],
   ["coord", () => t("Einsatz"), hasMissionDetail],
 ];
@@ -228,15 +229,6 @@ function updateInspector() {
   if (wasShown !== show && map3d && document.body.classList.contains("is3d")) map3d.resize();
   if (show && S.insp.tab === "job") renderDetailIfShown();
   if (show && S.insp.tab === "coord") renderMissionDetail();
-}
-// A layer's settings in the rail, opened and in view (the sites editor and the scene manager live
-// there; the map's actions open them).
-function openLayerPanel(id) {
-  const desc = S.app.layers.find(l => l.id === id), st = S.layers[id];
-  if (!desc || !st) return;
-  showSection("layers");
-  if (!st.open) { st.open = true; persist(id); renderLayer(desc); showExtras(desc); }
-  document.getElementById("lyr_" + id)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 // The link tool's actions on the map: any feature with _endpoint, or a free spot, as A or B.
 function registerLinkActions() {
@@ -273,25 +265,38 @@ function toggleInspector(open) {
   else $("#btnInsp").focus();
 }
 
+// ---------------------------------------------------------------- selection
+// The last object clicked on the map, in the details: its fields and the same toolbar as its
+// popup; it stays when the popup closes.
+function renderSelection() {
+  const f = S.sel, box = $("#t_sel");
+  if (!f) { box.innerHTML = ""; return; }
+  const p = f.properties, acts = actionsFor(p._ref, f);
+  box.innerHTML = `<div class="selwrap">${featureHTML(p)}</div>
+    <div class="sec"><button class="btn small" data-unsel>${symbolSVG("close")}${esc(t("Auswahl aufheben"))}</button></div>`;
+  const tb = box.querySelector(".acts");
+  tb.innerHTML = toolbarHTML(acts);
+  bindToolbar(tb, acts, p._title || "", null);
+  box.querySelector("[data-unsel]").addEventListener("click", () => { S.sel = null; renderSelection(); updateInspector(); });
+}
+
 // ---------------------------------------------------------------- layers
 function renderLayer(desc) {
   const st = S.layers[desc.id];
   const el = document.getElementById("lyr_" + desc.id);
   el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${st.enabled ? "checked" : ""} aria-label="${esc(desc.name)}">
-      <span class="nm">${esc(desc.name)}</span><span class="grp">${esc(desc.group)}</span>
+      <span class="nm">${esc(desc.name)}</span>
       <button class="btn small quiet" data-open aria-label="${esc(t("Einstellungen für {name}", { name: desc.name }))}" aria-expanded="${st.open}" title="${t("Einstellungen")}">${symbolSVG("settings")}</button></div>
     <div class="bd" ${st.open ? "" : "hidden"}><div class="note" style="margin:0">${esc(desc.description)}</div>
       ${inputsHTML(desc.settings, st.values, desc.id)}
       <div class="msg"></div><div class="lg"></div><div class="summary"></div>
-      ${desc.id === "sites" ? `<div class="sitemgr"></div>` : ""}
-      ${desc.id === "scene" ? `<div class="sitemgr scenemgr"></div>` : ""}</div>`;
+      ${MANAGED[desc.id] ? `<button class="lnk manage" data-manage>${esc(MANAGED[desc.id][1]())} ›</button>` : ""}</div>`;
   el.querySelector("[data-on]").addEventListener("change", e => { st.enabled = e.target.checked; persist(desc.id); refresh(desc, false, true); });
   el.querySelector("[data-open]").addEventListener("click", () => {
     st.open = !st.open; persist(desc.id); renderLayer(desc); showExtras(desc); el.querySelector("[data-open]").focus();
   });
   bindInputs(el, desc.settings, st.values, () => { persist(desc.id); renderLayer(desc); refresh(desc, false, true); });
-  if (desc.id === "sites" && st.open) renderSites(el.querySelector(".sitemgr"));
-  if (desc.id === "scene" && st.open) renderScenes(el.querySelector(".scenemgr"));
+  el.querySelector("[data-manage]")?.addEventListener("click", () => showSection(MANAGED[desc.id][0]));
 }
 // The inspector's "Rundgang" tab shows the model comparison of the layer that has one.
 function setWalk(id, data, user = false) {
@@ -399,20 +404,18 @@ async function deviceStatus(action) {
       : await getJSON("api/device");
   } catch (e) {
     $("#devText").textContent = e.message;
-    $("#headerDevText").textContent = action ? t("Fehler") : t("Server nicht erreichbar");
-    $("#headerDevDot").style.background = "var(--bad)";
-    $("#btnDevice").title = e.message;
+    setBadge("device", { dot: "bad" }, t("Gerät: {state}", { state: action ? t("Fehler") : t("Server nicht erreichbar") }));
     $("#telemetryDevice").textContent = t("Fehler");
     $("#telemetryPackets").textContent = $("#telemetryLast").textContent = "—";
     return;
   }
   const colors = { verbunden: "var(--ok)", verbinde: "var(--warn)", Fehler: "var(--bad)" };
+  const dots = { verbunden: "ok", verbinde: "warn", Fehler: "bad" };
+  const stateText = d.state === "verbunden" && d.port === "sim" ? t("Simulation") : t(d.state);
   $("#devDot").style.background = colors[d.state] || "var(--line)";
-  $("#headerDevDot").style.background = colors[d.state] || "var(--ink3)";
-  $("#headerDevText").textContent = d.state === "verbunden" && d.port === "sim" ? t("Simulation") : t(d.state);
-  $("#btnDevice").title = d.state === "Fehler" ? d.error : t("Gerät (USB)");
-  $("#btnDevice").classList.toggle("simulated", d.port === "sim");
-  $("#telemetryDevice").textContent = $("#headerDevText").textContent;
+  setBadge("device", dots[d.state] ? { dot: dots[d.state] } : null,
+    t("Gerät: {state}", { state: d.state === "Fehler" ? d.error : stateText }));
+  $("#telemetryDevice").textContent = stateText;
   $("#telemetryPackets").textContent = fmt(d.packets, 0);
   renderAirtime(d.airtime);
   $("#telemetryLast").textContent = d.last_packet ? t("vor {n} s", { n: Math.max(0, Math.round(Date.now() / 1000 - d.last_packet)) }) : "—";
@@ -440,16 +443,35 @@ async function deviceStatus(action) {
   }
   S.devState = d.state;
 }
+// Ebenen only show things; managing them is in the view named here (link under the settings).
+const MANAGED = {
+  sites: ["sites", () => t("Standorte verwalten")],
+  scene: ["scenes", () => t("Szenen verwalten")],
+  coord: ["coord", () => t("Einsätze in der Koordination")],
+  coverage: ["coverage", () => t("Abdeckung simulieren")],
+};
 function initLayers() {
   for (const st of Object.values(S.layers)) clearTimeout(st.timer);
   const box = $("#layers"); box.innerHTML = "";
+  const groups = {};
   for (const desc of S.app.layers) {
+    if (!groups[desc.group]) {  // one folding section per group, in the server's order
+      const sec = document.createElement("details");
+      sec.className = "sec"; sec.dataset.grp = desc.group;
+      sec.open = store.get("grp." + desc.group, true);
+      sec.innerHTML = `<summary><h2>${esc(desc.group)}</h2><span class="count"></span></summary><div class="stack"></div>`;
+      sec.addEventListener("toggle", () => store.set("grp." + desc.group, sec.open));
+      box.appendChild(sec);
+      groups[desc.group] = sec;
+    }
     const saved = store.get("layer." + desc.id, null);
     const values = initialValues(desc.settings, saved && saved.values);
     S.layers[desc.id] = { enabled: saved ? saved.enabled : desc.enabled, open: saved ? saved.open : false, values, data: null };
-    const div = document.createElement("div"); div.className = "lyr"; div.id = "lyr_" + desc.id; box.appendChild(div);
+    const div = document.createElement("div"); div.className = "lyr"; div.id = "lyr_" + desc.id;
+    groups[desc.group].querySelector(".stack").appendChild(div);
     renderLayer(desc);
   }
+  for (const sec of Object.values(groups)) sec.querySelector(".count").textContent = sec.querySelectorAll(".lyr").length;
   for (const desc of S.app.layers) refresh(desc);
 }
 
@@ -535,7 +557,7 @@ function toast(msg, { bad = false, action = null } = {}) {
 
 // New files (grids, tracks, probe logs) and edited sites change the layers' options.
 async function reloadApp() {
-  try { S.app = await getJSON("api/app"); initLayers(); } catch (e) { toast(e.message, { bad: true }); }
+  try { S.app = await getJSON("api/app"); initLayers(); renderSites($("#sitesBox")); } catch (e) { toast(e.message, { bad: true }); }
 }
 
 function showCoverage(file) {
@@ -617,17 +639,10 @@ function setView(mode) {
 }
 
 function bindUI() {
-  initWorkspace();
-  for (const [id, icon] of Object.entries({ btnRail: "menu", view2d: "map", view3d: "cube",
-    btnMsg: "message", btnJobs: "tasks", btnCoord: "route", btnInsp: "panel" })) {
-    buttonLabel($("#" + id), icon, $("#" + id).textContent);
-  }
-  for (const [id, icon] of Object.entries({ themeBtn: "theme", btnCloseInsp: "close", btnCloseRail: "close" })) {
-    $("#" + id).innerHTML = symbolSVG(icon);
-  }
-  for (const [section, icon] of Object.entries({ layers: "layers", jobs: "tasks", coord: "route", "3d": "cube", device: "client" })) {
-    $("details[data-sec='" + section + "'] h2").insertAdjacentHTML("afterbegin", symbolSVG(icon));
-  }
+  initWorkspace(store);
+  for (const [id, icon] of Object.entries({ view2d: "map", view3d: "cube" })) buttonLabel($("#" + id), icon, $("#" + id).textContent);
+  $("#btnInsp").innerHTML = symbolSVG("panel");
+  $("#btnCloseInsp").innerHTML = symbolSVG("close");
   $("#tabs").addEventListener("keydown", e => {
     const tabs = [...$("#tabs").querySelectorAll("[data-tab]")];
     const index = tabs.indexOf(document.activeElement);
@@ -637,9 +652,25 @@ function bindUI() {
       : (index + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
     S.insp.tab = tabs[next].dataset.tab; updateInspector();
   });
-  // language switch: the page reloads in the chosen language
+  // settings: language (the page reloads in it) and light or dark
   $("#langSeg").innerHTML = LANGS.map(l => `<button class="btn ${l === lang ? "on" : ""}" data-lang="${l}" aria-pressed="${l === lang}">${l.toUpperCase()}</button>`).join("");
   $("#langSeg").querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => { if (b.dataset.lang !== lang) setLang(b.dataset.lang); }));
+  const theme = document.documentElement.getAttribute("data-theme") || "dark";
+  $("#themeSeg").innerHTML = [["dark", t("Dunkel")], ["light", t("Hell")]].map(([v, label]) =>
+    `<button class="btn ${v === theme ? "on" : ""}" data-theme="${v}" aria-pressed="${v === theme}">${label}</button>`).join("");
+  $("#themeSeg").querySelectorAll("[data-theme]").forEach(b => b.addEventListener("click", () => {
+    document.documentElement.setAttribute("data-theme", b.dataset.theme); store.set("theme", b.dataset.theme);
+    $("#themeSeg").querySelectorAll("[data-theme]").forEach(x => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", String(x === b)); });
+    in3d(() => map3d.applyTheme());
+  }));
+  // the status bar leads to the views its values come from
+  for (const [id, section] of [["telemetryDevice", "device"], ["telemetryPackets", "device"], ["telemetryLast", "device"],
+    ["telemetryChUtil", "airtime"], ["telemetryAirTx", "airtime"]]) {
+    const item = $("#" + id).parentElement;
+    item.tabIndex = 0; item.setAttribute("role", "button");
+    item.addEventListener("click", () => showSection(section));
+    item.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showSection(section); } });
+  }
   $("#devBtn").addEventListener("click", () => deviceStatus($("#devBtn").dataset.action || "connect"));
   $("#devScan").innerHTML = symbolSVG("refresh");
   $("#devScan").addEventListener("click", loadPorts);
@@ -669,12 +700,9 @@ function bindUI() {
   document.querySelectorAll("[data-l3]").forEach(el => el.addEventListener("change", () => map3d.setLayer(el.dataset.l3, el.checked)));
   $("#vex").addEventListener("input", e => { map3d.setVex(+e.target.value); $("#vexVal").textContent = fmt(+e.target.value, 1) + "×"; });
   $("#fres").addEventListener("input", e => { $("#fresVal").textContent = fmt(+e.target.value, 1) + " F"; map3d.setFresnel(+e.target.value); });
-  $("#themeBtn").addEventListener("click", () => {
-    const r = document.documentElement;
-    const now = r.getAttribute("data-theme") || "dark";
-    const theme = now === "dark" ? "light" : "dark";
-    r.setAttribute("data-theme", theme); store.set("theme", theme); in3d(() => map3d.applyTheme());
-  });
+  $("#coverageBox").innerHTML = `<p class="note" style="margin:0">${esc(t("Rechnet die Empfangswahrscheinlichkeit um einen Standort; das Ergebnis zeigt die Ebene „Simulierte Abdeckung“."))}</p>
+    <button class="btn" data-cov>${symbolSVG("coverage")}${esc(t("Abdeckung simulieren …"))}</button>`;
+  $("#coverageBox [data-cov]").addEventListener("click", () => openTaskForm("coverage"));
 }
 
 (async function main() {
@@ -686,13 +714,13 @@ function bindUI() {
     S.app = await getJSON("api/app");
   } catch (e) {
     status(t("Server nicht erreichbar: {error}", { error: e.message }), true);
-    $("#headerDevText").textContent = t("Server nicht erreichbar");
-    $("#headerDevDot").style.background = "var(--bad)";
+    $("#telemetryDevice").textContent = t("Server nicht erreichbar");
     return;
   }
   map2d = new Map2D($("#map2d"), S.app.home || null, {
     onClick: (lat, lon) => mapClick(lat, lon),
     onMove: (lat, lon) => mapMove(lat, lon),
+    onSelect: f => { S.sel = f; renderSelection(); updateInspector(); },
   });
   map3d = new Map3D($("#c"), {
     onPick: (lat, lon) => mapClick(lat, lon),
@@ -716,7 +744,8 @@ function bindUI() {
       t("Die 2D-Karte und alle anderen Ebenen funktionieren ohne.")].map(esc).join("<br>");
     $("#loading .bar").hidden = true;
   }
-  initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast, openPanel: () => openLayerPanel("sites") });
+  initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast, openPanel: () => showSection("sites") });
+  renderSites($("#sitesBox"));
   // areas of task forms are picked on the 2D map: the rectangle and preview are drawn there
   setFormMap({
     pick: (label, count, cb) => {
@@ -725,8 +754,9 @@ function bindUI() {
     },
     preview: ring => map2d.setPreview(ring),
   });
-  initScenes({ pickOnMap, toast, tempArea: pts => map2d.setTempPath(pts), openPanel: () => openLayerPanel("scene"),
+  initScenes({ pickOnMap, toast, tempArea: pts => map2d.setTempPath(pts), openPanel: () => showSection("scenes"),
     taskStarted: job => { toast(t("Gestartet: {title}", { title: job.title })); pollSoon(); } });
+  renderScenes($("#scenesBox"));
   initNodeList({ store, toast, focusNode, message: id => openConversation("dm:" + id), assign: assignTo,
     connected: () => S.devState === "verbunden", refreshNodes: () => refreshLayer("nodes"),
     openList: () => openInspector("nodes"),

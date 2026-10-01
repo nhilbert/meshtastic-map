@@ -51,8 +51,7 @@ const gb = mb => mb >= 1000 ? `${fmt(mb / 1000, 1)} GB` : `${fmt(mb, 0)} MB`;
 function draw() {
   const box = E.box; if (!box || !box.isConnected) return;
   const d = E.data || { scenes: [], tiles_mb: 0 };
-  box.innerHTML = `<div class="hd2">${t("Szenen")}</div>
-    <div class="sitelist">${d.scenes.map(rowHTML).join("") || `<p class="note" style="margin:0">${t("Noch keine Szene.")}</p>`}</div>
+  box.innerHTML = `<div class="sitelist">${d.scenes.map(rowHTML).join("") || `<p class="note" style="margin:0">${t("Noch keine Szene.")}</p>`}</div>
     ${E.form ? formHTML() : ""}
     <div class="msg" role="alert">${esc(E.msg)}</div>
     ${E.form ? "" : `<button class="btn small" data-new>＋ ${t("Neue Szene")}</button>`}

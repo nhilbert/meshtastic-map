@@ -5,8 +5,7 @@
 // map; anything more is better done in a Meshtastic app.
 import { locale, t } from "./i18n.js";
 import { $, esc, getJSON, postJSON } from "./util.js";
-import { setRail } from "./workspace.js";
-import { buttonLabel } from "./icons.js";
+import { setBadge, setRail } from "./workspace.js";
 
 const MAX_BYTES = 200;  // same limit as the server (meshplay.mapapp.messages.MAX_TEXT_BYTES)
 const TRAFFIC = "traffic";
@@ -51,6 +50,7 @@ function setOpen(open) {
   $("#msgFold").setAttribute("aria-expanded", String(open));
   $("#msgFold").setAttribute("aria-controls", "msgBody");
   $("#btnMsg").setAttribute("aria-pressed", String(open));
+  $("#btnMsg").classList.toggle("on", open);
   if (open) markSeen();
   render();
 }
@@ -130,9 +130,8 @@ function render() {
   if (!M.conv || (M.conv !== TRAFFIC && !convs.includes(M.conv))) M.conv = convs.find(k => k === "ch:1") || convs[0] || TRAFFIC;
   const total = convs.reduce((n, k) => n + unread(k), 0);
   const title = total ? t("Nachrichten · {n} neu", { n: total }) : t("Nachrichten");
-  buttonLabel($("#btnMsg"), "message", title);
+  setBadge("msg", total ? { num: total } : null, title);
   $("#msgTitle").textContent = title;
-  $("#btnMsg").classList.toggle("busy", total > 0);
   renderHead();
   if (!M.open) return;
   const item = k => {

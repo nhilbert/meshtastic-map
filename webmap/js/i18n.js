@@ -1,7 +1,7 @@
 // Translations of the page (German source, catalogues webmap/i18n/en.json and fr.json, shared
 // with the server). t(germanText, {n}) returns the text in the chosen language; a missing
 // entry falls back to German. Static HTML is marked with data-i18n (text), data-i18n-title,
-// data-i18n-placeholder and data-i18n-aria-label. The language is chosen in the header and
+// data-i18n-placeholder and data-i18n-aria-label. The language is chosen in the settings and
 // remembered per browser; switching reloads the page. tests/test_i18n.py checks the catalogues.
 export const LANGS = ["de", "en", "fr"];
 const LOCALES = { de: "de-DE", en: "en-GB", fr: "fr-FR" };

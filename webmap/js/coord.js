@@ -5,8 +5,8 @@ import { bindInputs, initialValues, inputsHTML } from "./forms.js";
 import { locale, t } from "./i18n.js";
 import { openTaskForm } from "./tasks.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
-import { showSection } from "./workspace.js";
-import { buttonLabel, iconButton, symbolSVG } from "./icons.js";
+import { setBadge, showSection } from "./workspace.js";
+import { iconButton, symbolSVG } from "./icons.js";
 import { csv, download, gpx } from "./export.js";
 import { G, registerActions } from "./actions.js";
 
@@ -21,8 +21,6 @@ const C = {
   api: null, data: null, timer: null, prev: {}, prevTargets: null, err: "",
   form: null,          // { node, path: [rows], profile, lang, msg }
   settings: null,      // values being edited, null = closed
-  targets: false,      // targets editor open
-  areas: false,        // areas and places editor open
   editArea: null,      // { isNew, id, name, kind, text, buffer_m, polygon }
   editPlace: null,     // { isNew, id, name, lat, lon, radius_m, text }
   editTarget: null,    // { isNew, orig, name, lat, lon, note }
@@ -36,11 +34,6 @@ const C = {
 //        sites() -> [{name, lat, lon}] }
 export function initCoord(api) {
   C.api = api;
-  C.targets = api.store.get("coord.targets", false);
-  C.areas = api.store.get("coord.areas", false);
-  $("#btnCoord").addEventListener("click", () => {
-    showSection("coord");
-  });
   registerMapActions();
   poll();
 }
@@ -82,22 +75,21 @@ function registerMapActions() {
   registerActions("map", ({ lat, lon }) => [
     { label: t("Ziel hier anlegen …"), icon: "target", group: G.main, run: () => inEditor("targets", () => {
       C.editTarget = { isNew: true, name: "", note: "", radius_m: null, lat, lon }; C.api.tempMarker(lat, lon); render();
-      $("#coordBox [data-tf=name]")?.focus();
+      $("#targetsBox [data-tf=name]")?.focus();
     }) },
     { label: t("Ort hier anlegen …"), icon: "place", group: G.main, run: () => inEditor("areas", () => {
       C.editPlace = { isNew: true, name: "", text: "", radius_m: 100, lat, lon }; C.api.tempMarker(lat, lon); render();
-      $("#coordBox [data-pf=name]")?.focus();
+      $("#areasBox [data-pf=name]")?.focus();
     }) },
   ]);
 }
-// Open the targets or the areas editor in the rail, then act there.
+// Open the targets or the areas editor (view "Orte"), then act there.
 function inEditor(which, fn) {
   if (!C.data) { C.api.toast(t("Die Koordination lädt noch.")); return; }
-  C[which] = true; C.api.store.set("coord." + which, true);
-  showSection("coord");
-  render();
+  showSection(which);
+  renderPlaces();
   fn();
-  $("#coordBox .siteform")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  $(`#${which}Box .siteform`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 export const selectedMission = () => (C.sel && C.data && C.data.missions.find(m => m.node === C.sel)) || null;
 export const hasMissionDetail = () => !!(C.arch || selectedMission());
@@ -190,18 +182,30 @@ function statusText(s) {  // delivery states are German codes, see messages.js
 
 // ---------------------------------------------------------------- rail section
 const editing = () => !!(C.form || C.settings || C.editTarget || C.editArea || C.editPlace);
+// On the activity bar: a dot while the mode is on (green, yellow while it waits for the device).
 function renderBadge() {
-  const d = C.data, badge = $("#btnCoord");
-  if (!d) { buttonLabel(badge, "route", t("Koordination")); badge.classList.remove("busy"); return; }
+  const d = C.data;
+  if (!d) { setBadge("coord", null); return; }
   const active = d.missions.filter(m => ACTIVE.includes(m.state)).length;
-  buttonLabel(badge, "route", d.enabled && active ? t("Koordination · {n}", { n: active }) : t("Koordination"));
-  badge.classList.toggle("busy", d.enabled);
-  $("#coordDot").style.background = !d.enabled ? "var(--line)" : d.device_state === "verbunden" ? "var(--ok)" : "var(--warn)";
+  setBadge("coord", d.enabled ? { dot: d.device_state === "verbunden" ? "ok" : "warn" } : null,
+    d.enabled ? t("Koordination · {n}", { n: active }) : t("Koordination"));
+}
+// Targets and areas are places to manage (view "Orte"), drawn from the coordination's data.
+function renderPlaces() {
+  const d = C.data, tb = $("#targetsBox"), ab = $("#areasBox");
+  if (!tb || !ab) return;
+  if (!d) { tb.innerHTML = ab.innerHTML = `<p class="note" style="margin:0">${esc(C.err || t("lädt …"))}</p>`; return; }
+  const err = C.err ? `<div class="msg" role="alert">${esc(C.err)}</div>` : "";
+  tb.innerHTML = targetsHTML(d) + err;
+  bindTargets(tb);
+  ab.innerHTML = areasHTML(d) + err;
+  ab.querySelectorAll("[data-ar]").forEach(b => b.addEventListener("click", () => areaAction(b.dataset.ar, b.dataset.id)));
 }
 function render() {
   const box = $("#coordBox"); if (!box) return;
   const d = C.data;
   renderBadge();
+  renderPlaces();
   if (!d) { box.innerHTML = `<p class="msg">${esc(C.err || t("lädt …"))}</p>`; return; }
   const connected = d.device_state === "verbunden";
   box.innerHTML = `
@@ -217,8 +221,6 @@ function render() {
     <div class="jobstart">
       <button class="btn on" data-act="new" ${d.enabled ? "" : `title="${t("Einsätze können auch bei ausgeschaltetem Modus angelegt werden; gesendet wird erst, wenn er an ist.")}"`}>${symbolSVG("target")} ${t("Einsatz")}</button>
       <button class="btn small quiet" data-act="settings" aria-expanded="${!!C.settings}">${symbolSVG("settings")} ${t("Einstellungen")}</button>
-      <button class="btn small" data-act="targets" aria-expanded="${C.targets}">${t("Ziele")} (${Object.keys(d.targets).length})</button>
-      <button class="btn small" data-act="areas" aria-expanded="${C.areas}">${t("Gebiete")} (${(d.areas || []).length + (d.places || []).length})</button>
       <button class="btn small" data-act="archive" aria-expanded="${!!C.archive}">${t("Archiv")}</button>
       <button class="btn small" data-act="osm" title="${esc(t("Straßen und Wege der Umgebung von OpenStreetMap laden (Overpass-API); danach führt der Server über Straßen statt Luftlinie."))}">${t("Straßennetz laden …")}</button>
     </div>
@@ -227,8 +229,6 @@ function render() {
     ${C.form ? formHTML(d) : ""}
     <div class="msg" role="alert">${esc(C.err)}</div>
     <div class="joblist">${d.missions.map(cardHTML).join("") || `<p class="note" style="margin:0">${t("Noch keine Einsätze.")}</p>`}</div>
-    ${C.targets ? targetsHTML(d) : ""}
-    ${C.areas ? areasHTML(d) : ""}
     ${C.archive ? archiveHTML() : ""}`;
   $("#coordOn").addEventListener("change", async e => {
     try { await postJSON("api/coord/mode", { on: e.target.checked }); C.api.toast(e.target.checked ? t("Koordinationsmodus an") : t("Koordinationsmodus aus")); }
@@ -238,8 +238,6 @@ function render() {
   box.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => action(b.dataset.act, b.dataset.node)));
   if (C.settings) bindSettings(box, d);
   if (C.form) bindForm(box, d);
-  if (C.targets) bindTargets(box);
-  if (C.areas) box.querySelectorAll("[data-ar]").forEach(b => b.addEventListener("click", () => areaAction(b.dataset.ar, b.dataset.id)));
   box.querySelectorAll("[data-arch]").forEach(b => b.addEventListener("click", () => archiveAction(b.dataset.arch, b.dataset.id)));
 }
 
@@ -320,8 +318,6 @@ async function action(act, node) {
   try {
     if (act === "new") { openForm(null); return; }
     if (act === "settings") { C.settings = C.settings ? null : { ...C.data.settings, channel: String(C.data.settings.channel) }; render(); return; }
-    if (act === "targets") { C.targets = !C.targets; C.api.store.set("coord.targets", C.targets); render(); return; }
-    if (act === "areas") { C.areas = !C.areas; C.api.store.set("coord.areas", C.areas); render(); return; }
     if (act === "archive") { if (C.archive) { C.archive = null; render(); } else loadArchive(); return; }
     if (act === "osm") { openTaskForm("osm"); return; }
     if (act === "focus") { C.api.focusNode(node); return; }
@@ -498,7 +494,7 @@ function targetsHTML(d) {
   const templates = Object.entries(d.paths || {}).map(([name, p]) => `<div class="site"><div class="txt"><span class="nm">${esc(name)}</span>
       <span class="sub">${esc(p.map(w => w.name).join(" › "))}</span></div>
       ${iconButton("trash", t("{name} löschen", { name }), `data-tg="deltpl" data-name="${esc(name)}"`, { danger: true })}</div>`).join("");
-  return `<div class="sitemgr"><div class="hd2">${t("Ziele")}</div>
+  return `<div class="sitemgr">
     <p class="note" style="margin:0">${t("Benannte Orte, die sich als Wegpunkte wiederverwenden lassen. Eigene Standorte gehen auch direkt.")}</p>
     <p class="note" style="margin:0">${esc(t("Ziele sind zugleich Markierungen für das Feld: „+D NAME Text“ setzt eines an der Position des Absenders, „?D NAME“ macht es zu dessen Einsatz, „?D“ das nächste (Einstellung „Markierungen per Funk“)."))}</p>
     <div class="sitelist">${rows || `<p class="note" style="margin:0">${t("Noch keine Ziele.")}</p>`}</div>
@@ -526,7 +522,7 @@ async function targetAction(act, name) {
     if (act === "add") {
       C.api.pickOnMap(t("Position des neuen Ziels"), (lat, lon) => {
         C.editTarget = { isNew: true, name: "", note: "", radius_m: null, lat, lon }; C.api.tempMarker(lat, lon); render();
-        const inp = $("#coordBox [data-tf=name]"); if (inp) inp.focus();
+        const inp = $("#targetsBox [data-tf=name]"); if (inp) inp.focus();
       });
       return;
     }
@@ -548,7 +544,7 @@ async function targetAction(act, name) {
       await postJSON("api/coord/paths/delete", { name });
     }
     if (act === "save") {
-      const ed = C.editTarget, box = $("#coordBox");
+      const ed = C.editTarget, box = $("#targetsBox");
       box.querySelectorAll("[data-tf]").forEach(inp => { ed[inp.dataset.tf] = inp.type === "number" ? (inp.value === "" ? null : +inp.value) : inp.value.trim(); });
       if (ed.isNew) await postJSON("api/coord/targets/add", { name: ed.name, lat: ed.lat, lon: ed.lon, note: ed.note, radius_m: ed.radius_m });
       else {
@@ -579,7 +575,7 @@ function areasHTML(d) {
       ${iconButton("edit", t("{name} bearbeiten", { name: p.name }), `data-ar="editp" data-id="${esc(p.id)}"`)}
       ${iconButton("move", t("{name} verschieben", { name: p.name }), `data-ar="movep" data-id="${esc(p.id)}"`)}
       ${iconButton("trash", t("{name} löschen", { name: p.name }), `data-ar="delp" data-id="${esc(p.id)}"`, { danger: true })}</div>`).join("");
-  return `<div class="sitemgr"><div class="hd2">${t("Gebiete und Orte")}</div>
+  return `<div class="sitemgr">
     <p class="note" style="margin:0">${t("Sperrgebiete meidet die Wegführung; der Knoten wird gewarnt, wenn er hinein läuft oder eines voraus liegt. Hinweisgebiete und Orte schicken ihren Text, wenn der Knoten hineinkommt.")}</p>
     <div class="sitelist">${areas || `<p class="note" style="margin:0">${t("Noch keine Gebiete.")}</p>`}</div>
     ${ea && ea.isNew ? areaFormHTML(ea) : ""}
@@ -619,7 +615,7 @@ function placeFormHTML(ep) {
     <div class="row2"><button class="btn small" data-ar="cancelp">${t("Abbrechen")}</button><button class="btn small on" data-ar="savep">${t("Speichern")}</button></div></div>`;
 }
 async function areaAction(act, id) {
-  const d = C.data, box = $("#coordBox");
+  const d = C.data, box = $("#areasBox");
   C.err = "";
   const read = (sel, obj) => box.querySelectorAll(sel).forEach(inp => {
     const k = inp.dataset.af || inp.dataset.pf;

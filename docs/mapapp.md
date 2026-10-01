@@ -28,20 +28,30 @@ provider or download. Coverage overlays and node colors retain their original me
 Light mode displays the original base tiles. The concept images are design references, not
 pixel-exact representations of the available map data.
 
-- **Header**: 2D / 3D view, **Nachrichten** (messaging pane, shows unread messages),
-  **Aufgaben** (background tasks, shows how many run), **Koordination** (the coordination
-  mode, shows how many missions run), **Details** (the right panel; greyed out while there is
-  nothing to show), **DE | EN | FR** (language), light/dark.
-- **Left column**: *Ebenen* (layers), *Aufgaben*, *3D-Darstellung* (only in 3D), *Gerät (USB)*
-  (connect; the port list shows every serial port, *Automatisch* names the one detection would
-  take, ↻ searches again after plugging in; the choice is remembered in the browser).
-  Sections fold and remember their state; tasks and coordination start folded. On phones,
-  **Bedienfeld** opens the controls as a drawer, leaving the map available at full height.
-  Header shortcuts open the relevant section. The device status in the header also identifies
-  simulation mode and opens the connection controls. Escape closes the drawer or details;
-  map picking returns to the originating drawer form. The light/dark choice is remembered.
-- **Ebenen**: each layer has a checkbox and a ⚙ with its settings and legend. Settings are
-  remembered per browser.
+The page has three zones (`webmap/js/workspace.js`): on the left what you do, on the right what
+you want to know about, below what keeps coming in.
+
+- **Header**: the name, 2D / 3D view, and the button for the right panel (**Details**, greyed
+  out while there is nothing to show).
+- **Activity bar** (left edge, like VS Code): one icon per view of the panel next to it:
+  *Ebenen*, *Orte*, *Simulation*, *Koordination*, *Aufgaben*, *Gerät*; at the bottom
+  *Nachrichten* (opens the messaging pane) and *Einstellungen*. A click on the active icon folds
+  the panel away; its edge can be dragged to set the width (remembered, double click resets).
+  Badges: a number (unread messages), a dot (state: green ok, yellow waits, red error; on
+  *Gerät* and *Koordination*) and a ring around *Aufgaben* with the progress of a running task;
+  the tooltip says it in words. Sections fold and remember their state. On phones the bar is at
+  the bottom and a view opens as a drawer.
+- **Views**: *Ebenen* only shows things: the layers in folding groups, each with a checkbox and
+  a ⚙ with display settings and legend (remembered per browser); where the layer's objects are
+  managed elsewhere, a link leads there (*Standorte verwalten ›*). *Orte*: own sites, targets
+  (with path templates), areas, places and OpenStreetMap suggestions, each with its editor.
+  *Simulation*: laser-scan scenes, the link tool *Strecke A → B*, starting a coverage
+  simulation. *Koordination*: the mode, missions, road graph, settings, archive. *Aufgaben*:
+  start forms and the task list. *Gerät*: connection (the port list shows every serial port,
+  *Automatisch* names the one detection would take, ↻ searches again after plugging in) and
+  *Funklast*. *Einstellungen*: language and light or dark.
+- **Status bar** (bottom): device, packets, channel use and airtime; a click opens *Gerät*.
+  Escape closes a drawer or the details; map picking returns to the form it came from.
 - **Objects on the map** have their actions in one logic everywhere (`webmap/js/actions.js`):
   the popup (click) ends in a toolbar with up to four actions (icon and short label) and
   *Mehr*, which opens the full menu; a right click (long press on touch screens) opens the same
@@ -56,7 +66,7 @@ pixel-exact representations of the available map data.
   right click on a free spot offers to create a site, target, place or scene there, to set A or
   B, or to copy the coordinates. Editing opens the editor in the side panel. The 3D view has
   the same menu on a right click without dragging (dragging with the right button pans).
-- **Strecke A → B** (first layer) is the direct-link calculator. While it is on, a click in the
+- **Strecke A → B** (view *Simulation*) is the direct-link calculator. While it is on, a click in the
   map sets A or B ("Klick in die Karte setzt: A | B | aus", Esc ends it); while it is off, map
   clicks do nothing. Sites, nodes and walk points have "als A" / "als B" in their popup, which
   also switches the layer on. Each endpoint has antenna height (range), placement (outside, open
@@ -65,8 +75,9 @@ pixel-exact representations of the available map data.
 - **Right panel (Details)** shows only tabs with content: *Strecke* and *Modelle* after a link
   (verdict, levels, height profile with Fresnel zone, all model families, methodology folded at
   the bottom), *Rundgang* when the walk layer compares with the models, *Knoten* (the node list,
-  see below) while the node layer is on, *Aufgabe* for the log of a background task. ✕ closes it,
-  **Details** brings it back.
+  see below) while the node layer is on, *Auswahl* with the object last clicked on the map
+  (its fields and the toolbar of its popup, kept after the popup closes), *Aufgabe* for the log
+  of a background task, *Einsatz* for a mission. ✕ closes it, **Details** brings it back.
   Tabs support Left/Right, Home and End keys. On phones, details appear over the lower map;
   opening messages dismisses that overlay so the conversation is accessible.
 - **3D**: drag rotates, right button or Shift+drag pans (the ground follows the cursor), wheel
@@ -78,7 +89,7 @@ A comfort add-on for simple messaging and watching the traffic while using the m
 more, use a Meshtastic app. Needs the device connected (**Verbinden** under *Gerät (USB)*, in the
 pane's bar, or `--device`).
 
-- **Messaging pane** under the map (**Nachrichten** in the header, or click its bar). Left the
+- **Messaging pane** under the map (**Nachrichten** in the activity bar, or click its bar). Left the
   conversations: the device's channels (`0 · Primär`, `1 · Privat`, …), direct conversations with
   nodes, and *Alle Pakete*. Right the messages of the selected one and the input: **Enter** sends,
   Shift+Enter starts a new line; the counter shows the bytes (at most 200).
@@ -88,7 +99,7 @@ pane's bar, or `--device`).
   shows the node on the map.
 - **Direct messages** go to a node with channel 0 (the firmware encrypts them for the recipient
   when it knows its key). Start one with **Nachricht** in a node's popup on the map or in its row of the
-  node list. A new direct message pops up as a notice; unread counts are in the header, the pane's bar
+  node list. A new direct message pops up as a notice; unread counts are on the activity bar, the pane's bar
   and the conversation list.
 - **Alle Pakete** lists the packets received since the map app started (time, sender, recipient,
   type, channel, SNR, hops): the traffic around your node.
@@ -178,11 +189,11 @@ questions and confirms every stop. Design and radio protocol:
 [coordination-design.md](coordination-design.md). Needs the connected device; try it with the
 simulated radio first.
 
-- **Rail section "Koordination"** (header button **Koordination**): the mode switch. *On* means
+- **View "Koordination"** (activity bar): the mode switch. *On* means
   the server may message nodes with a mission on its own; *off* sends nothing, missions can
   still be created. ⚙ has the settings (channel of the messages, their language, travel
-  profile, arrival radius, minimum gap between unrequested messages, …), **Ziele** the editor
-  for named targets.
+  profile, arrival radius, minimum gap between unrequested messages, …). Named targets are
+  edited in the view *Orte* (section *Ziele*).
 - **＋ Einsatz** (also *Ziel …* in a node's popup or its row in the node list): pick the node
   (favourites first) and build the path: waypoints from the targets, the own sites or map
   clicks, each a *Halt* (announced, confirmed, may carry *Ankunft bis* and *Warten bis* as
@@ -223,7 +234,7 @@ simulated radio first.
   nobody else gets an answer, and with the mode off nothing happens. A node is on the channel
   when a packet with that channel's key came from it in the last 4 h (position, node info,
   text); a PKI-encrypted direct message alone can't show the channel, since it always arrives
-  as channel 0. In **Ziele** markers are edited, moved and deleted like any target; the row and the
+  as channel 0. In *Orte* → *Ziele* markers are edited, moved and deleted like any target; the row and the
   map popup say which node set it and when, and the page shows a notice when a marker or a
   mission arrives by radio. Radio can only add markers, not change or delete them.
 - **Reading the messages.** `#KKR 210m N ~6min` is the target, the straight-line distance,
@@ -253,7 +264,7 @@ See docs/coordination-design.md, section 5.
 
 ### Areas and places
 
-**Gebiete** in the section opens the editor. A *Sperrgebiet* (restricted area, drawn by
+The editor is in the view *Orte*, section *Gebiete und Orte*. A *Sperrgebiet* (restricted area, drawn by
 clicks on the map and *Fertig*, optionally with a buffer) is avoided by the routing; the node
 is warned once when it is inside (`!SPERR Kaserne verlassen`) and once when one lies ahead,
 either on the route or straight in its direction of travel (`!SPERR Kaserne 80m voraus`). A
@@ -483,7 +494,7 @@ coloured by hops or SNR, faded when not heard for 2 h, your own node with a turq
 
 ## Languages
 
-**DE | EN | FR** in the header switches the language; the page reloads and the choice is kept per
+**DE | EN | FR** in the view *Einstellungen* switches the language; the page reloads and the choice is kept per
 browser (first visit: the browser's language, else English). The server answers in the page's
 language too (layer names, form labels, notes, popups, error messages), taken from the `X-Lang`
 header of each request.

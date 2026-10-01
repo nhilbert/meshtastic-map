@@ -6,7 +6,7 @@ import { esc, featureHTML, fmt } from "./util.js";
 
 export class Map2D {
   constructor(el, center, handlers) {
-    this.h = handlers;          // { onClick(lat, lon), onMove(lat, lon) }
+    this.h = handlers;          // { onClick(lat, lon), onMove(lat, lon), onSelect(feature) }
     this.map = L.map(el, { zoomControl: true });
     // without a home position: Germany, to find the own area
     if (center) this.map.setView([center.lat, center.lon], 15); else this.map.setView([51.2, 10.4], 6);
@@ -76,6 +76,7 @@ export class Map2D {
             const acts = actionsFor(p._ref, f), box = el.querySelector(".acts");
             box.innerHTML = toolbarHTML(acts);
             bindToolbar(box, acts, p._title || "", () => this.map.closePopup());
+            this.h.onSelect?.(f);
             return el.firstElementChild;
           }, { minWidth: 280, maxWidth: 360 });
           lyr.on("contextmenu", e => {

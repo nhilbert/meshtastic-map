@@ -47,6 +47,8 @@ const PATHS = {
   endA: '<rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M5.6 11.5 8 4.5l2.4 7M6.4 9.2h3.2"/>',
   endB: '<rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M6 4.5v7h2.6a1.8 1.8 0 0 0 0-3.6H6h2.2a1.7 1.7 0 0 0 0-3.4z"/>',
 };
+// the app's settings (the bottom of the activity bar); "settings" (sliders) is a layer's own
+PATHS.gear = '<circle cx="8" cy="8" r="2"/><path d="M6.9 1.5h2.2l.4 1.8 1.5.9 1.8-.6 1.1 1.9-1.4 1.3v1.8l1.4 1.3-1.1 1.9-1.8-.6-1.5.9-.4 1.8H6.9l-.4-1.8-1.5-.9-1.8.6-1.1-1.9 1.4-1.3V7.2L2.1 5.9l1.1-1.9 1.8.6 1.5-.9z"/>';
 PATHS.pin = PATHS.tracker;
 PATHS.scene = PATHS.cube;
 

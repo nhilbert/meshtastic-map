@@ -31,10 +31,10 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font
 #app{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100%;height:100dvh;min-height:0}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
-header{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--panel-solid);border-bottom:1px solid var(--line);flex-wrap:wrap;z-index:1000}
-header h1{margin:0 10px 0 0;display:flex;flex-direction:column;line-height:1.25;white-space:nowrap}
-.brand-name{font-size:20px;font-weight:600;letter-spacing:-.04em}
-.brand-sub{font-size:10px;font-weight:400;color:var(--ink3);letter-spacing:.03em}
+header{display:flex;align-items:center;gap:8px;padding:5px 10px 5px 14px;background:var(--bg);border-bottom:1px solid var(--line-soft);z-index:1000}
+header h1{margin:0 10px 0 0;display:flex;align-items:baseline;gap:8px;line-height:1.25;white-space:nowrap}
+.brand-name{font-size:16px;font-weight:600;letter-spacing:-.03em}
+.brand-sub{font-size:11px;font-weight:400;color:var(--ink3);letter-spacing:.02em}
 header .spacer{flex:1}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 12px var(--sans);color:var(--ink2);background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:7px 11px;min-height:34px;cursor:pointer;transition:background .12s,border-color .12s,color .12s}
 .btn:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
@@ -49,24 +49,47 @@ header .btn.on,header .btn[aria-pressed="true"],.pickrow .btn.on{background:var(
 .btn:disabled,.btn.on:disabled{opacity:.55;cursor:not-allowed;border-color:var(--line);color:var(--ink3);background:var(--bg2);box-shadow:none}
 .btn[hidden]{display:none}
 .btn.small{font-size:12px;padding:3px 7px;min-width:28px;min-height:28px}
-#btnRail,.rail-head{display:none}
-.device-status{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px}
-header .device-status{border-color:var(--line);border-radius:4px}
-header .device-status.simulated{border-color:var(--warn);color:var(--warn)}
-#headerDevDot{background:var(--ink3)}
+.rail-head{display:none}
 #status{color:var(--ink3);font-size:11px;overflow-wrap:anywhere;min-width:0}
 #railBackdrop[hidden]{display:none}
 
-main{position:relative;min-height:0;display:grid;grid-template-columns:288px minmax(0,1fr) 380px;padding:8px;gap:8px}
-main.noinsp{grid-template-columns:288px minmax(0,1fr)}
-aside#rail{overflow-y:auto;background:var(--panel-solid);border:1px solid var(--line-soft);border-radius:8px;min-width:0;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
-#view{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+/* three zones: activity bar and panel (what you do), map with messages below (what comes in),
+   details on the right (what you want to know about) */
+main{position:relative;min-height:0;display:grid;grid-template-columns:48px var(--rail-w,300px) minmax(0,1fr) 380px;padding:0;gap:0}
+main.noinsp{grid-template-columns:48px var(--rail-w,300px) minmax(0,1fr)}
+body.panel-closed main{grid-template-columns:48px minmax(0,1fr) 380px}
+body.panel-closed main.noinsp{grid-template-columns:48px minmax(0,1fr)}
+body.panel-closed aside#rail{display:none}
+body.resizing{cursor:col-resize;user-select:none}
+#actbar{display:flex;flex-direction:column;justify-content:space-between;padding:4px 0;background:var(--bg);border-right:1px solid var(--line-soft);min-height:0}
+#actbar .ab-group{display:flex;flex-direction:column}
+.ab{position:relative;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:0;background:none;color:var(--ink3);cursor:pointer}
+.ab svg{width:22px;height:22px}
+.ab:hover{color:var(--ink)}
+.ab.on{color:var(--ink)}
+.ab.on::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:2px;border-radius:1px;background:var(--accent)}
+.ab:focus-visible{outline-offset:-4px}
+.badge{position:absolute;pointer-events:none}
+.badge[hidden]{display:none}
+.badge.num{right:5px;bottom:6px;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:var(--accent);color:var(--accent-ink);
+  font:600 10px var(--mono);display:flex;align-items:center;justify-content:center;border:2px solid var(--bg)}
+.badge.dot{right:9px;bottom:9px;width:10px;height:10px;border-radius:50%;border:2px solid var(--bg);background:var(--ok)}
+.badge.dot.warn{background:var(--warn)} .badge.dot.bad{background:var(--bad)}
+/* a running task: a ring around the icon, filled to its progress */
+.badge.run{inset:6px;border-radius:50%;background:conic-gradient(var(--accent) var(--p),var(--line-soft) 0);
+  -webkit-mask:radial-gradient(circle,transparent 15px,#000 16px);mask:radial-gradient(circle,transparent 15px,#000 16px)}
+aside#rail{position:relative;overflow-y:auto;background:var(--panel-solid);border-right:1px solid var(--line-soft);min-width:0;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+#rail .view[hidden]{display:none}
+.vhd{margin:0;padding:12px 14px 8px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.rail-resize{position:absolute;top:0;right:0;bottom:0;width:5px;cursor:col-resize;z-index:5}
+.rail-resize:hover,.rail-resize:focus-visible,body.resizing .rail-resize{background:var(--accent);opacity:.6;outline:none}
+#view{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 #mapbox{position:relative;flex:1;min-height:0}
 #map2d,#viewwrap{position:absolute;inset:0}
 #map2d[hidden],#viewwrap[hidden]{display:none}
 #viewwrap{background:linear-gradient(var(--sky-b),var(--sky-a))}
 canvas{display:block;width:100%;height:100%;touch-action:none}
-#right{min-width:0;min-height:0;border:1px solid var(--line-soft);border-radius:8px;overflow:hidden;display:flex}
+#right{min-width:0;min-height:0;border-left:1px solid var(--line-soft);overflow:hidden;display:flex}
 #right[hidden]{display:none}
 #insp{flex:1;overflow-y:auto;background:var(--panel-solid);min-height:0}
 .seg{display:inline-flex;gap:2px;padding:3px;background:var(--bg2);border:1px solid var(--line-soft);border-radius:8px}
@@ -77,8 +100,11 @@ body:not(.is3d) #sec3d{display:none}
 /* the link layer's pick mode: a map click sets A or B */
 body.picking #map2d .leaflet-container,body.picking #c{cursor:crosshair}
 
-.sec{padding:16px;border-bottom:1px solid var(--line-soft)}
-.sec h2{margin:0 0 8px;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2)}
+.sec{padding:10px 14px 12px;border-top:1px solid var(--line-soft)}
+.sec h2{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+details.sec>summary .count{font:500 10.5px var(--mono);color:var(--ink3)}
+.lnk.manage{font-size:12px;align-self:flex-start;margin-top:2px}
+.sec .lbl{font-size:11px;color:var(--ink3);margin-top:4px}
 details.sec>summary{display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none;margin:-2px 0;min-height:28px}
 details.sec>summary::-webkit-details-marker{display:none}
 details.sec>summary::after{content:"";width:6px;height:6px;border-right:1.5px solid var(--ink3);border-bottom:1.5px solid var(--ink3);transform:rotate(-45deg);margin:0 3px 0 8px}
@@ -86,7 +112,7 @@ details.sec[open]>summary::after{transform:rotate(45deg)}
 details.sec>summary h2{margin:0;flex:1;display:flex;align-items:center;gap:9px}
 details.sec>summary:hover h2{color:var(--ink)}
 details.sec>summary h2 svg{color:var(--ink3)}
-details.sec[open]>summary{margin-bottom:12px}
+details.sec[open]>summary{margin-bottom:8px}
 details.sec>summary .dot{background:var(--line)}
 .stack{display:flex;flex-direction:column;gap:5px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
@@ -184,7 +210,6 @@ ul.src li{margin:3px 0}
 .bar b{display:block;height:100%;background:var(--accent);transition:width .6s}
 .bar.ind b{width:30%;animation:sl 1.3s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.bar.ind b{animation:none;width:100%;opacity:.5}}
-#btnJobs.busy{color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent)}
 pre.log{font-family:var(--mono);font-size:11px;line-height:1.45;background:var(--bg2);border:1px solid var(--line-soft);
   border-radius:3px;padding:6px 8px;margin:0;max-height:52vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 .msg:empty{display:none}
@@ -236,7 +261,6 @@ pre.log{font-family:var(--mono);font-size:11px;line-height:1.45;background:var(-
 #msgpane .cmeta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:10.5px;color:var(--ink3)}
 #msgBytes.over{color:var(--bad);font-weight:600}
 #msgpane #msgErr{padding:0 10px 6px}
-#btnMsg.busy{color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent)}
 /* node list (inspector) */
 .nl-hd{display:flex;gap:8px;align-items:flex-end}
 .nl-hd input{flex:1}
@@ -331,9 +355,12 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
 .abmark{background:var(--accent);color:var(--accent-ink);border-radius:50%;font:600 12px/22px var(--mono);text-align:center;border:2px solid #fff;box-shadow:0 1px 4px #0006}
 
 @media (max-width:1100px){
-  main,main.noinsp{grid-template-columns:260px minmax(0,1fr);grid-template-rows:minmax(0,3fr) minmax(0,2fr)}
-  main.noinsp{grid-template-rows:1fr}
-  #right{grid-column:1 / -1;border-left:none;border-top:1px solid var(--line)}
+  /* the details go under the map */
+  main,main.noinsp{grid-template-columns:48px var(--rail-w,260px) minmax(0,1fr);grid-template-rows:minmax(0,3fr) minmax(0,2fr)}
+  body.panel-closed main,body.panel-closed main.noinsp{grid-template-columns:48px minmax(0,1fr)}
+  main.noinsp,body.panel-closed main.noinsp{grid-template-rows:1fr}
+  #actbar,aside#rail{grid-row:1 / -1}
+  #right{grid-column:-2 / -1;border-left:none;border-top:1px solid var(--line)}
 }
 @media (max-width:700px){
   header{gap:6px;padding:6px 8px}
@@ -341,16 +368,23 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
   header .spacer{display:none}
   .brand-name{font-size:17px}
   .brand-sub{display:none}
-  main,main.noinsp{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);overflow:hidden;padding:0;gap:0}
-  #view,aside#rail,#right{border-radius:0}
+  /* the activity bar becomes a bar at the bottom, the panel a drawer */
+  main,main.noinsp,body.panel-closed main,body.panel-closed main.noinsp{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;overflow:hidden;padding:0;gap:0}
   #view{grid-column:1;grid-row:1}
-  #btnRail{display:inline-flex;align-items:center}
+  #actbar{grid-row:2;grid-column:1;flex-direction:row;justify-content:space-around;padding:0;border-right:0;border-top:1px solid var(--line-soft)}
+  #actbar .ab-group{flex-direction:row}
+  .ab{width:44px;height:48px}
+  .ab.on::before{left:10px;right:10px;top:auto;bottom:0;width:auto;height:2px}
+  body.panel-closed aside#rail{display:block}
+  .rail-resize{display:none}
+  .vhd{display:none}  /* the drawer's head names the view */
+  .telemetry-bar .telemetry>div:not(:first-child),#status{display:none}
   .rail-head{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--line)}
-  aside#rail{position:absolute;inset:0 auto 0 0;width:min(340px,calc(100% - 44px));z-index:1300;
+  aside#rail{position:absolute;inset:0 auto 49px 0;width:min(340px,calc(100% - 44px));z-index:1300;
     visibility:hidden;transform:translateX(-100%);border-right:1px solid var(--line);box-shadow:var(--shadow)}
   body.rail-open #rail{visibility:visible;transform:none}
   #railBackdrop{position:absolute;inset:0;z-index:1200;background:#0006;border:0;padding:0}
-  #right{position:absolute;inset:auto 0 0;height:55%;z-index:1150;border-top:1px solid var(--line);box-shadow:var(--shadow)}
+  #right{position:absolute;inset:auto 0 49px;height:55%;z-index:1150;border-top:1px solid var(--line);box-shadow:var(--shadow)}
   #msgpane.open{height:min(52%,380px);min-height:0}
   #msgpane .mbody{flex-direction:column}
   #msgpane .convs{display:flex;gap:4px;width:100%;max-height:80px;min-height:44px;overflow:auto;flex:none;
@@ -374,7 +408,6 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
 }
 
 /* coordination mode */
-#btnCoord.busy{color:var(--ok);box-shadow:inset 0 -2px 0 var(--ok)}
 .st.ok{color:var(--ok)} .st.bad{color:var(--bad)}
 .wplist{display:flex;flex-direction:column;gap:4px}
 .wp{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
@@ -448,3 +481,6 @@ table.nodes tr.flash td{background:var(--accent-soft);transition:background .3s}
 .srcinfo .sub{font-size:10.5px;color:var(--ink3)}
 details.manual summary{cursor:pointer;font-size:12px;color:var(--ink2)}
 details.manual[open]{display:flex;flex-direction:column;gap:6px}
+/* the selection in the details: the popup's content, full width */
+.selwrap .pop h3{padding:14px 14px 10px}
+.selwrap .pop .facts{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}

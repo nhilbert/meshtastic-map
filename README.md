@@ -225,7 +225,7 @@ under the map sends and shows texts on your channels and to single nodes, and li
 traffic. Long jobs — a traceroute walk, a coverage simulation — run as background tasks, started
 and followed in the browser. A coordination mode guides field nodes to targets by short direct
 messages (assignment, distance and direction, arrival, answers to their questions). The
-interface is in English, German and French (switch DE|EN|FR in the header). Tour, all features,
+interface is in English, German and French (switch DE|EN|FR under Einstellungen). Tour, all features,
 and how to add layers, tasks or translations:
 [docs/mapapp.md](docs/mapapp.md). `--simulate` replaces the device by a simulated radio for
 trying things without transmitting. The app works offline: libraries are served locally and

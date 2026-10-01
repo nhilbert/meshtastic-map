@@ -15,68 +15,128 @@
 <body>
 <div id="app">
 <header>
-  <button class="btn" id="btnRail" aria-expanded="false" aria-controls="rail" data-i18n>Bedienfeld</button>
   <h1><span class="brand-name">meshplay</span><span class="brand-sub" data-i18n>Meshtastic — Karten</span></h1>
-  <button class="btn device-status" id="btnDevice" aria-controls="rail" title="Gerät (USB)" data-i18n-title="Gerät (USB)">
-    <span class="dot" id="headerDevDot" aria-hidden="true"></span><span id="headerDevText" data-i18n>lädt …</span>
-  </button>
   <span class="spacer"></span>
   <span class="seg" role="group" aria-label="Ansicht" data-i18n-aria-label="Ansicht">
     <button class="btn on" id="view2d" aria-pressed="true" data-i18n>2D Karte</button>
     <button class="btn" id="view3d" aria-pressed="false" data-i18n>3D Laserscan</button>
   </span>
-  <button class="btn" id="btnMsg" aria-pressed="false" aria-controls="msgpane"
-    title="Nachrichten und Paketverkehr des verbundenen Geräts"
-    data-i18n-title="Nachrichten und Paketverkehr des verbundenen Geräts" data-i18n>Nachrichten</button>
-  <button class="btn" id="btnJobs" title="Hintergrundaufgaben: Rundgang, Simulation"
-    data-i18n-title="Hintergrundaufgaben: Rundgang, Simulation" data-i18n>Aufgaben</button>
-  <button class="btn" id="btnCoord" title="Koordinationsmodus: Knoten zu Zielen führen"
-    data-i18n-title="Koordinationsmodus: Knoten zu Zielen führen" data-i18n>Koordination</button>
+  <span class="spacer"></span>
   <button class="btn" id="btnInsp" aria-pressed="false" aria-controls="right" disabled
-    title="Detailbereich ein-/ausblenden" data-i18n-title="Detailbereich ein-/ausblenden" data-i18n>Details</button>
-  <span class="seg" role="group" id="langSeg" aria-label="Sprache" data-i18n-aria-label="Sprache"></span>
-  <button class="btn" id="themeBtn" title="Hell/Dunkel" aria-label="Hell/Dunkel" data-i18n-title="Hell/Dunkel" data-i18n-aria-label="Hell/Dunkel">◐</button>
+    title="Detailbereich ein-/ausblenden" data-i18n-title="Detailbereich ein-/ausblenden"
+    aria-label="Details" data-i18n-aria-label="Details"></button>
 </header>
 
 <main class="noinsp">
+  <!-- Three zones: left what you do (a view per icon), right what you want to know about
+       (details of a selection, results, logs), below what keeps coming in (messages). -->
+  <nav id="actbar" aria-label="Ansichten" data-i18n-aria-label="Ansichten">
+    <div class="ab-group">
+      <button class="ab" data-view="layers" aria-label="Ebenen" data-i18n-aria-label="Ebenen"></button>
+      <button class="ab" data-view="places" aria-label="Orte" data-i18n-aria-label="Orte"></button>
+      <button class="ab" data-view="sim" aria-label="Simulation" data-i18n-aria-label="Simulation"></button>
+      <button class="ab" data-view="coord" aria-label="Koordination" data-i18n-aria-label="Koordination"></button>
+      <button class="ab" data-view="tasks" aria-label="Aufgaben" data-i18n-aria-label="Aufgaben"></button>
+      <button class="ab" data-view="device" aria-label="Gerät" data-i18n-aria-label="Gerät"></button>
+    </div>
+    <div class="ab-group">
+      <button class="ab" id="btnMsg" data-panel="msg" aria-pressed="false" aria-controls="msgpane"
+        aria-label="Nachrichten" data-i18n-aria-label="Nachrichten"></button>
+      <button class="ab" data-view="settings" aria-label="Einstellungen" data-i18n-aria-label="Einstellungen"></button>
+    </div>
+  </nav>
+
   <aside id="rail">
-    <div class="rail-head"><strong data-i18n>Bedienfeld</strong><button class="btn" id="btnCloseRail" aria-label="Schließen" data-i18n-aria-label="Schließen">✕</button></div>
-    <details class="sec" data-sec="layers" open>
-      <summary><h2 data-i18n>Ebenen</h2></summary>
-      <div class="lyr" id="lyr_link"></div>
+    <div class="rail-head"><strong id="railTitle"></strong><button class="btn" id="btnCloseRail" aria-label="Schließen" data-i18n-aria-label="Schließen"></button></div>
+
+    <section class="view" data-view="layers" hidden>
+      <h2 class="vhd" data-i18n>Ebenen</h2>
       <div id="layers"></div>
-    </details>
-    <details class="sec" data-sec="jobs">
-      <summary><h2 data-i18n>Aufgaben</h2></summary>
-      <div class="jobstart" id="jobStart"></div>
-      <div class="jobform" id="jobForm" hidden></div>
-      <div class="joblist" id="jobList"></div>
-    </details>
-    <details class="sec" data-sec="coord">
-      <summary><h2 data-i18n>Koordination</h2><span class="dot" id="coordDot"></span></summary>
-      <div class="stack" id="coordBox"></div>
-    </details>
-    <details class="sec" data-sec="3d" id="sec3d" open>
-      <summary><h2 data-i18n>3D-Darstellung</h2></summary>
-      <div class="stack" id="layers3d"></div>
-      <label class="tog" for="vex"><span data-i18n>Höhenüberhöhung</span> <span class="num" id="vexVal">1,0×</span></label>
-      <input class="rng" type="range" id="vex" min="1" max="4" step="0.1" value="1">
-      <label class="tog" for="fres"><span data-i18n>Fresnelzone</span> <span class="num" id="fresVal">1,0 F</span></label>
-      <input class="rng" type="range" id="fres" min="0.3" max="1.6" step="0.1" value="1">
-    </details>
-    <details class="sec" data-sec="device">
-      <summary><h2 data-i18n>Gerät (USB)</h2><span class="dot" id="devDot"></span></summary>
-      <div class="dev"><span id="devText">—</span></div>
-      <div class="devrow">
-        <select id="devPort" aria-label="Port" data-i18n-aria-label="Port"></select>
-        <button class="btn small quiet" id="devScan" aria-label="Ports neu suchen" data-i18n-aria-label="Ports neu suchen" title="Ports neu suchen" data-i18n-title="Ports neu suchen"></button>
-        <button class="btn" id="devBtn" data-i18n>Verbinden</button>
+      <details class="sec" data-sec="3d" id="sec3d" open>
+        <summary><h2 data-i18n>3D-Darstellung</h2></summary>
+        <div class="stack" id="layers3d"></div>
+        <label class="tog" for="vex"><span data-i18n>Höhenüberhöhung</span> <span class="num" id="vexVal">1,0×</span></label>
+        <input class="rng" type="range" id="vex" min="1" max="4" step="0.1" value="1">
+        <label class="tog" for="fres"><span data-i18n>Fresnelzone</span> <span class="num" id="fresVal">1,0 F</span></label>
+        <input class="rng" type="range" id="fres" min="0.3" max="1.6" step="0.1" value="1">
+      </details>
+    </section>
+
+    <section class="view" data-view="places" hidden>
+      <h2 class="vhd" data-i18n>Orte</h2>
+      <details class="sec" data-sec="sites" open>
+        <summary><h2 data-i18n>Eigene Standorte</h2></summary>
+        <div class="sitemgr" id="sitesBox"></div>
+      </details>
+      <details class="sec" data-sec="targets" open>
+        <summary><h2 data-i18n>Ziele</h2></summary>
+        <div class="stack" id="targetsBox"></div>
+      </details>
+      <details class="sec" data-sec="areas">
+        <summary><h2 data-i18n>Gebiete und Orte</h2></summary>
+        <div class="stack" id="areasBox"></div>
+      </details>
+    </section>
+
+    <section class="view" data-view="sim" hidden>
+      <h2 class="vhd" data-i18n>Simulation</h2>
+      <details class="sec" data-sec="scenes" open>
+        <summary><h2 data-i18n>Laserscan-Szenen</h2></summary>
+        <div class="sitemgr scenemgr" id="scenesBox"></div>
+      </details>
+      <details class="sec" data-sec="link" open>
+        <summary><h2 data-i18n>Strecke A → B</h2></summary>
+        <div class="lyr link" id="lyr_link"></div>
+      </details>
+      <details class="sec" data-sec="coverage">
+        <summary><h2 data-i18n>Abdeckung</h2></summary>
+        <div class="stack" id="coverageBox"></div>
+      </details>
+    </section>
+
+    <section class="view" data-view="coord" hidden>
+      <h2 class="vhd" data-i18n>Koordination</h2>
+      <div class="sec"><div class="stack" id="coordBox"></div></div>
+    </section>
+
+    <section class="view" data-view="tasks" hidden>
+      <h2 class="vhd" data-i18n>Aufgaben</h2>
+      <div class="sec" data-sec="jobs">
+        <div class="jobstart" id="jobStart"></div>
+        <div class="jobform" id="jobForm" hidden></div>
+        <div class="joblist" id="jobList"></div>
       </div>
-    </details>
-    <details class="sec" data-sec="airtime">
-      <summary><h2 data-i18n>Funklast</h2><span class="dot" id="airDot"></span></summary>
-      <div id="airBox"></div>
-    </details>
+    </section>
+
+    <section class="view" data-view="device" hidden>
+      <h2 class="vhd" data-i18n>Gerät</h2>
+      <details class="sec" data-sec="device" open>
+        <summary><h2 data-i18n>Verbindung</h2><span class="dot" id="devDot"></span></summary>
+        <div class="dev"><span id="devText">—</span></div>
+        <div class="devrow">
+          <select id="devPort" aria-label="Port" data-i18n-aria-label="Port"></select>
+          <button class="btn small quiet" id="devScan" aria-label="Ports neu suchen" data-i18n-aria-label="Ports neu suchen" title="Ports neu suchen" data-i18n-title="Ports neu suchen"></button>
+          <button class="btn" id="devBtn" data-i18n>Verbinden</button>
+        </div>
+      </details>
+      <details class="sec" data-sec="airtime" open>
+        <summary><h2 data-i18n>Funklast</h2><span class="dot" id="airDot"></span></summary>
+        <div id="airBox"></div>
+      </details>
+    </section>
+
+    <section class="view" data-view="settings" hidden>
+      <h2 class="vhd" data-i18n>Einstellungen</h2>
+      <div class="sec stack">
+        <span class="lbl" data-i18n>Sprache</span>
+        <span class="seg" role="group" id="langSeg" aria-label="Sprache" data-i18n-aria-label="Sprache"></span>
+        <span class="lbl" data-i18n>Darstellung</span>
+        <span class="seg" role="group" id="themeSeg" aria-label="Darstellung" data-i18n-aria-label="Darstellung"></span>
+        <p class="note" data-i18n>Beides gilt für diesen Browser.</p>
+      </div>
+    </section>
+    <div class="rail-resize" id="railResize" role="separator" aria-orientation="vertical" tabindex="0"
+      aria-label="Breite des Bedienfelds" data-i18n-aria-label="Breite des Bedienfelds"></div>
   </aside>
   <button id="railBackdrop" hidden tabindex="-1" aria-label="Schließen" data-i18n-aria-label="Schließen"></button>
 
@@ -133,6 +193,7 @@
       <div class="tabbody" id="t_models" hidden></div>
       <div class="tabbody" id="t_walk" hidden></div>
       <div class="tabbody" id="t_nodes" hidden></div>
+      <div class="tabbody" id="t_sel" hidden></div>
       <div class="tabbody" id="t_job" hidden></div>
       <div class="tabbody" id="t_coord" hidden></div>
     </div>

@@ -45,8 +45,7 @@ async function inEditor(fn) {
 function draw() {
   const box = E.box; if (!box || !box.isConnected) return;
   const ed = E.edit;
-  box.innerHTML = `<div class="hd2">${t("Standorte bearbeiten")}</div>
-    <div class="sitelist">${E.sites.map(s => ed && !ed.isNew && ed.orig === s.name ? formHTML(ed) : rowHTML(s)).join("")
+  box.innerHTML = `<div class="sitelist">${E.sites.map(s => ed && !ed.isNew && ed.orig === s.name ? formHTML(ed) : rowHTML(s)).join("")
       || `<p class="note" style="margin:0">${t("Noch keine Standorte.")}</p>`}</div>
     ${ed && ed.isNew ? formHTML(ed) : ""}
     <div class="msg" role="alert">${esc(E.msg)}</div>

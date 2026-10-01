@@ -4,8 +4,7 @@
 import { bindInputs, clearFormPreview, initialValues, inputsHTML } from "./forms.js";
 import { locale, t } from "./i18n.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
-import { showSection } from "./workspace.js";
-import { buttonLabel } from "./icons.js";
+import { setBadge, showSection } from "./workspace.js";
 
 const ACTIVE = ["läuft", "wartet"];
 const STATE_CLASS = { "läuft": "run", wartet: "wait", fertig: "ok", Fehler: "bad", abgebrochen: "off" };
@@ -18,9 +17,6 @@ const T = { jobs: [], kinds: [], form: null, sel: null, timer: null, api: null, 
 //        guided: { name: fn } forms of other parts that start a kind instead of the generic one }
 export function initTasks(api) {
   T.api = api;
-  $("#btnJobs").addEventListener("click", () => {
-    showSection("jobs");
-  });
   loadKinds().then(renderStart).catch(e => { $("#jobStart").innerHTML = `<p class="msg">${esc(e.message)}</p>`; });
   poll();
 }
@@ -142,11 +138,11 @@ function renderList() {
   }).join("");
   box.querySelectorAll(".job").forEach(el => bindActions(el, T.jobs.find(j => j.id === el.dataset.id)));
 }
+// The activity bar: a ring with the progress of the running task, a dot while one waits.
 function renderBadge() {
-  const run = T.jobs.filter(j => j.state === "läuft").length, wait = T.jobs.filter(j => j.state === "wartet").length;
-  const b = $("#btnJobs");
-  buttonLabel(b, "tasks", run ? t("Aufgaben · {n} läuft", { n: run }) : wait ? t("Aufgaben · {n} wartet", { n: wait }) : t("Aufgaben"));
-  b.classList.toggle("busy", run > 0);
+  const run = T.jobs.filter(j => j.state === "läuft"), wait = T.jobs.filter(j => j.state === "wartet").length;
+  setBadge("tasks", run.length ? { run: run[0].progress || 0 } : wait ? { dot: "warn" } : null,
+    run.length ? t("Aufgaben · {n} läuft", { n: run.length }) + ` · ${run[0].title}` : wait ? t("Aufgaben · {n} wartet", { n: wait }) : t("Aufgaben"));
 }
 
 async function act(j, a) {
