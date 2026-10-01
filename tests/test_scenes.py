@@ -133,6 +133,30 @@ def test_coverage_task_needs_the_site_inside_the_scene(ctx):
         JobManager(ctx).create("coverage", {"site": "DOM", "scene": "far"})
 
 
+def test_coverage_task_runs_on_the_chosen_scene_not_the_active_one(ctx, monkeypatch):
+    from meshplay.sim.sites import to_utm
+
+    (ctx.sim_dir).mkdir(parents=True, exist_ok=True)
+    (ctx.sim_dir / "sites.json").write_text(
+        '{"sites": {"DOM": {"lat": 50.9413, "lon": 6.95828, "height_m": [3, 4], "clutter_m": 10}}}',
+        encoding="utf-8",
+    )
+    x, y = to_utm(CATHEDRAL[1], CATHEDRAL[0])
+    root = scenes.scenes_dir(ctx.sim_dir)
+    small_scene().save(root / "elsewhere", {"name": "elsewhere"})
+    around = (round(x) - 300.0, round(y) - 300.0, round(x) + 300.0, round(y) + 300.0)
+    small_scene(around).save(root / "dom", {"name": "dom"})
+    scenes_api.activate(ctx, "elsewhere")  # the scene in use doesn't contain the site
+    monkeypatch.setenv("MESHPLAY_DATA_DIR", str(ctx.data_dir))  # for the simulation process
+    ctx.jobs = JobManager(ctx)
+    params = {"site": "DOM", "scene": "dom", "radius": 150, "step": 50, "draws": 100}
+    job = ctx.jobs.create("coverage", params)
+    wait_for(lambda: job.state in (DONE, FAILED), timeout=240)
+    assert job.state == DONE, (job.error, list(job.log)[-8:])
+    assert job.result["file"].endswith("-dom.npz")
+    assert any("Scene: dom" in line for line in map(str, job.log))
+
+
 # ---------------------------------------------------------------- download (script) and build
 class TileServer:
     """Serves {name: bytes} with HEAD, 404 and Range requests, like the Geobasis server."""

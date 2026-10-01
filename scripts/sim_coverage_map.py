@@ -87,7 +87,6 @@ def main() -> None:
         preset=args.preset,
         site_indoor=INDOOR[args.site_indoor],
         draws=args.draws,
-        scene=scene_name,
         cheap_grid=3,
         leaf="unbelaubt" if args.leafless else "belaubt",
     )
