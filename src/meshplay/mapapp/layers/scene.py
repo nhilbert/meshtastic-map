@@ -5,6 +5,7 @@ import numpy as np
 from meshplay.mapapp.i18n import N_, _
 from meshplay.mapapp.registry import Context, Layer, Setting, collection
 from meshplay.mapapp.style import png_data_url
+from meshplay.sim import sources
 from meshplay.sim.sites import to_lonlat
 
 
@@ -28,15 +29,18 @@ class SceneLayer(Layer):
             return collection(
                 [],
                 note=_(
-                    "Keine Laserscan-Szene: unten unter „＋ Neue Szene“ eine erstellen "
-                    "(nur Nordrhein-Westfalen)."
+                    "Keine Laserscan-Szene: unten unter „＋ Neue Szene“ eine erstellen ({states}).",
+                    states=", ".join(s.state for s in sources.SOURCES),
                 ),
             )
         features = []
         for sc in scene_list(ctx)["scenes"]:
             ring = [[lon, lat] for lat, lon in sc["ring"]]
             ring.append(ring[0])
-            fields = {_("Größe"): "{:.1f} × {:.1f} km".format(*sc["size_km"])}
+            fields = {
+                _("Größe"): "{:.1f} × {:.1f} km".format(*sc["size_km"]),
+                _("Quelle"): sc["attribution"],
+            }
             if sc["measured"] is not None:
                 fields[_("gemessen")] = f"{sc['measured']:.0%}"
             features.append(

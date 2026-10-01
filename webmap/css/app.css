@@ -442,3 +442,9 @@ table.nodes tr.open td{background:var(--accent-soft)}
 table.nodes tr.nl-tools td{padding:0 0 4px;border-top:0;background:var(--accent-soft)}
 table.nodes tr.nl-tools .tbar{padding:2px 0}
 table.nodes tr.flash td{background:var(--accent-soft);transition:background .3s}
+/* scene form: the state's source, the manual download folded away */
+.srcinfo{display:flex;flex-direction:column;padding:6px 8px;border-radius:6px;background:var(--bg2);border:1px solid var(--line-soft)}
+.srcinfo .nm{font-size:12px;font-weight:600}
+.srcinfo .sub{font-size:10.5px;color:var(--ink3)}
+details.manual summary{cursor:pointer;font-size:12px;color:var(--ink2)}
+details.manual[open]{display:flex;flex-direction:column;gap:6px}

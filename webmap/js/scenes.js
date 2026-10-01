@@ -1,8 +1,10 @@
 // Scene manager inside the "Laserscan-Szene" layer settings: switch the scene in use, delete
 // scenes and the downloaded tiles, create a new scene (click its centre on the map, choose the
-// size). The form lists the tiles the area needs; the owner downloads the missing ones by hand
-// into data/sim/laz/ (the app never downloads, see mapapp/scenes.py), then the server builds the
-// scene as a background task. Switching reloads the page: the 3D view is built for one scene.
+// size). The only way to a new scene: the task button "Laserscan-Szene erstellen" opens this form
+// too. It names the state's source and licence and what the area needs; the task downloads the
+// missing tiles when ticked (mapapp/scenes.py, sim/sources/), and "Selbst herunterladen" lists
+// the files with their links for doing it by hand. Switching reloads the page: the 3D view is
+// built for one scene.
 import { t } from "./i18n.js";
 import { esc, fmt, getJSON, postJSON } from "./util.js";
 import { G, registerActions } from "./actions.js";
@@ -33,6 +35,9 @@ export function renderScenes(box) {
   return E.loaded;
 }
 
+// The task list's button for this kind and the map's menu start here.
+export function openNewScene() { inManager(startNew); }
+
 // From the map: open the manager (form, tile list and messages are there), then act.
 async function inManager(fn) {
   E.api.openPanel();
@@ -62,33 +67,54 @@ function draw() {
 
 function rowHTML(s) {
   const n = esc(s.name);
-  const sub = [`${fmt(s.size_km[0], 1)} × ${fmt(s.size_km[1], 1)} km`, gb(s.mb), (s.created || "").slice(0, 10)].filter(Boolean).join(" · ");
+  const sub = [`${fmt(s.size_km[0], 1)} × ${fmt(s.size_km[1], 1)} km`, gb(s.mb), (s.created || "").slice(0, 10), s.attribution].filter(Boolean).join(" · ");
   return `<div class="site"><div class="txt"><span class="nm">${n}${s.active ? ` <span class="chip ok">${t("verwendet")}</span>` : ""}</span><span class="sub">${esc(sub)}</span></div>
     ${s.active ? "" : iconButton("check", t("Diese Szene verwenden (lädt die Seite neu)"), `data-use="${n}"`)}
     ${iconButton("trash", t("{name} löschen", { name: s.name }), `data-del="${n}"`, { danger: true })}</div>`;
 }
 
+// The source of the state, what the area needs and the way to get it.
+function planHTML(p, f) {
+  if (!p) return `<p class="note" style="margin:0">${t("prüft die Kacheln …")}</p>`;
+  if (!p.source) return `<p class="msg" style="margin:0">${esc(p.state
+    ? t("Für {state} gibt es noch keine Datenquelle. Unterstützt: {states}.", { state: p.state, states: p.supported })
+    : t("Hier gibt es keine Datenquelle (außerhalb Deutschlands). Unterstützt: {states}.", { states: p.supported }))}</p>`;
+  const s = p.source, loadable = p.missing.filter(m => m.url);
+  const status = p.missing.length
+    ? t("{n} Kacheln, {have} schon da. Es fehlen {files} Dateien, etwa {size} (frei: {free}).", { n: p.tiles, have: p.present, files: p.missing.length, size: gb(p.download_mb), free: gb(p.free_mb) })
+    : t("{n} Kacheln, alle schon da.", { n: p.tiles });
+  const list = p.missing.map(m => m.url || m.name).join("\n");
+  return `<div class="srcinfo"><span class="nm">${esc(s.state)}</span>
+      <span class="sub">${esc(s.product)} · ${esc(s.licence)} · ${esc(s.attribution)}</span></div>
+    <p class="note" style="margin:0">${esc(status)}${p.missing.length && p.present ? " " + esc(t("Was fehlt, wird interpoliert.")) : ""}</p>
+    ${p.index_error ? `<p class="msg" style="margin:0">${esc(p.index_error)}</p>` : ""}
+    ${loadable.length ? `<label class="tog" title="${esc(t("Über {interface}; ein abgebrochener Download macht beim nächsten Mal weiter.", { interface: s.interface }))}">
+      <input type="checkbox" data-f="download" ${f.download ? "checked" : ""}>${t("Fehlende Kacheln herunterladen")}</label>` : ""}
+    ${p.missing.length ? `<details class="manual"><summary>${t("Selbst herunterladen")}</summary>
+      <pre class="log tiles">${esc(list)}</pre>
+      <p class="note" style="margin:0">${esc(t("Mit Browser oder Download-Programm laden und unverändert in diesen Ordner legen:"))} <code>${esc(p.folder)}</code>
+        · <a href="${esc(s.portal)}" target="_blank" rel="noopener">${t("Download-Portal")}</a></p>
+      <div class="row2"><button class="btn small" data-copy>${t("Liste kopieren")}</button><button class="btn small" data-recheck>${t("Erneut prüfen")}</button></div></details>` : ""}`;
+}
+
+// Whether "Erstellen" can work: a source, and tiles here or to be downloaded.
+function canCreate(p, f) {
+  return !!(p && p.source && (p.present || (f.download && p.missing.some(m => m.url))));
+}
+
 function formHTML() {
   const f = E.form, p = E.plan;
   const exists = E.data && E.data.scenes.some(s => s.name === f.name);
-  const planText = !p ? "" : p.missing.length
-    ? t("{n} Kacheln, {have} schon da. Es fehlen {missing} (etwa {size}, frei: {free}):", { n: p.tiles, have: p.present, missing: p.missing.length, size: gb(p.download_mb), free: gb(p.free_mb) })
-    : t("{n} Kacheln, alle schon da.", { n: p.tiles });
-  const missingHTML = !p || !p.missing.length ? "" : `
-    <pre class="log tiles">${esc(p.missing.join("\n"))}</pre>
-    <p class="note" style="margin:0">${esc(t("Selbst herunterladen (Browser oder Download-Programm) und unverändert in diesen Ordner legen:"))} <code>${esc(p.folder)}</code>
-      · <a href="${esc(p.source)}" target="_blank" rel="noopener">${t("Download-Ordner von Geobasis NRW")}</a>
-      ${p.present ? esc(t("Was fehlt, wird interpoliert.")) : ""}</p>
-    <div class="row2"><button class="btn small" data-copy>${t("Liste kopieren")}</button><button class="btn small" data-recheck>${t("Erneut prüfen")}</button></div>`;
+  const fetch = p && p.source && f.download && p.missing.some(m => m.url);
   return `<div class="siteform">
     <label>${t("Name")}<input type="text" data-f="name" value="${esc(f.name)}" maxlength="32" placeholder="${t("z. B. innenstadt")}"></label>
     <div class="row2"><label>${t("Kantenlänge")}<select data-f="size">${SIZES.map(k => `<option value="${k}" ${k === f.size ? "selected" : ""}>${k} km</option>`).join("")}</select></label>
       <div class="note pos">${fmt(f.lat, 5)}, ${fmt(f.lon, 5)}</div></div>
     <label class="tog"><input type="checkbox" data-f="activate" ${f.activate ? "checked" : ""}>${t("Danach verwenden")}</label>
     <p class="note" style="margin:0" data-replace>${exists ? esc(t("Die Szene „{name}“ wird ersetzt.", { name: f.name })) : ""}</p>
-    <p class="note" style="margin:0">${esc(planText)} ${t("Nur Nordrhein-Westfalen.")}</p>
-    ${missingHTML}
-    <div class="row2"><button class="btn small" data-cancel>${t("Abbrechen")}</button><button class="btn small on" data-create ${p && !p.present ? "disabled" : ""}>${t("Erstellen")}</button></div></div>`;
+    ${planHTML(p, f)}
+    <div class="row2"><button class="btn small" data-cancel>${t("Abbrechen")}</button>
+      <button class="btn small on" data-create ${canCreate(p, f) ? "" : "disabled"}>${fetch ? t("Herunterladen und erstellen") : t("Erstellen")}</button></div></div>`;
 }
 
 function bindForm() {
@@ -101,10 +127,11 @@ function bindForm() {
   });
   box.querySelector("[data-f=size]").addEventListener("change", e => { E.form.size = +e.target.value; loadPlan(); });
   box.querySelector("[data-f=activate]").addEventListener("change", e => { E.form.activate = e.target.checked; });
+  box.querySelector("[data-f=download]")?.addEventListener("change", e => { E.form.download = e.target.checked; draw(); });
   box.querySelector("[data-cancel]").addEventListener("click", cancel);
   box.querySelector("[data-recheck]")?.addEventListener("click", loadPlan);
   box.querySelector("[data-copy]")?.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(E.plan.missing.join("\n")); E.api.toast(t("Liste kopiert")); }
+    try { await navigator.clipboard.writeText(E.plan.missing.map(m => m.url || m.name).join("\n")); E.api.toast(t("Liste kopiert")); }
     catch (_) { E.api.toast(t("Kopieren nicht möglich: die Liste bitte markieren und kopieren."), { bad: true }); }
   });
   box.querySelector("[data-create]").addEventListener("click", create);
@@ -117,7 +144,7 @@ function startNew() {
 function newAt(lat, lon) {
   E.msg = "";
   const first = !E.data || !E.data.scenes.length;
-  E.form = { lat, lon, size: 3, name: first ? "home" : "", activate: true };
+  E.form = { lat, lon, size: 3, name: first ? "home" : "", activate: true, download: true };
   E.plan = null;
   draw(); loadPlan();
   E.box.querySelector("[data-f=name]")?.focus();
@@ -139,7 +166,8 @@ async function create() {
   const exists = E.data && E.data.scenes.some(s => s.name === f.name);
   try {
     const job = await postJSON("api/jobs", { kind: "scene", params: {
-      name: f.name, center: `${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`, size: f.size, activate: f.activate, overwrite: exists } });
+      name: f.name, center: `${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`, size: f.size, activate: f.activate, overwrite: exists,
+      download: !!f.download } });
     E.form = null; E.plan = null; E.msg = ""; E.api.tempArea(null);
     E.api.taskStarted(job);
     draw();
@@ -167,6 +195,6 @@ async function remove(name) {
 }
 
 async function deleteTiles() {
-  if (!confirm(t("Alle heruntergeladenen Laserscan-Kacheln löschen ({size})? Die Szenen bleiben; für einen Neubau müssen die Kacheln erneut heruntergeladen werden.", { size: gb(E.data.tiles_mb) }))) return;
+  if (!confirm(t("Alle heruntergeladenen Kacheln löschen ({size})? Die Szenen bleiben; für einen Neubau müssen die Kacheln erneut heruntergeladen werden.", { size: gb(E.data.tiles_mb) }))) return;
   try { E.data = await postJSON("api/scenes/delete_tiles", {}); E.msg = ""; draw(); } catch (e) { E.msg = e.message; draw(); }
 }

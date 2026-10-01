@@ -1,7 +1,7 @@
 // Wiring: layer panel (settings forms from the server's declarations), the link layer (A/B
 // endpoints, computed in the browser session), the inspector on the right.
 import { Map2D } from "./map2d.js";
-import { G, registerActions } from "./actions.js";
+import { G, actionsFor, openMenu, registerActions } from "./actions.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
 import { assignTo, hasMissionDetail, initCoord, renderMissionDetail } from "./coord.js";
 import { bindInputs, initialValues, inputsHTML, setFormMap } from "./forms.js";
@@ -9,7 +9,7 @@ import { initMessages, openConversation } from "./messages.js";
 import { initNodeList, renderNodeList } from "./nodelist.js";
 import { LANGS, lang, loadCatalogue, locale, setLang, t, translateStatic } from "./i18n.js";
 import { renderLink, renderWalk } from "./panels.js";
-import { initScenes, renderScenes } from "./scenes.js";
+import { initScenes, openNewScene, renderScenes } from "./scenes.js";
 import { initSites, renderSites } from "./sites.js";
 import { initTasks, pollSoon, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
 import { $, css, esc, fmt, getJSON, grade, legendHTML, postJSON } from "./util.js";
@@ -697,6 +697,10 @@ function bindUI() {
   map3d = new Map3D($("#c"), {
     onPick: (lat, lon) => mapClick(lat, lon),
     onFeature: f => { if (S.pick && f.properties._endpoint) setEndpoint(S.pick, endpointFromFeature(f)); },
+    // the same menu as on the 2D map: the object's actions, or those of the spot
+    onContext: (f, lat, lon, x, y) => f
+      ? openMenu(x, y, f.properties._title || "", actionsFor(f.properties._ref, f))
+      : openMenu(x, y, `${lat.toFixed(5)}, ${lon.toFixed(5)}`, actionsFor({ type: "map", lat, lon })),
   });
   bindUI(); updateInspector();
   setView(store.get("view", "2d"));
@@ -708,7 +712,7 @@ function bindUI() {
     }).catch(e => { $("#loadingMsg").textContent = t("3D-Szene nicht verfügbar: {error}", { error: e.message }); });
   } else {
     $("#loadingMsg").innerHTML = [t("Keine Laserscan-Szene vorhanden."),
-      t("Die 3D-Ansicht und die Streckenberechnung brauchen sie. Erstellen: Ebene „Laserscan-Szene“ → Einstellungen → „＋ Neue Szene“ (nur Nordrhein-Westfalen)."),
+      t("Die 3D-Ansicht und die Streckenberechnung brauchen sie. Erstellen: Aufgaben → „Laserscan-Szene erstellen“ oder Rechtsklick in die Karte → „Szene hier erstellen“."),
       t("Die 2D-Karte und alle anderen Ebenen funktionieren ohne.")].map(esc).join("<br>");
     $("#loading .bar").hidden = true;
   }
@@ -740,7 +744,8 @@ function bindUI() {
   initMessages({ store, toast, connect: () => deviceStatus("connect"), focusNode,
     onOpen: () => { if (matchMedia("(max-width: 700px)").matches && !$("#right").hidden) toggleInspector(false); },
   });
-  initTasks({ store, toast, openInspector, updateInspector, onTransition: taskTransition, actions: taskActions });
+  initTasks({ store, toast, openInspector, updateInspector, onTransition: taskTransition, actions: taskActions,
+    guided: { scene: openNewScene } });
   registerLinkActions();
   initLayers();
   S.devState = null;

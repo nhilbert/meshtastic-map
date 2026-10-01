@@ -70,7 +70,7 @@ export const LAYERS_3D = [
 export class Map3D {
   constructor(canvas, handlers) {
     this.cvs = canvas;
-    this.h = handlers;         // { onPick(lat, lon), onFeature(feature) }
+    this.h = handlers;         // { onPick(lat, lon), onFeature(feature), onContext(feature | null, lat, lon, x, y) }
     this.vex = 1; this.fresScale = 1;
     this.state = Object.fromEntries(LAYERS_3D.map(l => [l.id, l.on]));
     this.dataLayers = {};      // id -> THREE.Group
@@ -393,7 +393,7 @@ export class Map3D {
   bindCamera() {
     const cvs = this.cvs, o = () => this.orbit;
     let drag = null;
-    cvs.addEventListener("pointerdown", e => { cvs.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, pan: e.shiftKey || e.button === 2 || e.button === 1 }; });
+    cvs.addEventListener("pointerdown", e => { this.pointerType = e.pointerType; cvs.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, pan: e.shiftKey || e.button === 2 || e.button === 1 }; });
     cvs.addEventListener("pointermove", e => {
       if (!drag) { this.hover(e); return; }
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
@@ -408,12 +408,16 @@ export class Map3D {
         ob.tz -= -dx * s * Math.sin(ob.az) + fwd * Math.cos(ob.az);
       } else { ob.az -= dx * 0.005; ob.el = Math.max(0.05, Math.min(1.52, ob.el + dy * 0.005)); }
     });
+    // the right button pans when dragged; a right click without moving opens the actions menu
     cvs.addEventListener("pointerup", e => {
-      if (drag && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 4 && e.button === 0) this.click(e);
+      const still = drag && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 4;
+      if (still && e.button === 0) this.click(e);
+      if (still && e.button === 2) this.context(e);
       drag = null; try { cvs.releasePointerCapture(e.pointerId); } catch (_) { }
     });
     cvs.addEventListener("pointercancel", () => { drag = null; });
-    cvs.addEventListener("contextmenu", e => e.preventDefault());
+    // a long press on a touch screen arrives as contextmenu only
+    cvs.addEventListener("contextmenu", e => { e.preventDefault(); if (this.pointerType === "touch") this.context(e); });
     cvs.addEventListener("wheel", e => { e.preventDefault(); o().dist = Math.max(60, Math.min(9000, o().dist * Math.exp(e.deltaY * 0.0011))); }, { passive: false });
   }
   raycast(e) {
@@ -433,6 +437,12 @@ export class Map3D {
     if (hit.object.userData.feature) { this.h.onFeature(hit.object.userData.feature); return; }
     const [x, y] = this.hitUTM(hit), [lon, lat] = toLonLat(x, y);
     this.h.onPick(lat, lon);
+  }
+  context(e) {
+    const hit = this.raycast(e);
+    if (!hit) return;
+    const [x, y] = this.hitUTM(hit), [lon, lat] = toLonLat(x, y);
+    this.h.onContext(hit.object.userData.feature || null, lat, lon, e.clientX, e.clientY);
   }
   hover(e) {
     const hit = this.raycast(e), out = $("#readout");

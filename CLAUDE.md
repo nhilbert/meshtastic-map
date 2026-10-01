@@ -49,7 +49,8 @@ src/meshplay/walk.py        walk data: load positions, probes, GPX; place probes
 src/meshplay/probe.py       traceroute probes (shared by probe_walk.py and the map app task)
 src/meshplay/sim/           itu.py, p1812.py (verbatim ITU port), models.py, scene.py, link.py,
                             predictor.py, compare.py, walkcompare.py, sites.py, view3d.py,
-                            scenes.py (named scenes, the active one), lidar.py (tile download)
+                            scenes.py (named scenes, the active one), lidar.py (downloads),
+                            sources/ (elevation data per state: nrw, ni, sh; raster scenes)
 src/meshplay/mapapp/        server.py (HTTP + API), registry.py (Layer, Setting, Context),
                             layers/ (one module per layer), tools/link.py, jobs.py (background
                             tasks), sites_store.py (sites.json editing), device.py (live USB link,
@@ -96,10 +97,13 @@ nodes on the private channel of its settings. Walk traffic goes on a private cha
 limit 0; coordination messages are direct messages on the channel of its settings (default 1,
 the private channel).
 
-**Laser-scan tiles.** The map app never downloads them: the owner fetches them by hand into
-`data/sim/laz/` (the scene form lists the names). The Geobasis NRW file server is not a
-documented interface for programs and has been reorganised before. Only
-`scripts/sim_fetch_tiles.py --download` fetches tiles, when the owner runs it.
+**Elevation tiles.** One source module per state (`sim/sources/`). Tiles are downloaded only
+when the owner asks (the scene form's *Fehlende Kacheln herunterladen*, `sim_build_scene.py
+--download`), only through an interface the state's office documents for programs (a folder
+with fixed names, a STAC API, a published tile index), never by imitating a portal page, and
+resumably. The scene form always lists the files with their links for a download by hand, which
+is the fallback when an interface changes. A new state needs its own module and a check of its
+licence and attribution.
 
 **Modem preset.** The owner's mesh runs **ShortSlow**; `DEFAULT_PRESET` in `config.py` is the
 single default. Never hardcode LongFast. A preset (and interval) recorded in a log wins over the

@@ -54,8 +54,8 @@ pixel-exact representations of the available map data.
   *Einsatz*, then node list, A/B; sites: *Bearbeiten*, *Verschieben*, *Abdeckung*, then A/B,
   *Löschen*; targets, areas, places, OSM suggestions and scenes what their editors offer. A
   right click on a free spot offers to create a site, target, place or scene there, to set A or
-  B, or to copy the coordinates. Editing opens the editor in the side panel. Only the 2D map
-  has the menu so far.
+  B, or to copy the coordinates. Editing opens the editor in the side panel. The 3D view has
+  the same menu on a right click without dragging (dragging with the right button pans).
 - **Strecke A → B** (first layer) is the direct-link calculator. While it is on, a click in the
   map sets A or B ("Klick in die Karte setzt: A | B | aus", Esc ends it); while it is off, map
   clicks do nothing. Sites, nodes and walk points have "als A" / "als B" in their popup, which
@@ -142,24 +142,31 @@ when a task ends or fails.
   use; the site must lie inside it). The grid is named after its setup,
   `coverage-<site>-<preset>-<placement>-<radius>m-<step>m[-winter]-<scene>.npz`, and carries it
   as metadata, which the layer *Simulierte Abdeckung* shows in its selection.
-- **Laserscan-Szene erstellen** builds a scene from the tiles in `data/sim/laz/` with
-  `scripts/sim_build_scene.py` as a separate process (missing tiles are interpolated; it refuses
-  if none is there); with *Danach verwenden* it switches to the new scene and prepares its 3D
-  view. It never downloads. The scene manager (next section) starts it with a centre picked on
-  the map.
+- **Laserscan-Szene erstellen** opens the scene manager's form (next section), the one way to
+  a new scene. The task runs `scripts/sim_build_scene.py` as a separate process: with
+  *Fehlende Kacheln herunterladen* it first fetches the missing tiles (progress per file,
+  resumable after *Abbrechen*), then builds the scene (missing tiles are interpolated; it
+  refuses if none is there or can be fetched); with *Danach verwenden* it switches to the new
+  scene and prepares its 3D view.
 
 ## Laser-scan scenes (Laserscan-Szene)
 
-The ⚙ of the layer *Laserscan-Szene* lists the scenes (`data/sim/scenes/<name>/`; the one in use
-is marked *verwendet*). **＋ Neue Szene** and a click in the map set the centre; name and edge
-length (1–5 km) complete the form, which draws the square on the map and lists the tiles that
-are not in `data/sim/laz/` yet (*Liste kopieren*), the size estimate, the free disk space and a
-link to the Geobasis NRW download folder. The owner downloads them by hand: the file server is
-not a documented interface for programs and has been reorganised before. *Erneut prüfen*
-updates the list, *Erstellen* starts the task above. *Verwenden* switches the scene and reloads the page (the 3D view is built for
-one scene; its data is exported on first use into `data/mapapp/scene/<name>/`). ✕ deletes a
-scene (not while a task uses it); *Kacheln löschen* deletes the downloaded tiles in
-`data/sim/laz/`, which are only needed to build. The link tool, the walk comparison and the site
+The ⚙ of the layer *Laserscan-Szene* lists the scenes (`data/sim/scenes/<name>/`, with their
+source; the one in use is marked *verwendet*). **＋ Neue Szene** (also *Laserscan-Szene
+erstellen* under *Aufgaben*, or *Szene hier erstellen* in the map's right-click menu) and a
+click in the map set the centre; name and edge length (1–5 km) complete the form. It draws the
+square and names the source of the centre's state with product, licence and attribution
+(`sim/sources/`: North Rhine-Westphalia laser-scan points; Lower Saxony and Schleswig-Holstein
+1 m terrain and surface rasters, whose buildings come from OpenStreetMap footprints), how many
+tiles the area needs, how many are here, and the size of the missing files against the free
+disk space. Other states get a plain message which ones are supported. *Fehlende Kacheln
+herunterladen* (on by default) lets the task fetch them; *Selbst herunterladen* folds out the
+list of files with their links (*Liste kopieren*), the target folder and the state's portal,
+for a download by hand, and *Erneut prüfen* updates the count. *Verwenden* switches the scene
+and reloads the page (the 3D view is built for one scene; its data is exported on first use
+into `data/mapapp/scene/<name>/`). The bin deletes a scene (not while a task uses it);
+*Kacheln löschen* deletes the downloaded tiles of all sources, which are only needed to
+build. The link tool, the walk comparison and the site
 suggestions always use the scene in use.
 
 ## Coordination mode (Koordination)
@@ -398,8 +405,8 @@ src/meshplay/mapapp/
   coord/           coordination mode: missions.py (Coordinator, decisions, API), phrases.py
                    (radio texts, commands), paths.py, settings.py, store.py, geo.py
   jobs.py          background tasks: manager, task kinds (traceroute walk, coverage simulation)
-  scenes.py        laser-scan scenes: list, switch, delete, 3D export per scene, the task that
-                   builds a scene from the tiles in data/sim/laz/
+  scenes.py        laser-scan scenes: list, switch, delete, 3D export per scene, the plan of an
+                   area (source, tiles, links), the task that downloads and builds
   sites_store.py   editing data/sim/sites.json
   messages.py      message store for the messaging pane (data/messages.jsonl, traffic list)
   i18n.py          translations: _(), N_(), L(), language per request

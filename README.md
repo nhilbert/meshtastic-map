@@ -120,7 +120,8 @@ explain what's missing; the rest works. [docs/mapapp.md](docs/mapapp.md) has a t
 
 - Measure your coverage: [Coverage walks](#coverage-walks).
 - Get the laser-scan data for the 3D view and the simulation:
-  [3D laser-scan data](#3d-laser-scan-data) (NRW only).
+  [3D laser-scan data](#3d-laser-scan-data) (North Rhine-Westphalia, Lower Saxony,
+  Schleswig-Holstein).
 
 ## Scripts
 
@@ -144,7 +145,7 @@ they talk to the device (otherwise `MESHTASTIC_PORT` from `.env` or auto-detecti
 | `make_basemap.py` | rebuilds the offline overview map (`webmap/vendor/basemap/`) from Natural Earth |
 | **Simulation** | |
 | `sim_fetch_tiles.py` | lists and downloads the NRW laser-scan tiles around home ([details](#3d-laser-scan-data)) |
-| `sim_build_scene.py` | builds a named 3D scene (terrain, buildings, trees) from the tiles; lists and switches scenes |
+| `sim_build_scene.py` | builds a named 3D scene (terrain, buildings, trees) for NRW, Lower Saxony or Schleswig-Holstein, `--download` fetches the tiles; lists and switches scenes |
 | `sim_coverage_map.py` | predicted coverage around a site, per model |
 | `sim_compare_walk.py` | scores a walk against the models |
 | `sim_predict.py`, `sim_score.py` | frozen predictions for fixed links, scored against `measure_logger.py` results |
@@ -240,10 +241,26 @@ map, nodes, walks, sites and traceroute walks work; the parts that need the scen
 
 ### The data
 
-- **Source:** Geobasis NRW, *3D-Messdaten Laserscanning (LAS)*: classified point clouds of the
-  whole of North Rhine-Westphalia, open data under
-  [dl-de/zero-2-0](https://www.govdata.de/dl-de/zero-2-0) (free to use without conditions).
-  **Only NRW is covered.**
+Each German state publishes its own elevation data, in its own form. Three are supported, one
+module each in `src/meshplay/sim/sources/`; the scene's centre decides which one is used:
+
+| State | Data | Licence | Download interface | Per km² |
+|---|---|---|---|---|
+| North Rhine-Westphalia | classified laser-scan points (Geobasis NRW, 3D-Messdaten) | dl-de/zero-2-0 | folder with fixed file names | ~95 MB |
+| Lower Saxony | DGM1 and DOM1, 1 m rasters from the laser scan (LGLN) | CC BY 4.0 | STAC API | ~8 MB |
+| Schleswig-Holstein | DGM1 (1 m) and image-based surface bDOM (20 cm) (LVermGeo SH) | CC BY 4.0 | published GeoJSON tile index | ~130 MB |
+
+From the points (NRW), the share of last and multiple returns separates roofs from trees. The
+raster states have no points, so their buildings come from OpenStreetMap footprints (Overpass,
+only the area's box is sent); if Overpass can't be reached, roofs are told from trees by the
+smoothness of the surface, which finds only about half of the buildings (the scene records
+which way was used). Schleswig-Holstein's surface comes from aerial images, so trees are less
+exact than from a laser scan. Other states publish their data only through portals, shops or
+for a fee, or in UTM zone 33, which the app doesn't handle yet; they need their own module.
+The licences ask for attribution; the scene list and the scene's popup show it.
+
+The North Rhine-Westphalia tiles in detail:
+
 - **Tiles:** 1 km × 1 km, compressed LAS (`.laz`), about 60–130 MB each, named
   `3dm_32_<E>_<N>_1_nw.laz`. `<E>` and `<N>` are the easting and northing of the tile's
   south-west corner in kilometres, in UTM zone 32N (ETRS89, EPSG:25832).
@@ -260,18 +277,19 @@ scene has data. 3 × 3 km is a good start for a town; 5 × 5 km is the most the 
 
 ### In the map app (recommended)
 
-1. Layer *Laserscan-Szene* → settings (⚙) → **＋ Neue Szene**, click the centre on the map, give
-   it a name and an edge length. The form draws the square and lists the tiles it needs that
-   are not in `data/sim/laz/` yet, with the estimated size and the free disk space.
-2. **Download the missing tiles yourself** from the Geobasis NRW download folder (linked in the
-   form; browser or any download manager) and put them unchanged into `data/sim/laz/`.
-   *Liste kopieren* copies the names. The app deliberately never downloads: the file server is
-   not documented as an interface for programs, and its folders and file names have been
-   reorganised before.
-3. *Erneut prüfen* updates the list; *Erstellen* starts a background task (*Aufgaben*) that
-   builds the scene in a separate process and prepares the 3D view. Tiles still missing are
-   interpolated (the layer shows those areas). With *Danach verwenden* the new scene is used
-   right away (the page offers to reload).
+1. *Aufgaben* → **Laserscan-Szene erstellen** (or right click on the map → *Szene hier
+   erstellen*, or layer *Laserscan-Szene* → ⚙ → **＋ Neue Szene**), click the centre on the map,
+   give it a name and an edge length. The form draws the square and names the state's source,
+   how many tiles the area needs, how many are here, and the size of the rest against the free
+   disk space.
+2. Leave **Fehlende Kacheln herunterladen** ticked and press *Herunterladen und erstellen*: a
+   background task (*Aufgaben*) fetches the missing files through the state's interface
+   (resumable: a cancelled or broken download continues next time), builds the scene in a
+   separate process and prepares the 3D view. Tiles still missing are interpolated (the layer
+   shows those areas). With *Danach verwenden* the new scene is used right away.
+3. If a download fails (servers change), *Selbst herunterladen* lists the files with their links
+   (*Liste kopieren*) and the folder to put them in unchanged; *Erneut prüfen* updates the
+   count and *Erstellen* builds from what is there.
 
 The same list shows all scenes: *Verwenden* switches (the page reloads, the 3D view is built for
 one scene), ✕ deletes one, *Kacheln löschen* frees the space of the downloaded tiles.
@@ -285,6 +303,7 @@ it.
 python scripts/sim_fetch_tiles.py --radius 1500              # list: names, sizes, what you have
 python scripts/sim_fetch_tiles.py --radius 1500 --download   # download into data/sim/laz/
 python scripts/sim_build_scene.py --name home --radius 1500  # build data/sim/scenes/home/
+python scripts/sim_build_scene.py --name kiel --center 54.315,10.1315 --size 3000 --download
 python scripts/sim_build_scene.py --list                     # scenes; * = the one in use
 python scripts/sim_build_scene.py --use home                 # switch
 ```

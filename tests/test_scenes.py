@@ -86,10 +86,27 @@ def test_scene_in_use_by_a_task_is_not_deleted(ctx):
 
 
 def test_plan_counts_tiles_without_network(ctx):
+    from meshplay.sim.sources.nrw import TILE_MB
+
     plan = scenes_api.plan(ctx, *CATHEDRAL, 3)
+    assert plan["source"]["id"] == "nrw" and plan["state"] == "Nordrhein-Westfalen"
     assert plan["tiles"] in (9, 12, 16) and plan["present"] == 0
-    assert plan["download_mb"] == plan["tiles"] * scenes_api.TILE_MB
+    assert plan["download_mb"] == plan["tiles"] * TILE_MB
+    assert all(m["url"].startswith("https://") for m in plan["missing"])
     assert len(plan["ring"]) == 4
+
+
+def test_plan_without_a_source_names_the_state(ctx):
+    plan = scenes_api.plan(ctx, 48.13743, 11.57549, 2)  # Munich, Marienplatz
+    assert plan["source"] is None and plan["state"] == "Bayern"
+    assert "Niedersachsen" in plan["supported"]
+    with pytest.raises(ValueError, match="keine Datenquelle"):
+        JobManager(ctx).create("scene", {"name": "m", "center": "48.13743, 11.57549", "size": 2})
+
+
+def test_scene_task_is_started_from_the_scene_form(ctx):
+    kinds = {k["id"]: k for k in (kind.describe(ctx) for kind in JobManager(ctx).kinds.values())}
+    assert kinds["scene"]["guided"] == "scene" and kinds["coverage"]["guided"] is None
 
 
 # ---------------------------------------------------------------- task checks
@@ -165,8 +182,8 @@ class TileServer:
 def test_download_continues_a_part_file(tmp_path, monkeypatch):
     from meshplay.sim import lidar
 
-    # small: some Windows network filters (seen with Norton) drop the end of large loopback sends
-    data = bytes(range(256)) * 400
+    # small: some Windows network filters (seen with Norton) drop the end of loopback sends
+    data = bytes(range(256)) * 40
     server = TileServer({"t.laz": data})
     monkeypatch.setattr(lidar, "TILE_URL", server.url)
     try:
@@ -215,13 +232,14 @@ def test_scene_task_builds_from_local_tiles_and_activates(ctx, monkeypatch):
     monkeypatch.setattr(lidar, "remote_size", no_network)
     e_km, n_km = 356, 5645
     lon, lat = to_lonlat(e_km * 1000 + 500, n_km * 1000 + 500)
-    params = {"name": "dom", "center": f"{lat:.5f}, {lon:.5f}", "size": "1"}
+    # without "download" ticked the task never fetches anything
+    params = {"name": "dom", "center": f"{lat:.5f}, {lon:.5f}", "size": "1", "download": False}
     ctx.jobs = JobManager(ctx)
     with pytest.raises(ValueError, match="Keine der"):  # nothing downloaded yet
         ctx.jobs.create("scene", params)
     plan = scenes_api.plan(ctx, lat, lon, 1)
-    assert tile_name(e_km, n_km) in plan["missing"]
-    assert plan["source"].startswith("https://") and plan["folder"].endswith("laz")
+    assert [m["name"] for m in plan["missing"]] == [tile_name(e_km, n_km)]
+    assert plan["source"]["portal"].startswith("https://") and plan["folder"].endswith("laz")
 
     laz = ctx.sim_dir / "laz"
     laz.mkdir(parents=True)

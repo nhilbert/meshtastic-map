@@ -14,7 +14,8 @@ const STATE_CLASS = { "läuft": "run", wartet: "wait", fertig: "ok", Fehler: "ba
 const T = { jobs: [], kinds: [], form: null, sel: null, timer: null, api: null, prev: null, detail: null };
 
 // api: { store, toast(msg, opts), openInspector(tab), updateInspector(), onTransition(job, prev),
-//        actions(job) -> [[label, fn], ...] extra buttons per task }
+//        actions(job) -> [[label, fn], ...] extra buttons per task,
+//        guided: { name: fn } forms of other parts that start a kind instead of the generic one }
 export function initTasks(api) {
   T.api = api;
   $("#btnJobs").addEventListener("click", () => {
@@ -44,6 +45,7 @@ export function openTaskForm(kindId, preset = null) {
 async function openForm(kindId, preset = null) {
   try { await loadKinds(); } catch (e) { T.api.toast(e.message, { bad: true }); return; }  // fresh nodes, sites
   const kind = T.kinds.find(k => k.id === kindId);
+  if (kind.guided && T.api.guided && T.api.guided[kind.guided]) { T.api.guided[kind.guided](); return; }
   T.form = { kind, values: initialValues(kind.settings, { ...T.api.store.get("job." + kindId, null), ...preset }) };
   renderForm();
   $("#jobForm").scrollIntoView({ behavior: "smooth", block: "nearest" });

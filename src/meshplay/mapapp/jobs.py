@@ -105,6 +105,7 @@ class JobKind:
     description = ""
     stop_label = N_("Abbrechen")
     stop_is_success = False  # e.g. a walk: stopping it is the normal end
+    guided = None  # name of a page form that starts this kind instead of the generic one
 
     def settings(self, ctx: Context) -> list[Setting]:
         return []
@@ -125,6 +126,7 @@ class JobKind:
             description=_(self.description),
             stop_label=_(self.stop_label),
             stop_is_success=self.stop_is_success,
+            guided=self.guided,
             settings=[s.to_json() for s in self.settings(ctx)],
         )
 

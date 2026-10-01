@@ -1,11 +1,12 @@
 """Laser-scan scenes in the map app: list, switch, delete, and the task that builds one.
 
-The scenes themselves are meshplay.sim.scenes (data/sim/scenes/<name>/). The app never downloads
-tiles: the owner fetches them by hand from Geobasis NRW into data/sim/laz/ (the form lists the
-names it needs). The file server is not documented as an interface for programs, and its naming
-has been reorganised before (orthophotos), so a built-in download would break silently. The
-task builds the scene from the tiles in a separate process (scripts/sim_build_scene.py), so its
-gigabyte of rasters never sits in the server. The 3D view's data is exported per scene into
+The scenes themselves are meshplay.sim.scenes (data/sim/scenes/<name>/); where the elevation
+data comes from is meshplay.sim.sources (one source per state, chosen by the scene's centre).
+The plan says which tiles an area needs, which are there and what the rest costs, with each
+file's link for a download by hand. The task downloads the missing ones only when the owner
+ticks it, through the source's documented interface, resumable; if that fails, the plan's list
+still works. The task runs scripts/sim_build_scene.py in a separate process, so its gigabyte of
+rasters never sits in the server. The 3D view's data is exported per scene into
 data/mapapp/scene/<name>/ when it is first needed.
 """
 
@@ -18,16 +19,23 @@ from pathlib import Path
 from meshplay.mapapp.i18n import N_, L, _
 from meshplay.mapapp.jobs import RUNNING, WAITING, Job, JobKind, run_process
 from meshplay.mapapp.registry import Context, Setting
-from meshplay.sim import scenes
-from meshplay.sim.scene import TILE_URL
+from meshplay.sim import scenes, sources
 
-TILE_MB = 95  # typical size of an NRW tile (60-130 MB), for the estimate shown in the form
 SIZES = (1, 2, 3, 4, 5)  # edge length in km; 5 km = 25 M cells, about 0.5 GB in the server
 EXPORT_FILES = ("scene_meta.json", "terrain.i16", "bodies.bin")
+TILE_SUFFIXES = (".laz", ".tif", ".xyz", ".part")
 
 
 def laz_dir(ctx: Context) -> Path:
-    return ctx.sim_dir / "laz"
+    return sources.by_id("nrw").tiles_dir(ctx.sim_dir)
+
+
+def tile_dirs(ctx: Context) -> list[Path]:
+    return [s.tiles_dir(ctx.sim_dir) for s in sources.SOURCES]
+
+
+def supported() -> str:
+    return ", ".join(s.state for s in sources.SOURCES)
 
 
 def export_dir(ctx: Context, name: str) -> Path:
@@ -76,9 +84,19 @@ def ring(bbox) -> list[list[float]]:
     return [[lat, lon] for lon, lat in (to_lonlat(x, y) for x, y in pts)]
 
 
+def tile_files(ctx: Context) -> list[Path]:
+    """The downloaded tiles of all sources (not their indexes)."""
+    return [
+        f
+        for d in tile_dirs(ctx)
+        if d.is_dir()
+        for f in d.rglob("*")
+        if f.suffix in TILE_SUFFIXES and f.parent.name != "index"
+    ]
+
+
 def tiles_bytes(ctx: Context) -> int:
-    d = laz_dir(ctx)
-    return sum(f.stat().st_size for f in d.glob("*.laz")) if d.is_dir() else 0
+    return sum(f.stat().st_size for f in tile_files(ctx))
 
 
 def scene_list(ctx: Context) -> dict:
@@ -98,6 +116,8 @@ def scene_list(ctx: Context) -> dict:
                 bounds=bounds(b),
                 created=m.get("created", ""),
                 measured=m.get("measured"),
+                source=m.get("source", "nrw"),
+                attribution=m.get("attribution", "Geobasis NRW"),
                 mb=scenes.disk_bytes(scenes.scenes_dir(ctx.sim_dir) / name) / 1e6,
             )
         )
@@ -142,35 +162,58 @@ def delete_tiles(ctx: Context) -> dict:
         j.kind == "scene" and j.state in (RUNNING, WAITING) for j in ctx.jobs.jobs.values()
     ):
         raise ValueError(_("Eine Szene wird gerade erstellt: erst abwarten"))
-    d = laz_dir(ctx)
-    if d.is_dir():
-        for f in [*d.glob("*.laz"), *d.glob("*.part")]:
-            f.unlink(missing_ok=True)
+    for f in tile_files(ctx):
+        f.unlink(missing_ok=True)
     return scene_list(ctx)
 
 
 def plan(ctx: Context, lat: float, lon: float, size_km: float) -> dict:
-    """What building a scene here needs: the tile names, which are in data/sim/laz/ already,
-    and how much the missing ones are to download by hand (estimate)."""
-    from meshplay.sim.scene import tiles_for_bbox
+    """What building a scene here needs: the state's source, the tiles, which are here already,
+    and the missing files with their links and an estimate of their size.
+
+    Without a source for the state, "source" is None and "state" says which one it is. When the
+    source's index can't be reached (offline), only the tiles already here count and
+    "index_error" says so.
+    """
     from meshplay.sim.sites import to_utm
 
     x, y = to_utm(lon, lat)
     bbox = scenes.bbox_around(x, y, size_km * 1000)
-    tiles = tiles_for_bbox(bbox)
-    missing = [t for t in tiles if not (laz_dir(ctx) / t).exists()]
+    source, state = sources.for_point(lat, lon)
     free = shutil.disk_usage(ctx.data_dir if ctx.data_dir.exists() else Path.cwd()).free
-    return dict(
-        tiles=len(tiles),
-        present=len(tiles) - len(missing),
-        missing=missing,
-        download_mb=len(missing) * TILE_MB,
-        free_mb=free / 1e6,
-        folder=str(laz_dir(ctx)),
-        source=TILE_URL,  # the folder listing, linked in the form
+    out = dict(
+        state=state,
+        source=None,
+        supported=supported(),
         ring=ring(bbox),
         center=f"{lat:.5f}, {lon:.5f}",
+        free_mb=free / 1e6,
+        tiles=0,
+        present=0,
+        missing=[],
+        download_mb=0.0,
+        index_error=None,
     )
+    if source is None:
+        return out
+    tiles_dir = source.tiles_dir(ctx.sim_dir)
+    try:
+        tiles = source.tiles(bbox, tiles_dir)
+    except OSError:
+        tiles = source.tiles_offline(bbox, tiles_dir)
+        out["index_error"] = _(
+            "Das Kachelverzeichnis von {state} ist nicht erreichbar (offline?).", state=state
+        )
+    files = [f for t in tiles for f in t.files if not f.present]
+    out.update(
+        source=source.describe(),
+        folder=str(tiles_dir),
+        tiles=sum(1 for t in tiles if t.files or t.present),
+        present=sum(1 for t in tiles if t.present),
+        missing=[dict(name=f.name, url=f.url, mb=f.mb) for f in files],
+        download_mb=sum(f.mb for f in files),
+    )
+    return out
 
 
 def default_center(ctx: Context) -> str:
@@ -186,11 +229,11 @@ class SceneBuild(JobKind):
     id = "scene"
     name = N_("Laserscan-Szene erstellen")
     description = N_(
-        "Baut aus den Laserscan-Kacheln in data/sim/laz/ die Szene: Gelände, Gebäude und Bäume "
-        "im 1-m-Raster (3 × 3 km: ein bis zwei Minuten). Die Kacheln lädst du vorher selbst "
-        "bei Geobasis NRW herunter; welche gebraucht werden, zeigt „＋ Neue Szene“ in der Ebene "
-        "„Laserscan-Szene“. Fehlende Kacheln werden interpoliert. Nur Nordrhein-Westfalen."
+        "Baut aus den Höhendaten des Bundeslands die Szene: Gelände, Gebäude und Bäume im "
+        "1-m-Raster (3 × 3 km: ein bis zwei Minuten). Fehlende Kacheln lädt sie auf Wunsch "
+        "vorher herunter. Fehlende Kacheln werden interpoliert."
     )
+    guided = "scene"  # started from the scene manager, which shows the tiles first
 
     def settings(self, ctx: Context) -> list[Setting]:
         options = [
@@ -220,6 +263,7 @@ class SceneBuild(JobKind):
                 3,
                 options=[[k, f"{k} km"] for k in SIZES],
             ),
+            Setting("download", _("Fehlende Kacheln herunterladen"), "bool", True),
             Setting("activate", _("Danach verwenden"), "bool", True),
             Setting("overwrite", _("Gleichnamige Szene ersetzen"), "bool", False),
         ]
@@ -250,15 +294,33 @@ class SceneBuild(JobKind):
         if int(float(params["size"])) not in SIZES:
             raise ValueError(_("Kantenlänge: 1 bis 5 km"))
         need = plan(ctx, lat, lon, int(float(params["size"])))
-        if not need["present"]:
+        if need["source"] is None:
             raise ValueError(
                 _(
-                    "Keine der {n} Laserscan-Kacheln für dieses Gebiet liegt in {folder}: erst "
-                    "herunterladen (Liste unter „＋ Neue Szene“).",
+                    "Für {state} gibt es noch keine Datenquelle. Unterstützt: {states}.",
+                    state=need["state"] or _("diesen Ort"),
+                    states=need["supported"],
+                )
+            )
+        loadable = [f for f in need["missing"] if f["url"]]
+        if params.get("download") and need["download_mb"] > 0.9 * need["free_mb"]:
+            raise ValueError(
+                _(
+                    "Nicht genug Platz: der Download braucht etwa {need} MB, frei sind {free} MB.",
+                    need=round(need["download_mb"]),
+                    free=round(need["free_mb"]),
+                )
+            )
+        if not need["present"] and not (params.get("download") and loadable):
+            raise ValueError(
+                _(
+                    "Keine der {n} Kacheln für dieses Gebiet liegt in {folder}: "
+                    "„Fehlende Kacheln herunterladen“ ankreuzen oder selbst herunterladen.",
                     n=need["tiles"],
                     folder=need["folder"],
                 )
             )
+        params["source"] = need["source"]["id"]
 
     def title(self, params: dict) -> L:
         return L("Laserscan-Szene {name}", name=params["name"])
@@ -268,15 +330,17 @@ class SceneBuild(JobKind):
         lat, lon = scenes.parse_center(p["center"])
         size_km = int(float(p["size"]))
         need = plan(ctx, lat, lon, size_km)
+        download = bool(p.get("download"))
         job.add_log(
             _(
-                "{n} Kacheln, {have} vorhanden, {missing} fehlen (werden interpoliert)",
+                "{n} Kacheln, {have} vorhanden; fehlende Dateien: {missing} (etwa {mb} MB)",
                 n=need["tiles"],
                 have=need["present"],
                 missing=len(need["missing"]),
+                mb=round(need["download_mb"]),
             )
         )
-        job.detail = L("baut die Szene …")
+        job.detail = L("lädt Kacheln …") if download and need["missing"] else L("baut die Szene …")
         args = [
             "scripts/sim_build_scene.py",
             "--name",
@@ -285,14 +349,28 @@ class SceneBuild(JobKind):
             f"{lat},{lon}",
             "--size",
             str(size_km * 1000),
+            "--source",
+            p.get("source") or "auto",
             "--force",
-        ] + (["--activate"] if p["activate"] else [])
+        ]
+        args += ["--download"] if download else []
+        args += ["--activate"] if p["activate"] else []
+        # downloading takes the first half of the bar when there is something to fetch
+        share = 0.5 if download and need["missing"] else 0.0
 
         def on_line(line: str) -> None:
+            m = re.match(r"download (\d+)/(\d+) (\d+) %", line)
+            if m:
+                k, n, pct = int(m[1]), int(m[2]), int(m[3])
+                job.progress = share * ((k - 1) + pct / 100) / n
+                job.detail = L("lädt Datei {k}/{n} ({pct} %) …", k=k, n=n, pct=pct)
+                return
             m = re.match(r"reading tile (\d+)/(\d+)", line)
             if m:
-                job.progress = 0.85 * int(m[1]) / int(m[2])
+                job.progress = share + (0.85 - share) * int(m[1]) / int(m[2])
                 job.detail = L("liest Kachel {k}/{n} …", k=m[1], n=m[2])
+            elif line.startswith("fetching building footprints"):
+                job.detail = L("holt Gebäudegrundrisse aus OpenStreetMap …")
             elif line.startswith("classifying"):
                 job.progress = 0.9
                 job.detail = L("trennt Gebäude und Bäume …")
