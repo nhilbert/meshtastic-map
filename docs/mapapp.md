@@ -44,9 +44,11 @@ you want to know about, below what keeps coming in.
 - **Views**: *Ebenen* only shows things: the layers in folding groups, each with a checkbox and
   a ⚙ with display settings and legend (remembered per browser); where the layer's objects are
   managed elsewhere, a link leads there (*Standorte verwalten ›*). *Orte*: own sites, targets
-  (with path templates), areas, places and OpenStreetMap suggestions, each with its editor.
+  (with path templates), areas, places and OpenStreetMap suggestions, each with its editor, and
+  the road graph (*Straßennetz*).
   *Simulation*: laser-scan scenes, the link tool *Strecke A → B*, starting a coverage
-  simulation. *Koordination*: the mode, missions, road graph, settings, archive. *Aufgaben*:
+  simulation. *Koordination*: the mode switch and the sections *Einsätze*, *Archiv*,
+  *Einstellungen*. *Aufgaben*:
   start forms and the task list. *Gerät*: connection (the port list shows every serial port,
   *Automatisch* names the one detection would take, ↻ searches again after plugging in) and
   *Funklast*. *Einstellungen*: language and light or dark.
@@ -189,23 +191,35 @@ questions and confirms every stop. Design and radio protocol:
 [coordination-design.md](coordination-design.md). Needs the connected device; try it with the
 simulated radio first.
 
-- **View "Koordination"** (activity bar): the mode switch. *On* means
-  the server may message nodes with a mission on its own; *off* sends nothing, missions can
-  still be created. ⚙ has the settings (channel of the messages, their language, travel
-  profile, arrival radius, minimum gap between unrequested messages, …). Named targets are
-  edited in the view *Orte* (section *Ziele*).
-- **＋ Einsatz** (also *Ziel …* in a node's popup or its row in the node list): pick the node
-  (favourites first) and build the path: waypoints from the targets, the own sites or map
-  clicks, each a *Halt* (announced, confirmed, may carry *Ankunft bis* and *Warten bis* as
-  `12:55` or `+15`) or a *Durchgang* (via: with a road graph the route runs through it and
-  it is passed silently; without one it is an intermediate straight-line target and the next
-  leg follows when it is reached). **Zuweisen** sends the first leg, e.g.
-  `#ALPHA 850m NE ~11min`; without a known position the leg follows the first position packet.
-- **Mission cards** show the current stop, distance and compass direction, ETA, speed, the age
-  of the last position, the last message with its delivery state, and buttons *Status senden*,
-  *Route senden*, *Nächster Halt*, *Pfad bearbeiten*, *Beenden*, *Details* (inspector tab
-  **Einsatz** with all metrics, the path, every message and the event log, and *GPX* / *CSV*
-  to download the trail with the waypoints or the event log).
+- **View "Koordination"** (activity bar): the mode switch on top. *On* means the server may
+  message nodes with a mission on its own; *off* sends nothing, missions can still be created.
+  Below it three folding sections: *Einsätze*, *Archiv*, *Einstellungen* (channel of the
+  messages, their language, travel profile, arrival radius, minimum gap between unrequested
+  messages, …; *Speichern* appears once something changed). Named targets are edited in the
+  view *Orte* (section *Ziele*), the road graph there too (section *Straßennetz*). The icon's
+  dot shows the worst mission state.
+- **Status.** Every mission has one status, the most urgent that applies: *Kein Signal*
+  (position stale, red), *Keine Position*, *Halt*, *Abseits der Route*, *Verspätet* (yellow),
+  *Unterwegs*/*Zugewiesen*/*Wartet* (cyan), *Erreicht* (green), *Beendet*/*Abgebrochen*.
+  Cards are sorted by it.
+- **＋ Neuer Einsatz** (also *Ziel …* in a node's popup or its row in the node list) in three
+  steps: *Knoten* (favourites first), *Wegpunkte* (from the targets, the own sites or map clicks
+  with *Auf der Karte*; a click on a row opens its kind, radius and times), *Senden* (travel
+  profile, language, summary). Each waypoint is a *Halt* (announced, confirmed, may carry
+  *Ankunft bis* and *Warten bis* as `12:55` or `+15`) or a *Durchgang* (via: with a road graph
+  the route runs through it and it is passed silently; without one it is an intermediate
+  straight-line target and the next leg follows when it is reached). **Zuweisen** sends the
+  first leg, e.g. `#ALPHA 850m NE ~11min`; without a known position the leg follows the first
+  position packet.
+- **Mission cards** show the node, the status, the next stop, distance, expected arrival with
+  its deviation from the plan (`+4`) and the age of the last position. A click opens the
+  inspector tab **Einsatz**: status, the main action (*Route senden* first when late or off the
+  route, else *Status senden*), next stop, distance, arrival, signal; ⋯ has *Nächster Halt*,
+  *Pfad bearbeiten …*, *Als GPX* / *Als CSV* (the trail with the waypoints, the event log) and
+  *Beenden …*. Below, three tabs: *Route* (the path as a timeline: passed stops with their time,
+  the current one with the expected arrival, later ones with their deadline, ⧗ for *Warten
+  bis*), *Funk* (the messages as a conversation, ✓ sent, ✓✓ delivered, ! failed, with the
+  node's commands) and *Details* (speed, distance travelled, SNR, hops, the legs, the event log).
 - **Archiv** lists every mission, current ones and those replaced by a new assignment or
   removed from the list (`data/coord/archive/`), with *Details* and the same downloads. The
   detail reads the whole event log and trail of the mission's time from
@@ -293,7 +307,7 @@ positions in a row gets a new route from where the node is (`!KURS 90m ab. R: �
 on foot (one-way streets ignored, no motorways), bicycle, car (one-way and access respected).
 The map shows the route to the current stop and, dashed, the segments after it.
 
-**Straßennetz laden …** starts the task that fetches the graph: it asks the Overpass API
+**Straßennetz laden …** (view *Orte*, section *Straßennetz*) starts the task that fetches the graph: it asks the Overpass API
 (overpass-api.de, a public query service for OpenStreetMap data) for every `highway` way in a
 bounding box, by default 3 km around the home site rounded outward to a 1 km grid, and turns
 the answer into `data/osm/<name>.json.gz` (junctions as nodes, the way pieces between them as

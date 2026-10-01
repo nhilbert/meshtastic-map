@@ -8,7 +8,7 @@ import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { setBadge, showSection } from "./workspace.js";
 import { iconButton, symbolSVG } from "./icons.js";
 import { csv, download, gpx } from "./export.js";
-import { G, registerActions } from "./actions.js";
+import { G, openMenu, registerActions } from "./actions.js";
 
 // Mission states are German codes: t("zugewiesen") t("unterwegs") t("wartet") t("erreicht")
 // t("abgebrochen") t("beendet"); message kinds: t("assign") t("status") t("route") t("target")
@@ -154,24 +154,6 @@ const clock = ts => ts ? new Date(ts * 1000).toLocaleTimeString(locale, { hour: 
 const ago = s => (s === null || s === undefined) ? "–" : s < 90 ? t("vor {n} s", { n: Math.round(s) }) : s < 5400 ? t("vor {n} min", { n: Math.round(s / 60) }) : t("vor {n} h", { n: fmt(s / 3600, 1) });
 const dist = m => (m === null || m === undefined) ? "–" : m < 995 ? `${Math.round(m)} m` : `${fmt(m / 1000, 1)} km`;
 const eta = s => (s === null || s === undefined) ? "–" : `~${Math.max(1, Math.round(s / 60))} min`;
-const stateChip = s => `<span class="chip ${STATE_CLASS[s] || ""}">${esc(t(s))}</span>`;
-function metricsHTML(m) {
-  const k = m.metrics || {};
-  if (k.dist_m == null) {
-    const asked = k.requested_s != null ? " · " + t("Position angefragt {ago}", { ago: ago(k.requested_s) }) : "";
-    return `<p class="note" style="margin:0">${t("noch keine Position vom Knoten")}${esc(asked)}</p>`;
-  }
-  const readings = [[t("Distanz"), `${dist(k.dist_m)} ${k.compass || ""}`],
-    [t("Ankunft"), eta(k.eta_s)], [t("Tempo"), `${fmt(k.speed_kmh, 1)} km/h`]];
-  const parts = [t("Position {ago}", { ago: ago(k.position_age_s) })];
-  if (k.mode === "route") parts.unshift(t("{d} auf der Straße", { d: dist(k.route_left_m) }) + (k.off_route_m > 30 ? ` (${t("{d} daneben", { d: dist(k.off_route_m) })})` : ""));
-  if (k.margin_min !== undefined) parts.push(k.margin_min >= 0 ? t("{n} min vor Plan", { n: k.margin_min }) : t("{n} min hinter Plan", { n: -k.margin_min }));
-  if (k.stale) parts.push("⚠ " + t("Position veraltet"));
-  if (k.requested_s != null) parts.push(t("Position angefragt {ago}", { ago: ago(k.requested_s) }));
-  return `<dl class="telemetry">${readings.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>
-    <div class="meta${k.stale ? " st bad" : ""}">${esc(parts.join(" · "))}</div>`;
-}
-function statusClass(s) { return s === "zugestellt" || s === "im Netz" ? "ok" : /^nicht/.test(s || "") ? "bad" : ""; }
 function statusText(s) {  // delivery states are German codes, see messages.js
   const m = /^nicht zugestellt \((.+)\)$/.exec(s || "");
   if (m) return t("nicht zugestellt ({reason})", { reason: m[1] });
@@ -180,19 +162,61 @@ function statusText(s) {  // delivery states are German codes, see messages.js
   return t(s || "gesendet");  // t("gesendet") t("zugestellt") t("im Netz")
 }
 
+// ---------------------------------------------------------------- status
+// One status per mission, with its reason, by severity: bad (no signal, aborted), warn (late,
+// off the route, halted, no position yet), ok (assigned, on its way, waiting), done (arrived),
+// off (ended). The same levels colour the card, the detail and the activity bar.
+function missionStatus(m) {
+  const k = m.metrics || {};
+  if (m.state === "abgebrochen") return { level: "bad", text: t("Abgebrochen") };
+  if (m.state === "beendet") return { level: "off", text: t("Beendet") };
+  if (m.state === "erreicht") return { level: "done", text: t("Erreicht") };
+  if (k.stale) return { level: "bad", text: t("Kein Signal"), pill: ago(k.position_age_s) };
+  if (k.dist_m == null) return { level: "warn", text: t("Keine Position"), pill: k.requested_s != null ? t("angefragt") : "" };
+  if (m.held) return { level: "warn", text: t("Halt") };
+  if (k.mode === "route" && k.off_route_m > 30) return { level: "warn", text: t("Abseits der Route"), pill: dist(k.off_route_m) };
+  if (k.margin_min < 0) return { level: "warn", text: t("Verspätet"), pill: `+${-k.margin_min} min` };
+  if (m.state === "wartet") {
+    const w = m.path[m.index];
+    return { level: "ok", text: t("Wartet"), pill: w && w.hold_until ? clock(w.hold_until) : "" };
+  }
+  return { level: "ok", text: m.state === "zugewiesen" ? t("Zugewiesen") : t("Unterwegs") };
+}
+const RANK = { bad: 0, warn: 1, ok: 2, done: 3, off: 4 };
+const STATUS_ICON = { bad: "antenna", warn: "route", ok: "route", done: "check", off: "check" };
+function statusHTML(s, big = false) {
+  return `<div class="mstatus ${s.level}${big ? " big" : ""}">${symbolSVG(STATUS_ICON[s.level])}<b>${esc(s.text)}</b>${s.pill ? `<span class="pill">${esc(s.pill)}</span>` : ""}</div>`;
+}
+function nodeParts(id) {
+  const n = (C.api.nodes() || []).find(x => x.id === id);
+  return { short: n ? n.short || id.slice(-4) : id.slice(-4), long: n ? n.long || id : id };
+}
+// Arrival at the current stop as a clock time, and the deviation from its deadline (+ late).
+function arrival(m) {
+  const k = m.metrics || {};
+  if (k.eta_s == null) return { time: "–", dev: null };
+  return { time: clock(Date.now() / 1000 + k.eta_s), dev: k.margin_min === undefined ? null : -k.margin_min };
+}
+const devHTML = dev => dev === null || dev === undefined ? ""
+  : `<span class="dev ${dev > 0 ? "late" : "early"}">${dev > 0 ? "+" : "−"}${Math.abs(dev)}</span>`;
+const val = (icon, html, title, cls = "") => `<span class="mv ${cls}" title="${esc(title)}">${symbolSVG(icon)}${html}</span>`;
+
 // ---------------------------------------------------------------- rail section
 const editing = () => !!(C.form || C.settings || C.editTarget || C.editArea || C.editPlace);
-// On the activity bar: a dot while the mode is on (green, yellow while it waits for the device).
+// On the activity bar: a dot while the mode is on (green, yellow while it waits for the device,
+// red when a mission has a problem).
 function renderBadge() {
   const d = C.data;
   if (!d) { setBadge("coord", null); return; }
-  const active = d.missions.filter(m => ACTIVE.includes(m.state)).length;
-  setBadge("coord", d.enabled ? { dot: d.device_state === "verbunden" ? "ok" : "warn" } : null,
-    d.enabled ? t("Koordination · {n}", { n: active }) : t("Koordination"));
+  const active = d.missions.filter(m => ACTIVE.includes(m.state));
+  const worst = active.map(missionStatus).sort((a, b) => RANK[a.level] - RANK[b.level])[0];
+  const dot = !d.enabled ? null : d.device_state !== "verbunden" ? "warn" : worst && worst.level === "bad" ? "bad" : worst && worst.level === "warn" ? "warn" : "ok";
+  setBadge("coord", dot ? { dot } : null, d.enabled ? t("Koordination · {n}", { n: active.length }) : t("Koordination"));
 }
-// Targets and areas are places to manage (view "Orte"), drawn from the coordination's data.
+// Targets, areas and the road graph are places and map data (view "Orte"), drawn from the
+// coordination's data.
 function renderPlaces() {
-  const d = C.data, tb = $("#targetsBox"), ab = $("#areasBox");
+  const d = C.data, tb = $("#targetsBox"), ab = $("#areasBox"), rb = $("#roadsBox");
   if (!tb || !ab) return;
   if (!d) { tb.innerHTML = ab.innerHTML = `<p class="note" style="margin:0">${esc(C.err || t("lädt …"))}</p>`; return; }
   const err = C.err ? `<div class="msg" role="alert">${esc(C.err)}</div>` : "";
@@ -200,43 +224,55 @@ function renderPlaces() {
   bindTargets(tb);
   ab.innerHTML = areasHTML(d) + err;
   ab.querySelectorAll("[data-ar]").forEach(b => b.addEventListener("click", () => areaAction(b.dataset.ar, b.dataset.id)));
+  if (rb) {
+    rb.innerHTML = `<p class="note" style="margin:0">${esc(osmLine(d.osm))}</p>
+      <button class="btn small" data-osm title="${esc(t("Straßen und Wege der Umgebung von OpenStreetMap laden (Overpass-API); danach führt der Server über Straßen statt Luftlinie."))}">${symbolSVG("map")}${t("Straßennetz laden …")}</button>`;
+    rb.querySelector("[data-osm]").addEventListener("click", () => openTaskForm("osm"));
+  }
+}
+// Which of the view's sections are open (they are drawn anew on every update).
+const secOpen = key => C.api.store.get("coord.sec." + key, key === "missions");
+function section(key, title, count, body) {
+  return `<details class="sec" data-sec="${key}" ${secOpen(key) ? "open" : ""}><summary><h2>${esc(title)}</h2>${count === null ? "" : `<span class="count">${count}</span>`}</summary>${body}</details>`;
 }
 function render() {
   const box = $("#coordBox"); if (!box) return;
   const d = C.data;
   renderBadge();
   renderPlaces();
-  if (!d) { box.innerHTML = `<p class="msg">${esc(C.err || t("lädt …"))}</p>`; return; }
+  if (!d) { box.innerHTML = `<div class="sec"><p class="msg">${esc(C.err || t("lädt …"))}</p></div>`; return; }
   const connected = d.device_state === "verbunden";
+  const modeTip = d.enabled
+    ? t("An: der eigene Knoten funkt selbstständig an die Knoten mit Einsatz (Zuweisung, Kurs, Ankunft, Antworten auf ? ?R ?Z ?P HALT GO X).")
+    : connected ? t("Aus: es wird nichts gesendet. Einschalten erlaubt dem Server, Knoten mit Einsatz selbstständig anzufunken.")
+      : t("Braucht das verbundene Gerät (oben unter „Gerät (USB)“ verbinden).");
+  const waiting = d.enabled && !connected;
+  const missions = d.missions.slice().sort((a, b) => RANK[missionStatus(a).level] - RANK[missionStatus(b).level]);
+  const list = C.form ? formHTML(d)
+    : `<div class="mlist">${missions.map(cardHTML).join("") || `<p class="note" style="margin:0">${t("Noch keine Einsätze.")}</p>`}</div>
+       <button class="btn on" data-act="new">${symbolSVG("plus")}${t("Neuer Einsatz")}</button>`;
   box.innerHTML = `
-    <label class="tog"><input type="checkbox" id="coordOn" ${d.enabled ? "checked" : ""} ${connected || d.enabled ? "" : "disabled"}>
-      <strong>${t("Koordinationsmodus")}</strong></label>
-    ${d.enabled && !connected ? `<p class="msg" role="status" style="margin:0 0 6px">${esc(d.device_retrying
-      ? t("Wartet auf das Gerät: die Verbindung wird immer wieder versucht. Bis dahin geht nichts raus; Zuweisungen, Ankünfte und nächste Abschnitte werden danach nachgeholt.")
-      : t("Wartet auf das Gerät: oben unter „Gerät (USB)“ verbinden. Bis dahin geht nichts raus."))}</p>` : ""}
-    <p class="note" style="margin:0 0 6px">${d.enabled
-      ? esc(t("An: der eigene Knoten funkt selbstständig an die Knoten mit Einsatz (Zuweisung, Kurs, Ankunft, Antworten auf ? ?R ?Z ?P HALT GO X)."))
-      : connected ? esc(t("Aus: es wird nichts gesendet. Einschalten erlaubt dem Server, Knoten mit Einsatz selbstständig anzufunken."))
-        : esc(t("Braucht das verbundene Gerät (oben unter „Gerät (USB)“ verbinden)."))}</p>
-    <div class="jobstart">
-      <button class="btn on" data-act="new" ${d.enabled ? "" : `title="${t("Einsätze können auch bei ausgeschaltetem Modus angelegt werden; gesendet wird erst, wenn er an ist.")}"`}>${symbolSVG("target")} ${t("Einsatz")}</button>
-      <button class="btn small quiet" data-act="settings" aria-expanded="${!!C.settings}">${symbolSVG("settings")} ${t("Einstellungen")}</button>
-      <button class="btn small" data-act="archive" aria-expanded="${!!C.archive}">${t("Archiv")}</button>
-      <button class="btn small" data-act="osm" title="${esc(t("Straßen und Wege der Umgebung von OpenStreetMap laden (Overpass-API); danach führt der Server über Straßen statt Luftlinie."))}">${t("Straßennetz laden …")}</button>
+    <div class="coordbar" title="${esc(modeTip)}">
+      <label class="switch"><input type="checkbox" id="coordOn" role="switch" ${d.enabled ? "checked" : ""} ${connected || d.enabled ? "" : "disabled"}><span class="sl"></span>${t("Modus")}</label>
+      <span class="cstate ${waiting ? "warn" : d.enabled ? "on" : ""}">${esc(waiting ? t("wartet auf das Gerät") : d.enabled ? t("an") : t("aus"))}</span>
     </div>
-    <p class="note" style="margin:0 0 6px">${esc(osmLine(d.osm))}</p>
-    ${C.settings ? settingsHTML(d) : ""}
-    ${C.form ? formHTML(d) : ""}
-    <div class="msg" role="alert">${esc(C.err)}</div>
-    <div class="joblist">${d.missions.map(cardHTML).join("") || `<p class="note" style="margin:0">${t("Noch keine Einsätze.")}</p>`}</div>
-    ${C.archive ? archiveHTML() : ""}`;
+    <div class="msg" role="alert" style="padding:0 14px">${esc(C.err)}</div>
+    ${section("missions", t("Einsätze"), d.missions.length, `<div class="stack">${list}</div>`)}
+    ${section("archive", t("Archiv"), null, `<div class="stack">${C.archive ? archiveHTML() : `<p class="note" style="margin:0">${t("lädt …")}</p>`}</div>`)}
+    ${section("coordset", t("Einstellungen"), null, settingsHTML(d))}`;
   $("#coordOn").addEventListener("change", async e => {
     try { await postJSON("api/coord/mode", { on: e.target.checked }); C.api.toast(e.target.checked ? t("Koordinationsmodus an") : t("Koordinationsmodus aus")); }
     catch (err) { C.err = err.message; }
     pollSoon();
   });
+  box.querySelectorAll("details[data-sec]").forEach(sec => sec.addEventListener("toggle", () => {
+    C.api.store.set("coord.sec." + sec.dataset.sec, sec.open);
+    if (sec.dataset.sec === "archive") { if (sec.open && !C.archive) loadArchive(); if (!sec.open) C.archive = null; }
+  }));
+  if (secOpen("archive") && !C.archive) loadArchive();
   box.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => action(b.dataset.act, b.dataset.node)));
-  if (C.settings) bindSettings(box, d);
+  box.querySelectorAll("[data-sel]").forEach(b => b.addEventListener("click", () => showDetail(b.dataset.sel)));
+  bindSettings(box, d);
   if (C.form) bindForm(box, d);
   box.querySelectorAll("[data-arch]").forEach(b => b.addEventListener("click", () => archiveAction(b.dataset.arch, b.dataset.id)));
 }
@@ -252,7 +288,7 @@ function archiveHTML() {
     <button class="btn small" data-arch="detail" data-id="${esc(a.id)}">${t("Details")}</button>
     <button class="btn small" data-arch="gpx" data-id="${esc(a.id)}" title="${t("Spur und Wegpunkte als GPX")}">GPX</button>
     <button class="btn small" data-arch="csv" data-id="${esc(a.id)}" title="${t("Ereignisse als CSV")}">CSV</button></div>`).join("");
-  return `<div class="sitemgr"><div class="hd2">${t("Archiv")}</div>
+  return `<div class="sitemgr">
     <p class="note" style="margin:0">${t("Alle Einsätze mit vollständigem Ereignisprotokoll und Spur; ersetzte und entfernte bleiben hier.")}</p>
     <div class="sitelist">${rows || `<p class="note" style="margin:0">${t("Noch keine Einsätze.")}</p>`}</div></div>`;
 }
@@ -289,37 +325,23 @@ function osmLine(o) {
   return t("Straßennetz {name}: {size}, Stand {date}. Wegführung über Straßen.", { name: o.name, size, date: when });
 }
 
+// A mission in the list: who, the status, then the next stop, distance, arrival and signal.
+// A click shows its details on the right.
 function cardHTML(m) {
-  const stop = m.path[m.index] || m.path[m.path.length - 1];
-  const last = m.messages.length ? m.messages[m.messages.length - 1] : null;
-  const active = ACTIVE.includes(m.state);
-  const stops = m.path.filter(w => w.kind === "stop");
-  const where = m.path.length > 1 ? t("Halt {n} von {total}: {name}", { n: stops.indexOf(stop) + 1 + (stop.kind === "via" ? 1 : 0), total: stops.length, name: stop.name }) : stop.name;
-  return `<div class="job ${C.sel === m.node ? "sel" : ""}">
-    <div class="hd">${stateChip(m.state)}<span class="nm" title="${esc(m.node)}"><button class="lnk" data-act="focus" data-node="${esc(m.node)}">${esc(nodeName(m.node))}</button></span></div>
-    <div class="mission-target">${esc(where)}${m.label ? ` · ${esc(m.label)}` : ""}${m.origin === "radio" ? ` <span class="note">${t("(per Funk angefordert)")}</span>` : ""}</div>
-    ${metricsHTML(m)}
-    ${m.legs && ACTIVE.includes(m.state) ? `<div class="det"><span class="port">R:</span> ${esc(m.legs)}</div>` : ""}
-    ${last ? `<div class="meta">${clock(last.time)} „${esc(last.text)}“ · <span class="st ${statusClass(last.status)}">${esc(statusText(last.status))}</span></div>` : ""}
-    <div class="acts">
-      ${active ? `<button class="btn small" data-act="status" data-node="${esc(m.node)}">${t("Status senden")}</button>
-        <button class="btn small" data-act="route" data-node="${esc(m.node)}">${t("Route senden")}</button>
-        ${m.index < m.path.length - 1 ? `<button class="btn small" data-act="next" data-node="${esc(m.node)}">${t("Nächster Halt")}</button>` : ""}
-        <button class="btn small" data-act="edit" data-node="${esc(m.node)}">${t("Pfad bearbeiten")}</button>
-        <button class="btn small" data-act="end" data-node="${esc(m.node)}">${t("Beenden")}</button>`
-      : `<button class="btn small" data-act="again" data-node="${esc(m.node)}">${t("Neuer Einsatz")}</button>
-         <button class="btn small" data-act="remove" data-node="${esc(m.node)}">${t("Entfernen")}</button>`}
-      <button class="btn small" data-act="detail" data-node="${esc(m.node)}">${t("Details")}</button>
-    </div></div>`;
+  const s = missionStatus(m), k = m.metrics || {}, n = nodeParts(m.node);
+  const stop = m.path[m.index] || m.path[m.path.length - 1], a = arrival(m);
+  const live = ACTIVE.includes(m.state);
+  return `<button class="mcard ${s.level} ${C.sel === m.node ? "sel" : ""}" data-sel="${esc(m.node)}" title="${esc(m.node)}">
+    <span class="mc-hd"><span class="sn">${esc(n.short)}</span><b>${esc(n.long)}</b><span class="mst ${s.level}"><i></i>${esc(s.text)}</span></span>
+    ${live ? `<span class="mc-ln">${val("target", esc(stop.name), t("Nächster Halt"))}${val("ruler", dist(k.dist_m), t("Distanz"))}
+      ${val("clock", a.time + devHTML(a.dev), t("Ankunft"))}<span class="sp"></span>${val("antenna", ago(k.position_age_s), t("Letzte Position"), k.stale ? "bad" : "")}</span>` : ""}
+  </button>`;
 }
 
 async function action(act, node) {
   C.err = "";
   try {
     if (act === "new") { openForm(null); return; }
-    if (act === "settings") { C.settings = C.settings ? null : { ...C.data.settings, channel: String(C.data.settings.channel) }; render(); return; }
-    if (act === "archive") { if (C.archive) { C.archive = null; render(); } else loadArchive(); return; }
-    if (act === "osm") { openTaskForm("osm"); return; }
     if (act === "focus") { C.api.focusNode(node); return; }
     if (act === "detail") { showDetail(node); return; }
     if (act === "again" || act === "edit") {
@@ -327,7 +349,6 @@ async function action(act, node) {
       openForm(node, m ? m.path : null, act === "edit"); return;
     }
     if (act === "end") {
-      const m = C.data.missions.find(x => x.node === node);
       const notify = C.data.enabled && C.data.settings.end_message
         ? confirm(t("Einsatz von {name} beenden und den Knoten benachrichtigen? (Abbrechen = nicht beenden)", { name: nodeName(node) }))
         : confirm(t("Einsatz von {name} beenden?", { name: nodeName(node) }));
@@ -346,87 +367,117 @@ async function action(act, node) {
 }
 
 // ---------------------------------------------------------------- settings
+// Always shown in their section; a change keeps them out of the updates until saved or reset.
 function settingsHTML(d) {
-  return `<div class="jobform" data-settings><div class="hd">${t("Einstellungen")}</div>
-    ${inputsHTML(d.declarations, C.settings, "coord")}
-    <div class="row2"><button class="btn small" data-s-cancel>${t("Abbrechen")}</button><button class="btn small on" data-s-save>${t("Speichern")}</button></div></div>`;
+  const vals = C.settings || { ...d.settings, channel: String(d.settings.channel) };
+  C.settingsView = vals;
+  return `<div class="jobform" data-settings>${inputsHTML(d.declarations, vals, "coord")}
+    ${C.settings ? `<div class="row2"><button class="btn small" data-s-cancel>${t("Verwerfen")}</button><button class="btn small on" data-s-save>${t("Speichern")}</button></div>` : ""}</div>`;
 }
 function bindSettings(box, d) {
-  bindInputs(box.querySelector(".jobform[data-settings]"), d.declarations, C.settings, () => { });
-  box.querySelector("[data-s-cancel]").addEventListener("click", () => { C.settings = null; render(); });
-  box.querySelector("[data-s-save]").addEventListener("click", async () => {
+  const form = box.querySelector(".jobform[data-settings]");
+  bindInputs(form, d.declarations, C.settingsView, () => { if (!C.settings) { C.settings = C.settingsView; render(); } });
+  form.querySelector("[data-s-cancel]")?.addEventListener("click", () => { C.settings = null; render(); });
+  form.querySelector("[data-s-save]")?.addEventListener("click", async () => {
     try { await postJSON("api/coord/settings", C.settings); C.settings = null; C.api.toast(t("Einstellungen gespeichert")); }
     catch (e) { C.err = e.message; }
     pollSoon();
   });
 }
 
-// ---------------------------------------------------------------- mission form
-// edit: change the path of the running mission of `node` instead of assigning a new one.
+// ---------------------------------------------------------------- mission form: three steps
+// 1 the node, 2 the waypoints (from the map, targets, sites or a template; times and radius on
+// the selected one), 3 travel profile and language, then assign. Editing a running mission's
+// path starts at step 2 and saves there.
 function openForm(node, path = null, edit = false) {
   const d = C.data || { settings: {} };
   C.form = {
-    node: node || "", profile: d.settings.profile || "foot", lang: d.settings.lang || "de", msg: "", edit,
+    step: node ? 2 : 1, node: node || "", profile: d.settings.profile || "foot", lang: d.settings.lang || "de", msg: "", edit, sel: null,
     path: path ? path.map(w => ({ ...w, arrive_by: w.arrive_by ? clock(w.arrive_by) : "", hold_until: w.hold_until ? clock(w.hold_until) : "" })) : [],
   };
+  showSection("missions");
   render();
-  const first = $("#coordBox [data-f=node]"); if (first && !node) first.focus();
+  $("#coordBox [data-f=node]")?.focus();
 }
 function nodeOptions(current) {
   const rows = (C.api.nodes() || []).filter(n => !n.own)
     .sort((a, b) => (b.favorite - a.favorite) || ((b.last || 0) - (a.last || 0)));
-  return rows.map(n => `<option value="${esc(n.id)}">${n.favorite ? "★ " : ""}${esc(n.short || n.id.slice(-4))} · ${esc(n.long || n.id)}</option>`).join("")
+  return `<option value="">${t("Knoten wählen …")}</option>` + rows.map(n => `<option value="${esc(n.id)}">${n.favorite ? "★ " : ""}${esc(n.short || n.id.slice(-4))} · ${esc(n.long || n.id)}</option>`).join("")
     + (current && !rows.some(n => n.id === current) ? `<option value="${esc(current)}">${esc(current)}</option>` : "");
+}
+function stepsHTML(f) {
+  const steps = f.edit ? [[2, t("Wegpunkte")]] : [[1, t("Knoten")], [2, t("Wegpunkte")], [3, t("Senden")]];
+  return `<div class="wsteps">${steps.map(([n, label]) => `<span class="${n === f.step ? "on" : n < f.step ? "done" : ""}"><i>${n < f.step ? symbolSVG("check") : n}</i>${esc(label)}</span>`).join("")}</div>`;
+}
+function wpHTML(w, i, f, d) {
+  const sel = f.sel === i, stop = w.kind !== "via";
+  const times = (w.arrive_by ? val("clock", esc(w.arrive_by), t("Ankunft bis")) : "") + (w.hold_until ? val("hourglass", esc(w.hold_until), t("Warten bis")) : "");
+  return `<div class="wprow ${sel ? "sel" : ""}" data-i="${i}">
+    <span class="wpn ${stop ? "" : "via"}">${stop ? f.path.slice(0, i + 1).filter(x => x.kind !== "via").length : ""}</span>
+    <input type="text" data-f="name" data-i="${i}" value="${esc(w.name)}" maxlength="24" aria-label="${t("Name")}">
+    <span class="wpt">${times}</span>
+    ${iconButton("edit", t("Art, Radius und Zeiten"), `data-wp="sel" data-i="${i}"`)}
+    ${iconButton("move", t("Verschieben: Klick in die Karte"), `data-wp="move" data-i="${i}"`)}
+    <button class="btn small icon" data-wp="up" data-i="${i}" aria-label="${t("nach oben")}" title="${t("nach oben")}" ${i === 0 ? "disabled" : ""}>↑</button>
+    ${iconButton("close", t("Entfernen"), `data-wp="del" data-i="${i}"`)}</div>
+    ${sel ? `<div class="wpedit">
+      <label>${t("Art")}<select data-f="kind" data-i="${i}"><option value="stop" ${stop ? "selected" : ""}>${t("Halt")}</option><option value="via" ${stop ? "" : "selected"}>${t("Durchgang")}</option></select></label>
+      <label>${t("Radius [m]")}<input type="number" data-f="radius_m" data-i="${i}" value="${w.radius_m || ""}" min="5" max="500" step="5" placeholder="${d.settings.arrive_radius_m}"></label>
+      <label title="${t("Ankunft bis (12:55 oder +15)")}">${t("Ankunft bis")}<input type="text" data-f="arrive_by" data-i="${i}" value="${esc(w.arrive_by || "")}" placeholder="12:55 / +15" ${stop ? "" : "disabled"}></label>
+      <label title="${t("Warten bis (13:05 oder +30)")}">${t("Warten bis")}<input type="text" data-f="hold_until" data-i="${i}" value="${esc(w.hold_until || "")}" placeholder="13:05 / +30" ${stop ? "" : "disabled"}></label></div>` : ""}`;
 }
 function formHTML(d) {
   const f = C.form;
-  const rows = f.path.map((w, i) => `<div class="wp" data-i="${i}">
-      <span class="tag">${i + 1}</span>
-      <input type="text" data-f="name" data-i="${i}" value="${esc(w.name)}" maxlength="24" placeholder="${t("Name")}" aria-label="${t("Name")}" style="width:7em">
-      <select data-f="kind" data-i="${i}" aria-label="${t("Art")}"><option value="stop" ${w.kind !== "via" ? "selected" : ""}>${t("Halt")}</option><option value="via" ${w.kind === "via" ? "selected" : ""}>${t("Durchgang")}</option></select>
-      <input type="number" data-f="radius_m" data-i="${i}" value="${w.radius_m || ""}" min="5" max="500" step="5" placeholder="${d.settings.arrive_radius_m}" title="${t("Radius [m]")}" aria-label="${t("Radius [m]")}" style="width:4.5em">
-      <input type="text" data-f="arrive_by" data-i="${i}" value="${esc(w.arrive_by || "")}" placeholder="${t("bis")}" title="${t("Ankunft bis (12:55 oder +15)")}" aria-label="${t("Ankunft bis")}" style="width:4.5em" ${w.kind === "via" ? "disabled" : ""}>
-      <input type="text" data-f="hold_until" data-i="${i}" value="${esc(w.hold_until || "")}" placeholder="${t("warten")}" title="${t("Warten bis (13:05 oder +30)")}" aria-label="${t("Warten bis")}" style="width:4.5em" ${w.kind === "via" ? "disabled" : ""}>
-      <button class="btn small" data-wp="up" data-i="${i}" title="${t("nach oben")}" ${i === 0 ? "disabled" : ""}>↑</button>
-      ${iconButton("move", t("Verschieben: Klick in die Karte"), `data-wp="move" data-i="${i}"`)}
-      ${iconButton("close", t("Entfernen"), `data-wp="del" data-i="${i}"`)}</div>`).join("");
-  const targets = Object.keys(d.targets || {}).map(n => `<option value="t:${esc(n)}">${esc(n)}</option>`).join("");
-  const sites = (C.api.sites() || []).map(s => `<option value="s:${esc(s.name)}">${esc(s.name)} (${t("Standort")})</option>`).join("");
-  const templates = Object.keys(d.paths || {}).map(n => `<option value="p:${esc(n)}">${esc(t("Vorlage laden: {name}", { name: n }))}</option>`).join("");
-  return `<div class="jobform" data-mission><div class="hd">${f.edit ? t("Pfad bearbeiten") : t("Einsatz")}</div>
-    <label>${t("Knoten")}<select data-f="node" ${f.edit ? "disabled" : ""}>${nodeOptions(f.node)}</select></label>
-    <div class="hd2" style="font-size:11px;color:var(--ink2)">${t("Pfad: Wegpunkte in Reihenfolge; der letzte ist das Ziel. Zeiten als 12:55 oder +15 (Minuten).")}</div>
-    <div class="wplist">${rows || `<p class="note" style="margin:0">${t("Noch kein Wegpunkt.")}</p>`}</div>
-    <div class="row2">
-      <select data-f="add"><option value="">${t("Wegpunkt hinzufügen …")}</option><option value="map">${t("Klick in die Karte")}</option>${targets}${sites}${templates}</select>
-      <button class="btn small" data-form="template" ${f.path.length ? "" : "disabled"}>${t("Als Vorlage speichern …")}</button></div>
-    ${f.edit ? "" : `<div class="row2">
+  let body = "", next = "";
+  if (f.step === 1) {
+    body = `<label>${t("Knoten")}<select data-f="node">${nodeOptions(f.node)}</select></label>`;
+    next = `<button class="btn on" data-form="next" ${f.node ? "" : "disabled"}>${t("Weiter")}</button>`;
+  } else if (f.step === 2) {
+    const targets = Object.keys(d.targets || {}).map(n => `<option value="t:${esc(n)}">${esc(n)}</option>`).join("");
+    const sites = (C.api.sites() || []).map(s => `<option value="s:${esc(s.name)}">${esc(s.name)}</option>`).join("");
+    const templates = Object.keys(d.paths || {}).map(n => `<option value="p:${esc(n)}">${esc(n)}</option>`).join("");
+    body = `<div class="wpadd"><button class="btn small" data-form="map">${symbolSVG("pin")}${t("Auf der Karte")}</button>
+        <select data-f="add" aria-label="${t("Wegpunkt hinzufügen …")}"><option value="">${t("Hinzufügen …")}</option>
+          ${targets ? `<optgroup label="${t("Ziele")}">${targets}</optgroup>` : ""}${sites ? `<optgroup label="${t("Eigene Standorte")}">${sites}</optgroup>` : ""}
+          ${templates ? `<optgroup label="${t("Vorlagen")}">${templates}</optgroup>` : ""}</select></div>
+      <div class="wplist">${f.path.map((w, i) => wpHTML(w, i, f, d)).join("") || `<p class="note" style="margin:0">${t("Noch kein Wegpunkt.")}</p>`}</div>
+      ${f.path.length ? `<button class="lnk" data-form="template">${t("Als Vorlage speichern …")}</button>` : ""}`;
+    next = f.edit ? `<button class="btn on" data-form="start" ${f.path.length ? "" : "disabled"}>${t("Pfad speichern")}</button>`
+      : `<button class="btn on" data-form="next" ${f.path.length ? "" : "disabled"}>${t("Weiter")}</button>`;
+  } else {
+    const stops = f.path.filter(w => w.kind !== "via");
+    body = `<div class="msum">${val("router", esc(nodeParts(f.node).long), t("Knoten"))}${val("target", esc(stops.map(w => w.name).join(" › ")), t("Halte"))}</div>
+      <div class="row2">
       <label>${t("Fortbewegung")}<select data-f="profile"><option value="foot">${t("zu Fuß")}</option><option value="bike">${t("Fahrrad")}</option><option value="car">${t("Auto")}</option></select></label>
-      <label>${t("Sprache der Funksprüche")}<select data-f="lang"><option value="de">Deutsch</option><option value="en">English</option></select></label></div>`}
-    <div class="msg" role="alert">${esc(f.msg)}</div>
-    <div class="row2"><button class="btn" data-form="cancel">${t("Abbrechen")}</button><button class="btn on" data-form="start">${f.edit ? t("Pfad speichern") : t("Zuweisen")}</button></div></div>`;
+      <label>${t("Sprache der Funksprüche")}<select data-f="lang"><option value="de">Deutsch</option><option value="en">English</option></select></label></div>
+      ${C.data.enabled ? "" : `<p class="note" style="margin:0">${t("Einsätze können auch bei ausgeschaltetem Modus angelegt werden; gesendet wird erst, wenn er an ist.")}</p>`}`;
+    next = `<button class="btn on" data-form="start">${symbolSVG("antenna")}${t("Zuweisen")}</button>`;
+  }
+  const back = f.step > 1 && !(f.edit && f.step === 2) ? `<button class="btn" data-form="back">${t("Zurück")}</button>` : `<button class="btn" data-form="cancel">${t("Abbrechen")}</button>`;
+  return `<div class="jobform" data-mission><div class="hd">${f.edit ? t("Pfad bearbeiten") : t("Neuer Einsatz")}</div>${stepsHTML(f)}
+    ${body}<div class="msg" role="alert">${esc(f.msg)}</div><div class="row2">${back}${next}</div></div>`;
 }
 function readForm(box) {
   const f = C.form;
-  f.node = box.querySelector("[data-f=node]").value;
-  if (!f.edit) {
-    f.profile = box.querySelector("[data-f=profile]").value;
-    f.lang = box.querySelector("[data-f=lang]").value;
-  }
-  box.querySelectorAll(".wp").forEach(row => {
-    const w = f.path[+row.dataset.i];
-    row.querySelectorAll("[data-f]").forEach(inp => { w[inp.dataset.f] = inp.type === "number" ? (inp.value === "" ? null : +inp.value) : inp.value.trim(); });
+  const node = box.querySelector("[data-f=node]"); if (node) f.node = node.value;
+  const profile = box.querySelector("[data-f=profile]"); if (profile) f.profile = profile.value;
+  const lang = box.querySelector("[data-f=lang]"); if (lang) f.lang = lang.value;
+  box.querySelectorAll("[data-i][data-f]").forEach(inp => {
+    const w = f.path[+inp.dataset.i];
+    if (w) w[inp.dataset.f] = inp.type === "number" ? (inp.value === "" ? null : +inp.value) : inp.value.trim();
   });
 }
 function bindForm(box, d) {
   const f = C.form, form = box.querySelector(".jobform[data-mission]");
-  form.querySelector("[data-f=node]").value = f.node;
-  if (!f.edit) {
-    form.querySelector("[data-f=profile]").value = f.profile;
-    form.querySelector("[data-f=lang]").value = f.lang;
-  }
-  form.querySelectorAll(".wp [data-f=kind]").forEach(s => s.addEventListener("change", () => { readForm(form); render(); }));
-  form.querySelector("[data-form=template]").addEventListener("click", async () => {
+  const redraw = () => { readForm(form); render(); };
+  if (form.querySelector("[data-f=node]")) form.querySelector("[data-f=node]").value = f.node;
+  form.querySelector("[data-f=node]")?.addEventListener("change", redraw);
+  if (form.querySelector("[data-f=profile]")) form.querySelector("[data-f=profile]").value = f.profile;
+  if (form.querySelector("[data-f=lang]")) form.querySelector("[data-f=lang]").value = f.lang;
+  form.querySelectorAll("[data-f=kind]").forEach(s => s.addEventListener("change", redraw));
+  form.querySelector("[data-form=next]")?.addEventListener("click", () => { readForm(form); f.step++; f.sel = null; render(); });
+  form.querySelector("[data-form=back]")?.addEventListener("click", () => { readForm(form); f.step--; render(); });
+  form.querySelector("[data-form=template]")?.addEventListener("click", async () => {
     readForm(form);
     const name = prompt(t("Name der Vorlage (1–24 Zeichen, keine Leerzeichen)"), "");
     if (!name) return;
@@ -434,37 +485,41 @@ function bindForm(box, d) {
     catch (e) { f.msg = e.message; render(); }
     pollSoon();
   });
-  form.querySelector("[data-f=add]").addEventListener("change", e => {
+  // each click on the map adds the next waypoint
+  form.querySelector("[data-form=map]")?.addEventListener("click", () => {
+    readForm(form);
+    C.api.pickOnMap(t("Position des Wegpunkts"), (lat, lon) => {
+      f.path.push({ name: `P${f.path.length + 1}`, lat, lon, kind: "stop", radius_m: null, arrive_by: "", hold_until: "" });
+      render();
+    });
+  });
+  form.querySelector("[data-f=add]")?.addEventListener("change", e => {
     readForm(form);
     const v = e.target.value; e.target.value = "";
-    if (v.startsWith("p:")) {
-      f.path = (d.paths[v.slice(2)] || []).map(w => ({ ...w, arrive_by: "", hold_until: "" })); render();
-    } else if (v === "map") {
-      C.api.pickOnMap(t("Position des Wegpunkts"), (lat, lon) => {
-        f.path.push({ name: `P${f.path.length + 1}`, lat, lon, kind: "stop", radius_m: null, arrive_by: "", hold_until: "" });
-        render();
-      });
-    } else if (v.startsWith("t:")) {
+    if (v.startsWith("p:")) f.path = (d.paths[v.slice(2)] || []).map(w => ({ ...w, arrive_by: "", hold_until: "" }));
+    else if (v.startsWith("t:")) {
       const tg = d.targets[v.slice(2)];
-      f.path.push({ name: v.slice(2), lat: tg.lat, lon: tg.lon, kind: "stop", radius_m: tg.radius_m, arrive_by: "", hold_until: "" }); render();
+      f.path.push({ name: v.slice(2), lat: tg.lat, lon: tg.lon, kind: "stop", radius_m: tg.radius_m, arrive_by: "", hold_until: "" });
     } else if (v.startsWith("s:")) {
       const s = C.api.sites().find(x => x.name === v.slice(2));
-      if (s) { f.path.push({ name: s.name, lat: s.lat, lon: s.lon, kind: "stop", radius_m: null, arrive_by: "", hold_until: "" }); render(); }
+      if (s) f.path.push({ name: s.name, lat: s.lat, lon: s.lon, kind: "stop", radius_m: null, arrive_by: "", hold_until: "" });
     }
+    render();
   });
   form.querySelectorAll("[data-wp]").forEach(b => b.addEventListener("click", () => {
     readForm(form);
     const i = +b.dataset.i;
-    if (b.dataset.wp === "del") f.path.splice(i, 1);
-    else if (b.dataset.wp === "up") [f.path[i - 1], f.path[i]] = [f.path[i], f.path[i - 1]];
+    if (b.dataset.wp === "del") { f.path.splice(i, 1); f.sel = null; }
+    else if (b.dataset.wp === "up") { [f.path[i - 1], f.path[i]] = [f.path[i], f.path[i - 1]]; f.sel = null; }
+    else if (b.dataset.wp === "sel") f.sel = f.sel === i ? null : i;
     else if (b.dataset.wp === "move") {
       C.api.pickOnMap(t("Neue Position für {name}", { name: f.path[i].name }), (lat, lon) => { f.path[i].lat = lat; f.path[i].lon = lon; render(); });
       return;
     }
     render();
   }));
-  form.querySelector("[data-form=cancel]").addEventListener("click", () => { C.form = null; C.api.tempMarker(null); render(); });
-  form.querySelector("[data-form=start]").addEventListener("click", async () => {
+  form.querySelector("[data-form=cancel]")?.addEventListener("click", () => { C.form = null; C.api.tempMarker(null); render(); });
+  form.querySelector("[data-form=start]")?.addEventListener("click", async () => {
     readForm(form);
     try {
       if (f.edit) {
@@ -473,9 +528,10 @@ function bindForm(box, d) {
         C.api.toast(t("Pfad für {name} geändert", { name: nodeName(f.node) }));
       } else {
         const m = await postJSON("api/coord/missions", { node: f.node, path: f.path, profile: f.profile, lang: f.lang });
-        C.form = null; C.sel = m.node;
+        C.form = null;
         C.api.toast(C.data.enabled ? t("Einsatz für {name} zugewiesen: „{text}“", { name: nodeName(m.node), text: m.messages.length ? m.messages[m.messages.length - 1].text : "" })
           : t("Einsatz für {name} angelegt; der Modus ist aus, es wurde nichts gesendet.", { name: nodeName(m.node) }));
+        showDetail(m.node);
       }
       C.api.refreshLayer("coord");
     } catch (e) { f.msg = e.message; render(); }
@@ -692,54 +748,110 @@ async function areaAction(act, id) {
 }
 
 // ---------------------------------------------------------------- inspector tab
+// ---------------------------------------------------------------- details (right panel)
 export function showDetail(node) { C.sel = node; C.arch = null; render(); C.api.openInspector("coord"); renderMissionDetail(); }
 function showArchived(id) { C.arch = id; C.sel = null; render(); C.api.openInspector("coord"); renderMissionDetail(); }
+
+// The path as a timeline: reached stops with their time and a check, the current one with the
+// expected arrival and its deviation, later ones with their deadline; waiting with an hourglass.
+function routeHTML(d) {
+  const k = d.metrics || {}, ev = d.events || [], live = ACTIVE.includes(d.state);
+  const passed = name => [...ev].reverse().find(e => ["reached", "via", "skipped"].includes(e.kind) && e.name === name);
+  let n = 0;
+  return `<ol class="tl">${d.path.map((w, i) => {
+    const stop = w.kind !== "via";
+    if (stop) n++;
+    const state = i < d.index || (i === d.index && d.state === "erreicht") ? "done" : i === d.index && live ? "now" : "next";
+    let time = "";
+    if (state === "done") {
+      const e = passed(w.name);
+      time = e ? `<span class="tt" title="${esc(e.kind === "skipped" ? t("übersprungen") : t("erreicht"))}">${clock(e.time)}${symbolSVG(e.kind === "skipped" ? "close" : "check")}</span>` : "";
+    } else if (state === "now" && k.eta_s != null) {
+      const a = arrival(d);
+      time = `<span class="tt" title="${esc(w.arrive_by ? t("geplant bis {time}", { time: clock(w.arrive_by) }) : t("Ankunft"))}">${devHTML(a.dev)}${symbolSVG("clock")}${a.time}</span>`;
+    } else if (w.arrive_by) {
+      time = `<span class="tt plan" title="${esc(t("Ankunft bis"))}">${symbolSVG("clock")}${clock(w.arrive_by)}</span>`;
+    }
+    const hold = stop && w.hold_until ? `<span class="th" title="${esc(t("Warten bis"))}">${symbolSVG("hourglass")}${clock(w.hold_until)}</span>` : "";
+    return `<li class="${state} ${stop ? "" : "via"}"><i>${state === "done" ? symbolSVG("check") : stop ? n : ""}</i>
+      <span class="tn"><b>${esc(w.name)}</b>${time}</span>${hold}</li>`;
+  }).join("")}</ol>`;
+}
+// Radio texts as a conversation: ours with their delivery (✓ sent, ✓✓ delivered, ! failed),
+// the node's commands from the event log.
+function radioHTML(d) {
+  const out = d.messages.map(x => ({ time: x.time, out: true, text: x.text, status: x.status }));
+  const inc = (d.events || []).filter(e => e.kind === "command" && e.text).map(e => ({ time: e.time, out: false, text: e.text }));
+  const items = [...out, ...inc].sort((a, b) => a.time - b.time);
+  if (!items.length) return `<p class="note">${t("Noch keine.")}</p>`;
+  const tick = s => s === "zugestellt" ? `<span class="tick ok" title="${esc(statusText(s))}">✓✓</span>`
+    : /^nicht/.test(s || "") ? `<span class="tick bad" title="${esc(statusText(s))}">!</span>` : `<span class="tick" title="${esc(statusText(s))}">✓</span>`;
+  return `<div class="thread">${items.map(x => `<div class="bub ${x.out ? "out" : "in"}"><span class="bt">${esc(x.text)}</span>
+    <span class="bm">${clock(x.time)}${x.out ? tick(x.status) : ""}</span></div>`).join("")}</div>`;
+}
+function detailsHTML(d) {
+  const k = d.metrics || {};
+  const rows = [
+    [t("Tempo"), k.speed_kmh != null ? `${fmt(k.speed_kmh, 1)} km/h${k.speed_source ? " (" + t(k.speed_source) + ")" : ""}` : "–"],
+    [t("Zurückgelegt"), dist(k.travelled_m)], [t("Unterwegs seit"), `${fmt((k.elapsed_s || 0) / 60, 0)} min`],
+    ["SNR", k.snr == null ? "–" : `${fmt(k.snr, 1)} dB`], [t("Hops"), k.hops ?? "–"],
+    [t("Positionsgenauigkeit"), k.precision_bits ? t("{n} Bit", { n: k.precision_bits }) : "–"],
+    [t("Fortbewegung"), t({ foot: "zu Fuß", bike: "Fahrrad", car: "Auto" }[d.profile] || d.profile)],
+    [t("Sprache der Funksprüche"), d.lang === "en" ? "English" : "Deutsch"],
+  ];
+  if (k.mode === "route") rows.push([t("Auf der Straße"), dist(k.route_left_m)]);
+  const events = (d.events || []).slice().reverse().map(e => {
+    const extra = Object.entries(e).filter(([key]) => !["time", "node", "kind"].includes(key)).map(([key, v]) => `${key}=${typeof v === "number" ? fmt(v, 2) : esc(String(v))}`).join(" ");
+    return `${clock(e.time)}  ${e.kind}  ${extra}`;
+  }).join("\n");
+  return `<dl class="kvl">${rows.map(([key, v]) => `<div><dt>${esc(key)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+    ${d.legs ? `<div class="legs" title="${esc(t("Abschnitte ab der aktuellen Position: Himmelsrichtung oder Abbiegen (L/R/U), Meter, Straßenname; Z ist der Halt."))}">${symbolSVG("route")}<span>R: ${esc(d.legs)}</span></div>` : ""}
+    <details class="log"><summary>${t("Protokoll")} <span class="count">${(d.events || []).length}</span></summary><pre class="log">${events || "—"}</pre></details>`;
+}
 export async function renderMissionDetail() {
   let url;
   if (C.arch) url = `api/coord/archive/${C.arch}`;
   else { const m = selectedMission(); if (!m) return; url = `api/coord/missions/${m.node}`; }
   let d;
   try { d = await getJSON(url); } catch (e) { $("#t_coord").innerHTML = `<div class="sec"><p class="msg">${esc(e.message)}</p></div>`; return; }
-  const live = !C.arch && ACTIVE.includes(d.state);
-  const k = d.metrics || {};
-  const kpi = (label, value, unit = "") => `<div class="kpi"><div class="k">${label}</div><div class="v">${value}<span class="u"> ${unit}</span></div></div>`;
-  const rows = d.path.map((w, i) => `<tr class="${i === d.index && ACTIVE.includes(d.state) ? "ens" : ""}"><td>${i + 1}</td><td>${esc(w.name)}</td><td>${w.kind === "via" ? t("Durchgang") : t("Halt")}</td>
-    <td class="n">${w.radius_m} m</td><td class="n">${w.arrive_by ? clock(w.arrive_by) : "–"}</td><td class="n">${w.hold_until ? clock(w.hold_until) : "–"}</td>
-    <td>${i < d.index ? "✓" : i === d.index ? (d.state === "erreicht" ? "✓" : "→") : ""}</td></tr>`).join("");
-  const msgs = d.messages.slice().reverse().map(x => `<div class="pkt"><span class="tm">${clock(x.time)}</span> <span class="port">${esc(t(x.kind))}</span> „${esc(x.text)}“ · <span class="st ${statusClass(x.status)}">${esc(statusText(x.status))}</span></div>`).join("");
-  const events = (d.events || []).slice().reverse().map(e => {
-    const extra = Object.entries(e).filter(([key]) => !["time", "node", "kind"].includes(key)).map(([key, v]) => `${key}=${typeof v === "number" ? fmt(v, 2) : esc(String(v))}`).join(" ");
-    return `${clock(e.time)}  ${e.kind}  ${extra}`;
-  }).join("\n");
-  const log = d.events || [];
-  $("#t_coord").innerHTML = `<div class="sec">
-      <div class="verdict">${stateChip(d.state)}<strong>${esc(nodeName(d.node))}</strong>${d.held ? `<span class="chip wait">HALT</span>` : ""}</div>
-      <div class="kpis">
-        ${kpi(t("Distanz"), dist(k.dist_m), k.compass || "")}
-        ${kpi(t("Ankunft"), eta(k.eta_s), k.margin_min !== undefined ? (k.margin_min >= 0 ? `+${k.margin_min}` : k.margin_min) + " min" : "")}
-        ${kpi(t("Tempo"), fmt(k.speed_kmh, 1), `km/h ${k.speed_source ? "(" + t(k.speed_source) + ")" : ""}`)}
-        ${kpi(t("Zurückgelegt"), dist(k.travelled_m), "")}
-        ${kpi(t("Unterwegs seit"), fmt((k.elapsed_s || 0) / 60, 0), "min")}
-        ${kpi(t("Position"), ago(k.position_age_s), k.precision_bits ? t("{n} Bit", { n: k.precision_bits }) : "")}
-        ${k.mode === "route" ? kpi(t("Auf der Straße"), dist(k.route_left_m), k.off_route_m > 30 ? t("{d} daneben", { d: dist(k.off_route_m) }) : "") : ""}
-        ${kpi("SNR", k.snr === null || k.snr === undefined ? "–" : fmt(k.snr, 1), "dB")}
-        ${kpi(t("Hops"), k.hops ?? "–", "")}
-        ${kpi(t("Funksprüche"), d.messages.length, t("{n} zugestellt", { n: d.messages.filter(x => x.status === "zugestellt").length }))}
-      </div>
-      ${k.stale ? `<p class="msg" role="alert">${t("Die letzte Position ist älter als eingestellt; der Knoten ist vielleicht außer Reichweite.")}</p>` : ""}
-      ${C.arch ? `<p class="note">${esc(t("Aus dem Archiv, Stand {time}.", { time: stamp(d.archived_at || Date.now() / 1000) }))}</p>` : ""}
-      <div class="acts" style="margin-top:8px">${live
-        ? `<button class="btn small" data-act="status">${t("Status senden")}</button><button class="btn small" data-act="route">${t("Route senden")}</button><button class="btn small" data-act="end">${t("Beenden")}</button>` : ""}
-        <button class="btn small" data-exp="gpx" title="${t("Spur und Wegpunkte als GPX")}">GPX</button><button class="btn small" data-exp="csv" title="${t("Ereignisse als CSV")}">CSV</button></div>
+  const live = !C.arch && ACTIVE.includes(d.state), s = missionStatus(d), n = nodeParts(d.node), k = d.metrics || {};
+  const stop = d.path[d.index] || d.path[d.path.length - 1], a = arrival(d);
+  // the main action follows the situation: the route when late or off it, else the status
+  const routeFirst = s.text === t("Verspätet") || s.text === t("Abseits der Route");
+  const main = live ? (routeFirst ? ["route", "route", t("Route senden")] : ["status", "antenna", t("Status senden")]) : null;
+  const second = live ? (routeFirst ? ["status", "antenna", t("Status senden")] : ["route", "route", t("Route senden")]) : null;
+  const tab = C.dtab || "route";
+  const radioCount = d.messages.length + (d.events || []).filter(e => e.kind === "command" && e.text).length;
+  $("#t_coord").innerHTML = `<div class="sec mhead">
+      <div class="mh1"><span class="sn">${esc(n.short)}</span><b>${esc(n.long)}</b>
+        <span class="mv" title="${esc(t("zugewiesen um"))}">${symbolSVG("clock")}${clock(d.assigned_at || d.created)}</span>
+        <button class="btn small quiet icon" data-more aria-label="${t("Weitere Aktionen")}" title="${t("Weitere Aktionen")}">${symbolSVG("more")}</button></div>
+      ${statusHTML(s, true)}
+      ${C.arch ? `<p class="note" style="margin:0">${esc(t("Aus dem Archiv, Stand {time}.", { time: stamp(d.archived_at || Date.now() / 1000) }))}</p>` : ""}
+      ${main ? `<div class="macts"><button class="btn on" data-act="${main[0]}">${symbolSVG(main[1])}${esc(main[2])}</button>
+        <button class="btn" data-act="${second[0]}">${symbolSVG(second[1])}${esc(second[2])}</button></div>` : ""}
+      ${live ? `<div class="mkv">${val("target", esc(stop.name), t("Nächster Halt"))}${val("ruler", `${dist(k.dist_m)} <small>${esc(k.compass || "")}</small>`, t("Distanz"))}
+        ${val("clock", a.time + devHTML(a.dev), t("Ankunft"))}${val("antenna", `${k.snr == null ? "–" : fmt(k.snr, 1) + " dB"} <small>${esc(ago(k.position_age_s))}</small>`, t("Signal und letzte Position"), k.stale ? "bad" : "")}</div>` : ""}
     </div>
-    <div class="sec"><h2>${t("Pfad")}</h2><div class="wrap"><table>
-      <tr><th>#</th><th>${t("Name")}</th><th>${t("Art")}</th><th>${t("Radius")}</th><th>${t("bis")}</th><th>${t("warten")}</th><th></th></tr>${rows}</table></div>
-      <p class="note">${t("Fortbewegung: {profile} · Funksprüche auf {lang}", { profile: t({ foot: "zu Fuß", bike: "Fahrrad", car: "Auto" }[d.profile] || d.profile), lang: d.lang === "en" ? "English" : "Deutsch" })}</p></div>
-    ${d.legs ? `<div class="sec"><h2>${t("Wegbeschreibung")}</h2><p class="pkt" style="font-size:12px">R: ${esc(d.legs)}</p>
-      <p class="note">${t("Abschnitte ab der aktuellen Position: Himmelsrichtung oder Abbiegen (L/R/U), Meter, Straßenname; Z ist der Halt.")}</p></div>` : ""}
-    <div class="sec"><h2>${t("Funksprüche")}</h2>${msgs || `<p class="note">${t("Noch keine.")}</p>`}</div>
-    <div class="sec"><h2>${t("Ereignisse")}</h2><pre class="log">${events || "—"}</pre>
-      <p class="note">${t("{n} Ereignisse; alle stehen in data/coord/events-<Datum>.jsonl.", { n: log.length })}</p></div>`;
-  $("#t_coord").querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => action(b.dataset.act, d.node)));
-  $("#t_coord").querySelectorAll("[data-exp]").forEach(b => b.addEventListener("click", () => archiveAction(b.dataset.exp, d.id)));
+    <div class="dtabs" role="tablist">${[["route", t("Route")], ["radio", t("Funk") + ` <span class="count">${radioCount}</span>`], ["more", t("Details")]].map(([id, label]) =>
+      `<button class="dtab ${tab === id ? "on" : ""}" role="tab" aria-selected="${tab === id}" data-dtab="${id}">${label}</button>`).join("")}</div>
+    <div class="sec">${tab === "route" ? routeHTML(d) : tab === "radio" ? radioHTML(d) : detailsHTML(d)}</div>`;
+  const box = $("#t_coord");
+  box.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => action(b.dataset.act, d.node)));
+  box.querySelectorAll("[data-dtab]").forEach(b => b.addEventListener("click", () => { C.dtab = b.dataset.dtab; renderMissionDetail(); }));
+  box.querySelector("[data-more]").addEventListener("click", ev => {
+    const r = ev.currentTarget.getBoundingClientRect();
+    const items = [];
+    if (live) {
+      if (d.index < d.path.length - 1) items.push({ label: t("Nächster Halt"), icon: "target", group: G.work, run: () => action("next", d.node) });
+      items.push({ label: t("Pfad bearbeiten …"), icon: "edit", group: G.work, run: () => action("edit", d.node) });
+    } else if (!C.arch) {
+      items.push({ label: t("Neuer Einsatz …"), icon: "plus", group: G.main, run: () => action("again", d.node) });
+      items.push({ label: t("Ins Archiv"), icon: "close", group: G.work, run: () => action("remove", d.node) });
+    }
+    items.push({ label: t("Als GPX"), icon: "route", group: G.copy, run: () => archiveAction("gpx", d.id) });
+    items.push({ label: t("Als CSV"), icon: "list", group: G.copy, run: () => archiveAction("csv", d.id) });
+    if (live) items.push({ label: t("Beenden …"), icon: "close", danger: true, group: G.del, run: () => action("end", d.node) });
+    openMenu(r.left, r.bottom + 4, `${n.short} · ${n.long}`, items.map((x, i) => ({ ...x, i })));
+  });
 }

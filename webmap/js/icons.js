@@ -49,6 +49,11 @@ const PATHS = {
 };
 // the app's settings (the bottom of the activity bar); "settings" (sliders) is a layer's own
 PATHS.gear = '<circle cx="8" cy="8" r="2"/><path d="M6.9 1.5h2.2l.4 1.8 1.5.9 1.8-.6 1.1 1.9-1.4 1.3v1.8l1.4 1.3-1.1 1.9-1.8-.6-1.5.9-.4 1.8H6.9l-.4-1.8-1.5-.9-1.8.6-1.1-1.9 1.4-1.3V7.2L2.1 5.9l1.1-1.9 1.8.6 1.5-.9z"/>';
+// mission values: arrival time, distance, waiting
+PATHS.clock = '<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/>';
+PATHS.ruler = '<path d="M2 11 11 2l3 3-9 9z"/><path d="m5 8 1.5 1.5M7 6l1 1M9 4l1.5 1.5"/>';
+PATHS.hourglass = '<path d="M4.5 2h7M4.5 14h7M5 2c0 3 6 3.5 6 6s-6 3-6 6M11 2c0 3-6 3.5-6 6s6 3 6 6"/>';
+PATHS.plus = '<path d="M8 3v10M3 8h10"/>';
 PATHS.pin = PATHS.tracker;
 PATHS.scene = PATHS.cube;
 

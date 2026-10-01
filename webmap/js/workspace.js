@@ -14,7 +14,8 @@ const TITLES = { layers: () => t("Ebenen"), places: () => t("Orte"), sim: () => 
   tasks: () => t("Aufgaben"), device: () => t("Gerät"), settings: () => t("Einstellungen"), msg: () => t("Nachrichten") };
 // the sections of the views (details[data-sec]) that other modules open
 const SECTION_VIEW = { layers: "layers", "3d": "layers", sites: "places", targets: "places", areas: "places",
-  scenes: "sim", link: "sim", coverage: "sim", coord: "coord", jobs: "tasks", device: "device", airtime: "device" };
+  roads: "places", scenes: "sim", link: "sim", coverage: "sim", coord: "coord", missions: "coord", archive: "coord",
+  coordset: "coord", jobs: "tasks", device: "device", airtime: "device" };
 const WIDTH = { min: 240, max: 560, normal: 300 };
 const W = { view: "layers", closed: false, store: null, returnFocus: null };
 
