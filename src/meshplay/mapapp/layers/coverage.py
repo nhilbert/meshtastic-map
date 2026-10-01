@@ -54,7 +54,8 @@ class CoverageLayer(Layer):
             return path.stem.removeprefix("coverage-")
         place = _(PLACEMENT.get(m["site_indoor"], m["site_indoor"]))
         winter = ", " + _("Winter") if m.get("leaf") == "unbelaubt" else ""
-        return f"{m['site']} · {m['preset']} · {place} · {m['radius']:g} m{winter}"
+        scene = f" · {m['scene']}" if m.get("scene") else ""
+        return f"{m['site']} · {m['preset']} · {place} · {m['radius']:g} m{winter}{scene}"
 
     def settings(self, ctx: Context) -> list[Setting]:
         files = [[p.name, self.label(p)] for p in self.files(ctx)]

@@ -1,8 +1,8 @@
 """Predict the configured links (scenarios, corridor, preset comparison) and freeze the result.
 
-python scripts/sim_predict.py [--draws 20000] [--seed 20260920]
+python scripts/sim_predict.py [--draws 20000] [--seed 20260920] [--scene NAME]
 
-Reads data/sim/sites.json and the scene in data/sim/scene/. Writes
+Reads data/sim/sites.json and the active scene (data/sim/scenes/, or --scene). Writes
 data/sim/predictions/predictions-<timestamp>.json (summary), .npz (samples for scoring) and
 .sha256. Predictions are never overwritten: measure first, then score against a frozen file
 with scripts/sim_score.py or scripts/sim_compare_walk.py.
@@ -28,7 +28,7 @@ from meshplay.sim.models import (
     prep_profile,
     run_link,
 )
-from meshplay.sim.scene import Scene
+from meshplay.sim.scenes import load_for_script
 from meshplay.sim.sites import load_config
 
 
@@ -42,12 +42,13 @@ def main() -> None:
     parser.add_argument("--preset-draws", type=int, default=8000)
     parser.add_argument("--seed", type=int, default=20260920)
     parser.add_argument("--preset", default=DEFAULT_PRESET, help="Meshtastic modem preset")
+    parser.add_argument("--scene", help="scene name (default: the active scene)")
     args = parser.parse_args()
 
     sim_dir = load_settings().data_dir / "sim"
     cfg = load_config(sim_dir / "sites.json")
     sites = cfg["sites"]
-    scene = Scene.load(sim_dir / "scene")
+    scene_name, scene = load_for_script(sim_dir, args.scene)
     n = args.draws
     rng = np.random.default_rng(args.seed)
     profiles: dict[tuple[str, str], dict] = {}
@@ -212,6 +213,7 @@ def main() -> None:
         draws=n,
         f_MHz=868.0,
         preset=args.preset,
+        scene=scene_name,
         priors={k: (list(v) if isinstance(v, tuple) else v) for k, v in PRIORS.items()},
         sites={k: {kk: vv for kk, vv in v.items() if kk != "utm"} for k, v in sites.items()},
         scenarios=results,

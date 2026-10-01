@@ -260,6 +260,7 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
 .site .sub{font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .siteform{border:1px solid var(--accent);border-radius:3px;padding:6px;display:flex;flex-direction:column;gap:5px}
 .siteform .pos{align-self:end;margin:0 0 5px}
+.siteform pre.tiles{max-height:9em;margin:0;user-select:all}
 
 /* 3D overlays */
 .ov{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:3px;backdrop-filter:blur(8px);box-shadow:var(--shadow);pointer-events:none}

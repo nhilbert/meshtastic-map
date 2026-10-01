@@ -8,8 +8,9 @@ import { initMessages, openConversation } from "./messages.js";
 import { initNodeList, renderNodeList } from "./nodelist.js";
 import { LANGS, lang, loadCatalogue, locale, setLang, t, translateStatic } from "./i18n.js";
 import { renderLink, renderWalk } from "./panels.js";
+import { initScenes, renderScenes } from "./scenes.js";
 import { initSites, renderSites } from "./sites.js";
-import { initTasks, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
+import { initTasks, pollSoon, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
 import { $, css, esc, fmt, getJSON, grade, legendHTML, postJSON } from "./util.js";
 import { initWorkspace, setRail } from "./workspace.js";
 import { buttonLabel, symbolSVG } from "./icons.js";
@@ -70,7 +71,7 @@ function renderLinkLayer() {
     L.on = false;
     el.innerHTML = `<div class="hd"><input type="checkbox" disabled aria-label="${t("Strecke A → B")}">
       <span class="nm">${t("Strecke A → B")}</span><span class="grp">${t("Simulation")}</span></div>
-      <div class="bd"><div class="note" style="margin:0">${t("Braucht eine Laserscan-Szene. Wie man sie herunterlädt und aufbereitet, steht in der README (Abschnitt „3D laser-scan data“).")}</div></div>`;
+      <div class="bd"><div class="note" style="margin:0">${t("Braucht eine Laserscan-Szene: Ebene „Laserscan-Szene“ → Einstellungen → „＋ Neue Szene“.")}</div></div>`;
     return;
   }
   el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${L.on ? "checked" : ""} aria-label="${t("Strecke A → B")}">
@@ -253,13 +254,15 @@ function renderLayer(desc) {
     <div class="bd" ${st.open ? "" : "hidden"}><div class="note" style="margin:0">${esc(desc.description)}</div>
       ${inputsHTML(desc.settings, st.values, desc.id)}
       <div class="msg"></div><div class="lg"></div><div class="summary"></div>
-      ${desc.id === "sites" ? `<div class="sitemgr"></div>` : ""}</div>`;
+      ${desc.id === "sites" ? `<div class="sitemgr"></div>` : ""}
+      ${desc.id === "scene" ? `<div class="sitemgr scenemgr"></div>` : ""}</div>`;
   el.querySelector("[data-on]").addEventListener("change", e => { st.enabled = e.target.checked; persist(desc.id); refresh(desc, false, true); });
   el.querySelector("[data-open]").addEventListener("click", () => {
     st.open = !st.open; persist(desc.id); renderLayer(desc); showExtras(desc); el.querySelector("[data-open]").focus();
   });
   bindInputs(el, desc.settings, st.values, () => { persist(desc.id); renderLayer(desc); refresh(desc, false, true); });
   if (desc.id === "sites" && st.open) renderSites(el.querySelector(".sitemgr"));
+  if (desc.id === "scene" && st.open) renderScenes(el.querySelector(".scenemgr"));
 }
 // The inspector's "Rundgang" tab shows the model comparison of the layer that has one.
 function setWalk(id, data, user = false) {
@@ -533,6 +536,9 @@ function taskActions(job) {
     return [[t("Anzeigen"), () => showCoverage(job.result.file)]];
   if (job.kind === "probe" && job.state === "fertig" && job.result && job.result.sent)
     return [[t("GPX-Spur hochladen …"), () => uploadGPX(job)]];
+  // the 3D view is built for one scene: a new scene in use needs a fresh page
+  if (job.kind === "scene" && job.state === "fertig" && job.result && job.result.active)
+    return [[t("Neu laden"), () => location.reload()]];
   return [];
 }
 function taskTransition(job, prev) {
@@ -668,11 +674,13 @@ function bindUI() {
     }).catch(e => { $("#loadingMsg").textContent = t("3D-Szene nicht verfügbar: {error}", { error: e.message }); });
   } else {
     $("#loadingMsg").innerHTML = [t("Keine Laserscan-Szene vorhanden."),
-      t("Die 3D-Ansicht und die Streckenberechnung brauchen sie; wie man die Laserscan-Daten herunterlädt und aufbereitet, steht in der README (Abschnitt „3D laser-scan data“)."),
+      t("Die 3D-Ansicht und die Streckenberechnung brauchen sie. Erstellen: Ebene „Laserscan-Szene“ → Einstellungen → „＋ Neue Szene“ (nur Nordrhein-Westfalen)."),
       t("Die 2D-Karte und alle anderen Ebenen funktionieren ohne.")].map(esc).join("<br>");
     $("#loading .bar").hidden = true;
   }
   initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast });
+  initScenes({ pickOnMap, toast, tempArea: pts => map2d.setTempPath(pts),
+    taskStarted: job => { toast(t("Gestartet: {title}", { title: job.title })); pollSoon(); } });
   initNodeList({ store, toast, focusNode, message: id => openConversation("dm:" + id), assign: assignTo,
     connected: () => S.devState === "verbunden", refreshNodes: () => refreshLayer("nodes"),
     showRoute: r => {

@@ -1,7 +1,9 @@
 """HTTP server for the map app: static page (webmap/), 3D scene files, layer and tool API.
 
 GET  /                        webmap/index.html (and css/, js/)
-GET  /scene/<file>            scene_meta.json, terrain.i16, bodies.bin for the 3D view
+GET  /scene/<file>            scene_meta.json, terrain.i16, bodies.bin of the active scene (3D)
+GET  /api/scenes              laser-scan scenes; /api/scenes/plan?lat=&lon=&size= (km) estimate
+POST /api/scenes/<action>     activate, delete ({"name"}), delete_tiles (data/sim/laz/)
 GET  /api/app                 home position, scene extent, layer list with settings
 GET  /api/layers/<id>?...     layer data for the given settings (GeoJSON or raster)
 POST /api/tools/<name>        run a tool, e.g. link
@@ -34,6 +36,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
 
 from meshplay.config import DEFAULT_PRESET
+from meshplay.mapapp import scenes as scenes_api
 from meshplay.mapapp import sites_store
 from meshplay.mapapp.coord.missions import Coordinator
 from meshplay.mapapp.device import DeviceLink, Simulation
@@ -48,32 +51,9 @@ from meshplay.mapapp.tools import link as link_tool
 WEB_DIR = Path(__file__).resolve().parents[3] / "webmap"
 TOOLS = {"link": link_tool.run}
 PRESETS = ["LongFast", "MediumSlow", "MediumFast", "ShortSlow", "ShortFast", "LongSlow"]
-SCENE_FILES = ("scene_meta.json", "terrain.i16", "bodies.bin")
-
-
-def ensure_scene_export(ctx: Context, force: bool = False) -> Path | None:
-    """Export the 3D view data when the scene is newer than the last export."""
-    if not ctx.has_scene:
-        return None
-    from meshplay.sim.view3d import export_scene
-
-    out = ctx.app_dir / "scene"
-    src_meta = ctx.sim_dir / "scene" / "scene_meta.json"
-    dst_meta = out / "scene_meta.json"
-    if force or not dst_meta.exists() or dst_meta.stat().st_mtime < src_meta.stat().st_mtime:
-        print("Exporting the scene for the 3D view (about a minute) ...", flush=True)
-        meta = export_scene(ctx.scene, out)
-        print(
-            f"  {meta['n_buildings']} buildings, {meta['n_bodies'] - meta['n_buildings']} "
-            "vegetation bodies",
-            flush=True,
-        )
-    return out
 
 
 def app_info(ctx: Context) -> dict:
-    from meshplay.sim.sites import to_lonlat
-
     info = dict(
         presets=PRESETS,
         default_preset=DEFAULT_PRESET,
@@ -85,11 +65,12 @@ def app_info(ctx: Context) -> dict:
     elif ctx.sites:
         s = next(iter(ctx.sites.values()))
         info["home"] = {"lat": s["lat"], "lon": s["lon"]}
-    if ctx.has_scene:
-        meta = json.loads((ctx.sim_dir / "scene" / "scene_meta.json").read_text(encoding="utf-8"))
-        b = meta["bbox"]
-        (w, s_), (e, n) = to_lonlat(b[0], b[1]), to_lonlat(b[2], b[3])
-        info["scene"] = {"bbox_utm": b, "bounds": [[s_, w], [n, e]]}
+    name = ctx.scene_name
+    if name:
+        from meshplay.sim.scenes import meta
+
+        b = meta(ctx.sim_dir, name)["bbox"]
+        info["scene"] = {"name": name, "bbox_utm": b, "bounds": scenes_api.bounds(b)}
     return info
 
 
@@ -180,7 +161,7 @@ def suggest_site(ctx: Context, lat: float, lon: float) -> dict:
     return out
 
 
-def make_handler(ctx: Context, scene_dir: Path | None):
+def make_handler(ctx: Context):
     lock = ctx.model_lock
 
     class Handler(BaseHTTPRequestHandler):
@@ -285,11 +266,23 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                         values = layer.parse_values(ctx, dict(parse_qsl(url.query)))
                         data = layer.data(ctx, values)
                     self.send_json(data)
-                elif parts[:1] == ["scene"] and len(parts) == 2 and parts[1] in SCENE_FILES:
-                    if scene_dir is None:
+                elif parts == ["api", "scenes"]:
+                    self.send_json(scenes_api.scene_list(ctx))
+                elif parts == ["api", "scenes", "plan"]:
+                    q = dict(parse_qsl(url.query))
+                    plan = scenes_api.plan(ctx, float(q["lat"]), float(q["lon"]), float(q["size"]))
+                    self.send_json(plan)
+                elif (
+                    parts[:1] == ["scene"]
+                    and len(parts) == 2
+                    and parts[1] in scenes_api.EXPORT_FILES
+                ):
+                    with lock:  # exports the active scene first if needed (after a switch)
+                        out = scenes_api.ensure_export(ctx)
+                    if out is None:
                         self.send_error(404, "no scene")
                     else:
-                        self.send_file(scene_dir / parts[1])
+                        self.send_file(out / parts[1])
                 elif parts[:1] == ["tiles"] and len(parts) == 4:
                     self.send_tile(parts[1:])
                 else:
@@ -349,6 +342,19 @@ def make_handler(ctx: Context, scene_dir: Path | None):
                     else:
                         self.send_error(404)
                     return
+                if parts[:2] == ["api", "scenes"] and len(parts) == 3:
+                    action = {
+                        "activate": scenes_api.activate,
+                        "delete": scenes_api.delete,
+                    }.get(parts[2])
+                    with lock:
+                        if parts[2] == "delete_tiles":
+                            self.send_json(scenes_api.delete_tiles(ctx))
+                        elif action:
+                            self.send_json(action(ctx, str(body.get("name", ""))))
+                        else:
+                            self.send_error(404)
+                    return
                 if parts[:2] == ["api", "sites"] and len(parts) == 3:
                     with lock:
                         cfg = edit_sites(ctx, parts[2], body)
@@ -396,10 +402,14 @@ def run(
         device = "auto"
     if device:
         ctx.device.connect(None if device == "auto" else device)
-    scene_dir = ensure_scene_export(ctx, force_export)
-    if scene_dir is None:
-        print("No scene in data/sim/scene: the 3D view and the link tool are unavailable.")
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(ctx, scene_dir))
+    if scenes_api.ensure_export(ctx, force_export) is None:
+        print(
+            "No laser-scan scene: the 3D view and the link tool are unavailable. Create one in "
+            "the layer 'Laserscan-Szene' (settings)."
+        )
+    else:
+        print(f"Scene: {ctx.scene_name}")
+    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(ctx))
     url = f"http://localhost:{port}/"
     if sim:
         print("Simulated radio: nothing is transmitted; the fake tracker is !fa4e0001.")

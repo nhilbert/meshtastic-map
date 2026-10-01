@@ -1,6 +1,7 @@
 """Search roofs for a relay site between two sites (the weaker leg decides).
 
-python scripts/sim_relay_search.py --a HOME --b FAR [--min-roof 12] [--grid 8] [--open]
+python scripts/sim_relay_search.py --a HOME --b FAR [--min-roof 12] [--grid 8] [--scene NAME]
+    [--open]
 
 Every grid-th building cell with a roof at least --min-roof m high is a candidate; the antenna
 sits --mast m above the roof. For each candidate the basic transmission loss to both sites is
@@ -21,6 +22,7 @@ import numpy as np
 from meshplay import load_settings
 from meshplay.sim.p1812 import tl_p1812
 from meshplay.sim.scene import Scene
+from meshplay.sim.scenes import load_for_script
 from meshplay.sim.sites import load_config, to_lonlat
 from meshplay.walk import serve
 
@@ -63,11 +65,12 @@ def main() -> None:
         "--cutoff", type=float, default=-132.0, help="skip leg b if leg a is below this level [dBm]"
     )
     parser.add_argument("--open", action="store_true")
+    parser.add_argument("--scene", help="scene name (default: the active scene)")
     args = parser.parse_args()
 
     sim_dir = load_settings().data_dir / "sim"
     cfg = load_config(sim_dir / "sites.json")
-    scene = Scene.load(sim_dir / "scene")
+    _, scene = load_for_script(sim_dir, args.scene)
     sa, sb = cfg["sites"][args.a], cfg["sites"][args.b]
     ha, hb = float(np.mean(sa["height_m"])), float(np.mean(sb["height_m"]))
     ny, nx = scene.shape

@@ -58,3 +58,57 @@ def test_tiles_for_bbox():
         "3dm_32_365_5620_1_nw.laz",
         "3dm_32_366_5620_1_nw.laz",
     ]
+
+
+def profile_loop(s: Scene, a_utm, b_utm, step=2.0, corr=6.0, core=3.0) -> dict:
+    """The original per-station profile (geo/profil3.py), kept as the reference."""
+    a, b = np.asarray(a_utm, float), np.asarray(b_utm, float)
+    length = float(np.hypot(*(b - a)))
+    u = (b - a) / length
+    q = np.array([-u[1], u[0]])
+    ny, nx = s.shape
+    n = int(length // step) + 1
+    p = a[None, :] + (np.arange(n) * step)[:, None] * u[None, :]
+    off, offc = np.arange(-corr, corr + 0.5, 1.0), np.arange(-core, core + 0.5, 1.0)
+    g, sa, sb, sv, cl = np.empty(n), np.empty(n), np.empty(n), np.empty(n), np.zeros(n, int)
+    for t in range(n):
+        for kind, o in ((0, off), (1, offc)):
+            pts = p[t][None, :] + o[:, None] * q[None, :]
+            ii = ((pts[:, 1] - s.bbox[1]) / s.res).astype(int)
+            jj = ((pts[:, 0] - s.bbox[0]) / s.res).astype(int)
+            ok = (ii >= 0) & (ii < ny) & (jj >= 0) & (jj < nx)
+            ii, jj = ii[ok], jj[ok]
+            if kind == 0:
+                g[t] = np.median(s.dtm[ii, jj])
+                continue
+            hb = np.where(s.bld[ii, jj], s.nd[ii, jj], 0.0)
+            hv = np.where(s.veg[ii, jj], s.nd[ii, jj], 0.0)
+            ha = s.nd[ii, jj]
+            kb, kv, ka = int(np.argmax(hb)), int(np.argmax(hv)), int(np.argmax(ha))
+            sb[t] = s.dtm[ii[kb], jj[kb]] + hb[kb] if hb[kb] > 0 else g[t]
+            sv[t] = s.dtm[ii[kv], jj[kv]] + hv[kv] if hv[kv] > 0 else g[t]
+            sa[t] = max(s.dtm[ii[ka], jj[ka]] + ha[ka], g[t])
+            cl[t] = 1 if hb[kb] > 2.5 else (2 if hv[kv] > 2.5 else 0)
+        sb[t] = max(sb[t], g[t])
+        sv[t] = max(sv[t], g[t])
+    return dict(ground=g, surface=sa, surface_bld=sb, surface_veg=sv, clutter=cl)
+
+
+def test_profile_matches_the_original_loop():
+    rng = np.random.default_rng(3)
+    ny, nx = 300, 400
+    dtm = 50 + np.cumsum(rng.normal(0, 0.3, (ny, nx)), axis=1)
+    nd = np.where(rng.random((ny, nx)) < 0.3, rng.uniform(0, 25, (ny, nx)), 0.0)
+    nd = np.round(nd, 0)  # ties: the first highest cell must win, as in the loop
+    bld = (nd > 2.5) & (rng.random((ny, nx)) < 0.5)
+    veg = (nd > 2.5) & ~bld
+    scene = Scene(dtm, nd, bld, veg, np.ones_like(bld), (1000.0, 2000.0, 1400.0, 2300.0), 1.0)
+    # inside, diagonal, and along the edge (part of the corridor outside the scene)
+    for a, b in [
+        ((1010, 2010), (1390, 2290)),
+        ((1200, 2002), (1395, 2002)),
+        ((1001, 2150), (1300, 2299)),
+    ]:
+        new, old = scene.profile(a, b), profile_loop(scene, a, b)
+        for k, v in old.items():
+            assert np.array_equal(np.asarray(new[k]), v), k
