@@ -1,10 +1,12 @@
-"""Laser-scan scenes in the map app: list, switch, delete, and the task that creates one.
+"""Laser-scan scenes in the map app: list, switch, delete, and the task that builds one.
 
-The scenes themselves are meshplay.sim.scenes (data/sim/scenes/<name>/). The task downloads the
-missing NRW tiles in the server (resumable, see meshplay.sim.lidar) and builds the scene in a
-separate process (scripts/sim_build_scene.py), so its gigabyte of rasters never sits in the
-server. The 3D view's data is exported per scene into data/mapapp/scene/<name>/ when it is first
-needed.
+The scenes themselves are meshplay.sim.scenes (data/sim/scenes/<name>/). The app never downloads
+tiles: the owner fetches them by hand from Geobasis NRW into data/sim/laz/ (the form lists the
+names it needs). The file server is not documented as an interface for programs, and its naming
+has been reorganised before (orthophotos), so a built-in download would break silently. The
+task builds the scene from the tiles in a separate process (scripts/sim_build_scene.py), so its
+gigabyte of rasters never sits in the server. The 3D view's data is exported per scene into
+data/mapapp/scene/<name>/ when it is first needed.
 """
 
 from __future__ import annotations
@@ -17,8 +19,9 @@ from meshplay.mapapp.i18n import N_, L, _
 from meshplay.mapapp.jobs import RUNNING, WAITING, Job, JobKind, run_process
 from meshplay.mapapp.registry import Context, Setting
 from meshplay.sim import scenes
+from meshplay.sim.scene import TILE_URL
 
-TILE_MB = 95  # typical size of an NRW tile (60-130 MB) for the estimate before the download
+TILE_MB = 95  # typical size of an NRW tile (60-130 MB), for the estimate shown in the form
 SIZES = (1, 2, 3, 4, 5)  # edge length in km; 5 km = 25 M cells, about 0.5 GB in the server
 EXPORT_FILES = ("scene_meta.json", "terrain.i16", "bodies.bin")
 
@@ -147,20 +150,24 @@ def delete_tiles(ctx: Context) -> dict:
 
 
 def plan(ctx: Context, lat: float, lon: float, size_km: float) -> dict:
-    """What creating a scene here would take: tiles, tiles already there, download estimate."""
+    """What building a scene here needs: the tile names, which are in data/sim/laz/ already,
+    and how much the missing ones are to download by hand (estimate)."""
     from meshplay.sim.scene import tiles_for_bbox
     from meshplay.sim.sites import to_utm
 
     x, y = to_utm(lon, lat)
     bbox = scenes.bbox_around(x, y, size_km * 1000)
     tiles = tiles_for_bbox(bbox)
-    have = sum((laz_dir(ctx) / t).exists() for t in tiles)
+    missing = [t for t in tiles if not (laz_dir(ctx) / t).exists()]
     free = shutil.disk_usage(ctx.data_dir if ctx.data_dir.exists() else Path.cwd()).free
     return dict(
         tiles=len(tiles),
-        present=have,
-        download_mb=(len(tiles) - have) * TILE_MB,
+        present=len(tiles) - len(missing),
+        missing=missing,
+        download_mb=len(missing) * TILE_MB,
         free_mb=free / 1e6,
+        folder=str(laz_dir(ctx)),
+        source=TILE_URL,  # the folder listing, linked in the form
         ring=ring(bbox),
         center=f"{lat:.5f}, {lon:.5f}",
     )
@@ -179,10 +186,10 @@ class SceneBuild(JobKind):
     id = "scene"
     name = N_("Laserscan-Szene erstellen")
     description = N_(
-        "Lädt die fehlenden Laserscan-Kacheln von Geobasis NRW (je 1 km², 60–130 MB; ein "
-        "Abbruch setzt beim nächsten Mal fort) und baut daraus die Szene: Gelände, Gebäude und "
-        "Bäume im 1-m-Raster. 3 × 3 km: etwa 1,5 GB Download, danach ein bis zwei Minuten. "
-        "Nur für Nordrhein-Westfalen."
+        "Baut aus den Laserscan-Kacheln in data/sim/laz/ die Szene: Gelände, Gebäude und Bäume "
+        "im 1-m-Raster (3 × 3 km: ein bis zwei Minuten). Die Kacheln lädst du vorher selbst "
+        "bei Geobasis NRW herunter; welche gebraucht werden, zeigt „＋ Neue Szene“ in der Ebene "
+        "„Laserscan-Szene“. Fehlende Kacheln werden interpoliert. Nur Nordrhein-Westfalen."
     )
 
     def settings(self, ctx: Context) -> list[Setting]:
@@ -234,89 +241,40 @@ class SceneBuild(JobKind):
                 _("Eine Aufgabe arbeitet mit der Szene „{name}“: erst abwarten", name=name)
             )
         try:
-            scenes.parse_center(params["center"])
+            lat, lon = scenes.parse_center(params["center"])
         except ValueError:
             raise ValueError(
                 _("Mitte als „Breite, Länge“ angeben, z. B. 50.94130, 6.95828")
             ) from None
         if int(float(params["size"])) not in SIZES:
             raise ValueError(_("Kantenlänge: 1 bis 5 km"))
+        need = plan(ctx, lat, lon, int(float(params["size"])))
+        if not need["present"]:
+            raise ValueError(
+                _(
+                    "Keine der {n} Laserscan-Kacheln für dieses Gebiet liegt in {folder}: erst "
+                    "herunterladen (Liste unter „＋ Neue Szene“).",
+                    n=need["tiles"],
+                    folder=need["folder"],
+                )
+            )
 
     def title(self, params: dict) -> L:
         return L("Laserscan-Szene {name}", name=params["name"])
 
     def run(self, ctx: Context, job: Job) -> None:
-        import urllib.error
-
-        try:
-            self._run(ctx, job)
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
-            raise RuntimeError(
-                _("Der Server von Geobasis NRW ist nicht erreichbar: {error}", error=e)
-            ) from None
-
-    def _run(self, ctx: Context, job: Job) -> None:
-        from meshplay.sim.lidar import download_tile, remote_size
-        from meshplay.sim.scene import tiles_for_bbox
-        from meshplay.sim.sites import to_utm
-
         p = job.params
         lat, lon = scenes.parse_center(p["center"])
-        size_m = int(float(p["size"])) * 1000
-        x, y = to_utm(lon, lat)
-        tiles = tiles_for_bbox(scenes.bbox_around(x, y, size_m))
-        folder = laz_dir(ctx)
-
-        # 1. which tiles are missing, and does the server have them
-        job.detail = L("prüft die Kacheln beim Server …")
-        todo: dict[str, int] = {}
-        for t in tiles:
-            job.check_stop()
-            if (folder / t).exists():
-                continue
-            size = remote_size(t)
-            if size is None:
-                job.add_log(_("{tile}: gibt es nicht (außerhalb von NRW?)", tile=t))
-            else:
-                todo[t] = size
-        have = sum((folder / t).exists() for t in tiles)
-        if not todo and not have:
-            raise RuntimeError(
-                _("Für dieses Gebiet gibt es keine Laserscan-Kacheln (nur Nordrhein-Westfalen).")
-            )
-        total = sum(todo.values())
+        size_km = int(float(p["size"]))
+        need = plan(ctx, lat, lon, size_km)
         job.add_log(
             _(
-                "{n} Kacheln, {have} vorhanden, {todo} zu laden ({mb} MB)",
-                n=len(tiles),
-                have=have,
-                todo=len(todo),
-                mb=f"{total / 1e6:.0f}",
+                "{n} Kacheln, {have} vorhanden, {missing} fehlen (werden interpoliert)",
+                n=need["tiles"],
+                have=need["present"],
+                missing=len(need["missing"]),
             )
         )
-
-        # 2. download (70 % of the progress bar: it is the slow part)
-        done_before = 0
-        for k, (t, size) in enumerate(todo.items(), 1):
-
-            def on_progress(done: int, _total: int, k=k, before=done_before) -> None:
-                job.check_stop()
-                got = before + done
-                job.progress = 0.7 * got / total if total else None
-                job.detail = L(
-                    "lädt Kachel {k}/{n} · {mb} von {total} MB",
-                    k=k,
-                    n=len(todo),
-                    mb=f"{got / 1e6:.0f}",
-                    total=f"{total / 1e6:.0f}",
-                )
-
-            download_tile(t, folder, on_progress)
-            job.add_log(_("{tile} geladen", tile=t))
-            done_before += size
-
-        # 3. build in a separate process
-        job.progress = 0.7
         job.detail = L("baut die Szene …")
         args = [
             "scripts/sim_build_scene.py",
@@ -325,23 +283,24 @@ class SceneBuild(JobKind):
             "--center",
             f"{lat},{lon}",
             "--size",
-            str(size_m),
+            str(size_km * 1000),
             "--force",
         ] + (["--activate"] if p["activate"] else [])
 
         def on_line(line: str) -> None:
             m = re.match(r"reading tile (\d+)/(\d+)", line)
             if m:
-                job.progress = 0.7 + 0.25 * int(m[1]) / int(m[2])
+                job.progress = 0.85 * int(m[1]) / int(m[2])
                 job.detail = L("liest Kachel {k}/{n} …", k=m[1], n=m[2])
             elif line.startswith("classifying"):
+                job.progress = 0.9
                 job.detail = L("trennt Gebäude und Bäume …")
 
         run_process(job, args, on_line)
         with ctx.model_lock:
             ctx.forget_scene()  # a rebuilt scene of the same name must be read again
             if ctx.scene_name == p["name"]:
-                job.progress = 0.97
+                job.progress = 0.95
                 job.detail = L("bereitet die 3D-Ansicht vor …")
                 ensure_export(ctx)
         job.result = {"name": p["name"], "active": ctx.scene_name == p["name"]}

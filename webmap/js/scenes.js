@@ -1,7 +1,8 @@
 // Scene manager inside the "Laserscan-Szene" layer settings: switch the scene in use, delete
 // scenes and the downloaded tiles, create a new scene (click its centre on the map, choose the
-// size; the server downloads and builds it as a background task, see mapapp/scenes.py).
-// Switching reloads the page: the 3D view is built for one scene.
+// size). The form lists the tiles the area needs; the owner downloads the missing ones by hand
+// into data/sim/laz/ (the app never downloads, see mapapp/scenes.py), then the server builds the
+// scene as a background task. Switching reloads the page: the 3D view is built for one scene.
 import { t } from "./i18n.js";
 import { esc, fmt, getJSON, postJSON } from "./util.js";
 
@@ -47,9 +48,15 @@ function rowHTML(s) {
 function formHTML() {
   const f = E.form, p = E.plan;
   const exists = E.data && E.data.scenes.some(s => s.name === f.name);
-  const planText = !p ? "" : p.download_mb > 0
-    ? t("{n} Kacheln, {have} schon da: etwa {size} Download (frei: {free}).", { n: p.tiles, have: p.present, size: gb(p.download_mb), free: gb(p.free_mb) })
-    : t("{n} Kacheln, alle schon da: kein Download.", { n: p.tiles });
+  const planText = !p ? "" : p.missing.length
+    ? t("{n} Kacheln, {have} schon da. Es fehlen {missing} (etwa {size}, frei: {free}):", { n: p.tiles, have: p.present, missing: p.missing.length, size: gb(p.download_mb), free: gb(p.free_mb) })
+    : t("{n} Kacheln, alle schon da.", { n: p.tiles });
+  const missingHTML = !p || !p.missing.length ? "" : `
+    <pre class="log tiles">${esc(p.missing.join("\n"))}</pre>
+    <p class="note" style="margin:0">${esc(t("Selbst herunterladen (Browser oder Download-Programm) und unverändert in diesen Ordner legen:"))} <code>${esc(p.folder)}</code>
+      · <a href="${esc(p.source)}" target="_blank" rel="noopener">${t("Download-Ordner von Geobasis NRW")}</a>
+      ${p.present ? esc(t("Was fehlt, wird interpoliert.")) : ""}</p>
+    <div class="row2"><button class="btn small" data-copy>${t("Liste kopieren")}</button><button class="btn small" data-recheck>${t("Erneut prüfen")}</button></div>`;
   return `<div class="siteform">
     <label>${t("Name")}<input type="text" data-f="name" value="${esc(f.name)}" maxlength="32" placeholder="${t("z. B. innenstadt")}"></label>
     <div class="row2"><label>${t("Kantenlänge")}<select data-f="size">${SIZES.map(k => `<option value="${k}" ${k === f.size ? "selected" : ""}>${k} km</option>`).join("")}</select></label>
@@ -57,7 +64,8 @@ function formHTML() {
     <label class="tog"><input type="checkbox" data-f="activate" ${f.activate ? "checked" : ""}>${t("Danach verwenden")}</label>
     <p class="note" style="margin:0" data-replace>${exists ? esc(t("Die Szene „{name}“ wird ersetzt.", { name: f.name })) : ""}</p>
     <p class="note" style="margin:0">${esc(planText)} ${t("Nur Nordrhein-Westfalen.")}</p>
-    <div class="row2"><button class="btn small" data-cancel>${t("Abbrechen")}</button><button class="btn small on" data-create>${t("Erstellen")}</button></div></div>`;
+    ${missingHTML}
+    <div class="row2"><button class="btn small" data-cancel>${t("Abbrechen")}</button><button class="btn small on" data-create ${p && !p.present ? "disabled" : ""}>${t("Erstellen")}</button></div></div>`;
 }
 
 function bindForm() {
@@ -71,6 +79,11 @@ function bindForm() {
   box.querySelector("[data-f=size]").addEventListener("change", e => { E.form.size = +e.target.value; loadPlan(); });
   box.querySelector("[data-f=activate]").addEventListener("change", e => { E.form.activate = e.target.checked; });
   box.querySelector("[data-cancel]").addEventListener("click", cancel);
+  box.querySelector("[data-recheck]")?.addEventListener("click", loadPlan);
+  box.querySelector("[data-copy]")?.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(E.plan.missing.join("\n")); E.api.toast(t("Liste kopiert")); }
+    catch (_) { E.api.toast(t("Kopieren nicht möglich: die Liste bitte markieren und kopieren."), { bad: true }); }
+  });
   box.querySelector("[data-create]").addEventListener("click", create);
 }
 
@@ -129,6 +142,6 @@ async function remove(name) {
 }
 
 async function deleteTiles() {
-  if (!confirm(t("Alle heruntergeladenen Laserscan-Kacheln löschen ({size})? Die Szenen bleiben; für einen Neubau werden die Kacheln wieder geladen.", { size: gb(E.data.tiles_mb) }))) return;
+  if (!confirm(t("Alle heruntergeladenen Laserscan-Kacheln löschen ({size})? Die Szenen bleiben; für einen Neubau müssen die Kacheln erneut heruntergeladen werden.", { size: gb(E.data.tiles_mb) }))) return;
   try { E.data = await postJSON("api/scenes/delete_tiles", {}); E.msg = ""; draw(); } catch (e) { E.msg = e.message; draw(); }
 }

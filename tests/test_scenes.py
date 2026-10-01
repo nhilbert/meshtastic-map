@@ -1,6 +1,7 @@
-"""Named laser-scan scenes, the scene task of the map app and the tile download.
+"""Named laser-scan scenes, the scene task of the map app and the tile download of the script.
 
-No network: the "Geobasis server" is a local HTTP server with one synthetic tile.
+No network: the map app never downloads; the script's download is tested against a local HTTP
+server.
 """
 
 import threading
@@ -115,7 +116,7 @@ def test_coverage_task_needs_the_site_inside_the_scene(ctx):
         JobManager(ctx).create("coverage", {"site": "DOM", "scene": "far"})
 
 
-# ---------------------------------------------------------------- download and build
+# ---------------------------------------------------------------- download (script) and build
 class TileServer:
     """Serves {name: bytes} with HEAD, 404 and Range requests, like the Geobasis server."""
 
@@ -203,22 +204,30 @@ def synthetic_tile(e_km: int, n_km: int) -> bytes:
     return buf.getvalue()
 
 
-def test_scene_task_downloads_builds_and_activates(ctx, monkeypatch):
+def test_scene_task_builds_from_local_tiles_and_activates(ctx, monkeypatch):
     from meshplay.sim import lidar
 
+    def no_network(*args, **kwargs):
+        raise AssertionError("the app must not download")
+
+    monkeypatch.setattr(lidar, "download_tile", no_network)
+    monkeypatch.setattr(lidar, "remote_size", no_network)
     e_km, n_km = 356, 5645
     lon, lat = to_lonlat(e_km * 1000 + 500, n_km * 1000 + 500)
-    server = TileServer({tile_name(e_km, n_km): synthetic_tile(e_km, n_km)})
-    monkeypatch.setattr(lidar, "TILE_URL", server.url)
-    monkeypatch.setenv("MESHPLAY_DATA_DIR", str(ctx.data_dir))  # for the build process
+    params = {"name": "dom", "center": f"{lat:.5f}, {lon:.5f}", "size": "1"}
     ctx.jobs = JobManager(ctx)
-    try:
-        job = ctx.jobs.create(
-            "scene", {"name": "dom", "center": f"{lat:.5f}, {lon:.5f}", "size": "1"}
-        )
-        wait_for(lambda: job.state in (DONE, FAILED), timeout=240)
-    finally:
-        server.close()
+    with pytest.raises(ValueError, match="Keine der"):  # nothing downloaded yet
+        ctx.jobs.create("scene", params)
+    plan = scenes_api.plan(ctx, lat, lon, 1)
+    assert tile_name(e_km, n_km) in plan["missing"]
+    assert plan["source"].startswith("https://") and plan["folder"].endswith("laz")
+
+    laz = ctx.sim_dir / "laz"
+    laz.mkdir(parents=True)
+    (laz / tile_name(e_km, n_km)).write_bytes(synthetic_tile(e_km, n_km))
+    monkeypatch.setenv("MESHPLAY_DATA_DIR", str(ctx.data_dir))  # for the build process
+    job = ctx.jobs.create("scene", params)
+    wait_for(lambda: job.state in (DONE, FAILED), timeout=240)
     assert job.state == DONE, (job.error, list(job.log)[-8:])
     assert job.result == {"name": "dom", "active": True}
     assert ctx.scene_name == "dom"

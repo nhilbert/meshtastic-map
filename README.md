@@ -259,12 +259,18 @@ scene has data. 3 × 3 km is a good start for a town; 5 × 5 km is the most the 
 
 ### In the map app (recommended)
 
-Layer *Laserscan-Szene* → settings (⚙) → **＋ Neue Szene**, click the centre on the map, give it
-a name and an edge length. The form shows how many tiles are needed and how many are already
-there. *Erstellen* starts a background task (*Aufgaben*) that downloads the missing tiles
-(an interrupted or cancelled download continues next time), builds the scene in a separate
-process and prepares the 3D view. With *Danach verwenden* the new scene is used right away
-(the page offers to reload).
+1. Layer *Laserscan-Szene* → settings (⚙) → **＋ Neue Szene**, click the centre on the map, give
+   it a name and an edge length. The form draws the square and lists the tiles it needs that
+   are not in `data/sim/laz/` yet, with the estimated size and the free disk space.
+2. **Download the missing tiles yourself** from the Geobasis NRW download folder (linked in the
+   form; browser or any download manager) and put them unchanged into `data/sim/laz/`.
+   *Liste kopieren* copies the names. The app deliberately never downloads: the file server is
+   not documented as an interface for programs, and its folders and file names have been
+   reorganised before.
+3. *Erneut prüfen* updates the list; *Erstellen* starts a background task (*Aufgaben*) that
+   builds the scene in a separate process and prepares the 3D view. Tiles still missing are
+   interpolated (the layer shows those areas). With *Danach verwenden* the new scene is used
+   right away (the page offers to reload).
 
 The same list shows all scenes: *Verwenden* switches (the page reloads, the 3D view is built for
 one scene), ✕ deletes one, *Kacheln löschen* frees the space of the downloaded tiles.
@@ -283,7 +289,8 @@ python scripts/sim_build_scene.py --use home                 # switch
 ```
 
 The list marks tiles you already have and tiles the server doesn't have (outside NRW). The
-download skips tiles that are present and continues a leftover `*.part` file.
+download skips tiles that are present and continues a leftover `*.part` file. It relies on the
+server's current folder and file names; if it fails, download by hand (below).
 
 The build reads the tiles and writes `data/sim/scenes/<name>/` (`scene_raw.npz`,
 `scene_cls2.npz`, `scene_meta.json`): terrain from the ground points, surface from the points
@@ -300,7 +307,7 @@ The simulation scripts (`sim_coverage_map.py`, `sim_predict.py`, `sim_compare_wa
 
 ### By hand
 
-If neither can reach the server (proxy, firewall) or you want to pick the tiles yourself:
+The map app's form lists the names you need. Without it:
 
 1. **Find the tile names.** Convert your position to UTM32, e.g. with the project's own
    converter (longitude first):

@@ -1,6 +1,6 @@
 """Download of the NRW laser-scan tiles (Geobasis NRW, 3D-Messdaten, dl-de/zero-2-0).
 
-Used by scripts/sim_fetch_tiles.py and the map app's scene task. A download goes to
+Used by scripts/sim_fetch_tiles.py only (the map app never downloads). A download goes to
 <tile>.part first and continues where it stopped (HTTP Range), so an interrupted or cancelled
 download costs nothing.
 """

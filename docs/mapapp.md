@@ -128,19 +128,21 @@ when a task ends or fails.
   use; the site must lie inside it). The grid is named after its setup,
   `coverage-<site>-<preset>-<placement>-<radius>m-<step>m[-winter]-<scene>.npz`, and carries it
   as metadata, which the layer *Simulierte Abdeckung* shows in its selection.
-- **Laserscan-Szene erstellen** downloads the missing NRW tiles inside the server (resumable:
-  a cancelled download continues next time) and builds the scene with
-  `scripts/sim_build_scene.py` as a separate process; with *Danach verwenden* it switches to the
-  new scene and prepares its 3D view. The scene manager (next section) starts it with a centre
-  picked on the map.
+- **Laserscan-Szene erstellen** builds a scene from the tiles in `data/sim/laz/` with
+  `scripts/sim_build_scene.py` as a separate process (missing tiles are interpolated; it refuses
+  if none is there); with *Danach verwenden* it switches to the new scene and prepares its 3D
+  view. It never downloads. The scene manager (next section) starts it with a centre picked on
+  the map.
 
 ## Laser-scan scenes (Laserscan-Szene)
 
 The ⚙ of the layer *Laserscan-Szene* lists the scenes (`data/sim/scenes/<name>/`; the one in use
 is marked *verwendet*). **＋ Neue Szene** and a click in the map set the centre; name and edge
-length (1–5 km) complete the form, which shows the tiles needed, how many are already there, the
-download estimate and the free disk space, and draws the square on the map. *Erstellen* starts
-the task above. *Verwenden* switches the scene and reloads the page (the 3D view is built for
+length (1–5 km) complete the form, which draws the square on the map and lists the tiles that
+are not in `data/sim/laz/` yet (*Liste kopieren*), the size estimate, the free disk space and a
+link to the Geobasis NRW download folder. The owner downloads them by hand: the file server is
+not a documented interface for programs and has been reorganised before. *Erneut prüfen*
+updates the list, *Erstellen* starts the task above. *Verwenden* switches the scene and reloads the page (the 3D view is built for
 one scene; its data is exported on first use into `data/mapapp/scene/<name>/`). ✕ deletes a
 scene (not while a task uses it); *Kacheln löschen* deletes the downloaded tiles in
 `data/sim/laz/`, which are only needed to build. The link tool, the walk comparison and the site
@@ -377,7 +379,7 @@ src/meshplay/mapapp/
                    (radio texts, commands), paths.py, settings.py, store.py, geo.py
   jobs.py          background tasks: manager, task kinds (traceroute walk, coverage simulation)
   scenes.py        laser-scan scenes: list, switch, delete, 3D export per scene, the task that
-                   downloads the tiles and builds a scene
+                   builds a scene from the tiles in data/sim/laz/
   sites_store.py   editing data/sim/sites.json
   messages.py      message store for the messaging pane (data/messages.jsonl, traffic list)
   i18n.py          translations: _(), N_(), L(), language per request

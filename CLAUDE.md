@@ -96,6 +96,11 @@ nodes on the private channel of its settings. Walk traffic goes on a private cha
 limit 0; coordination messages are direct messages on the channel of its settings (default 1,
 the private channel).
 
+**Laser-scan tiles.** The map app never downloads them: the owner fetches them by hand into
+`data/sim/laz/` (the scene form lists the names). The Geobasis NRW file server is not a
+documented interface for programs and has been reorganised before. Only
+`scripts/sim_fetch_tiles.py --download` fetches tiles, when the owner runs it.
+
 **Modem preset.** The owner's mesh runs **ShortSlow**; `DEFAULT_PRESET` in `config.py` is the
 single default. Never hardcode LongFast. A preset (and interval) recorded in a log wins over the
 default; `probe.py` records both.

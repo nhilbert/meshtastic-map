@@ -6,9 +6,9 @@ Tiles are 1 km x 1 km in UTM32 (EPSG:25832), about 60-130 MB each, from Geobasis
 (3D-Messdaten Laserscanning, open data, dl-de/zero-2-0). Without --download the script only
 prints the list with sizes and marks tiles already present in data/sim/laz/. Tiles the server
 doesn't have (outside North Rhine-Westphalia) are listed as "not available" and skipped. An
-interrupted download continues where it stopped. The map app does the same (and builds the
-scene) in the layer "Laserscan-Szene"; the README (section "3D laser-scan data") explains the
-manual way.
+interrupted download continues where it stopped. It depends on the server's current folder and
+file names (not a documented interface); if it fails, download by hand as the README (section
+"3D laser-scan data") explains. The map app never downloads; it lists the tiles it needs.
 """
 
 import argparse
