@@ -578,7 +578,6 @@ details.log{margin-top:12px} details.log summary{cursor:pointer;font-size:12px;c
 .wsteps i svg{width:10px;height:10px;stroke-width:2.4}
 .wsteps .on{color:var(--ink)} .wsteps .on i{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .wsteps .done i{background:var(--ok);border-color:var(--ok);color:var(--bg)}
-.wpadd{display:flex;gap:6px} .wpadd select{flex:1}
 .wplist{display:flex;flex-direction:column;gap:4px}
 .wprow{display:flex;align-items:center;gap:4px;padding:3px 4px;border-radius:6px;border:1px solid var(--line-soft);background:var(--bg2)}
 .wprow.sel{border-color:var(--accent);background:var(--accent-soft)}
@@ -588,3 +587,12 @@ details.log{margin-top:12px} details.log summary{cursor:pointer;font-size:12px;c
 .wpt{display:flex;gap:6px;font:11px var(--mono);color:var(--ink2)}
 .wpedit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:0 0 4px 24px;padding:8px;border-radius:6px;background:var(--bg2);border:1px solid var(--line-soft)}
 .msum{display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+
+/* waypoints of a mission being written (map) */
+.wpdraft{display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;border:2px dashed #00707f;background:#2cc4d6;
+  color:#05252b;font:700 11px var(--mono);box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.wpdraft.via{background:#fff;border-style:solid}
+.wpdraft.sel{border:3px solid #fff;outline:2px solid #2cc4d6}
+.wphint{display:flex;align-items:center;gap:6px;margin:0} .wphint svg{width:14px;height:14px;flex:none}
+/* while a mission's waypoints are being set, the map takes clicks */
+body.mapadd #map2d .leaflet-container,body.mapadd #map2d.leaflet-container{cursor:crosshair}

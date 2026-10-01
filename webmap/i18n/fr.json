@@ -302,7 +302,6 @@
   "Neuer Ort": "Nouveau lieu",
   "Neuer Standort": "Nouveau site",
   "Neues Ziel": "Nouvelle cible",
-  "Noch kein Wegpunkt.": "Pas encore de point de passage.",
   "Noch keine Aufgaben.": "Pas encore de tâches.",
   "Noch keine Berechnung: Aufgaben → Abdeckung simulieren (braucht eine Laserscan-Szene)": "Pas encore de calcul : Tâches → Simuler la couverture (nécessite une scène issue du scan laser)",
   "Noch keine Einsätze.": "Pas encore de missions.",
@@ -344,7 +343,6 @@
   "{port} · Bluetooth, kein USB-Gerät": "{port} · Bluetooth, pas un appareil USB",
   "Position": "Position",
   "Position des Orts": "Position du lieu",
-  "Position des Wegpunkts": "Position du point de passage",
   "Position des neuen Standorts": "position du nouveau site",
   "Position des neuen Ziels": "Position de la nouvelle cible",
   "Position gilt als alt nach [min]": "La position est considérée ancienne après [min]",
@@ -859,7 +857,6 @@
   "Als CSV": "En CSV",
   "Als GPX": "En GPX",
   "Art, Radius und Zeiten": "Type, rayon et heures",
-  "Auf der Karte": "Sur la carte",
   "Beenden …": "Terminer …",
   "Beendet": "Terminée",
   "Einsätze": "Missions",
@@ -891,5 +888,6 @@
   "übersprungen": "sauté",
   "{n} Funknachrichten": "{n} messages radio",
   "Als Wegpunkt hinzufügen": "Ajouter comme point de passage",
-  "Wegpunkt": "Point de passage"
+  "Wegpunkt": "Point de passage",
+  "Klick in die Karte setzt einen Wegpunkt.": "Un clic sur la carte place un point de passage."
 }

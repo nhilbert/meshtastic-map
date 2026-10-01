@@ -29,6 +29,7 @@ const S = {
   // link layer: on/off and settings panel, endpoints, pick mode ("a", "b" or ""), last result
   link: { on: false, open: false, ...store.get("layer.link", {}) }, a: null, b: null, pick: "", res: null,
   mapPick: null,  // one-off map click for another tool: { label, cb }
+  mapAdd: null,   // every map click goes to this (waypoints of a mission being written)
   walk: null, walkId: null,  // layer data with a model summary (walk layer, colored by residual)
   insp: { open: store.get("insp.open", !matchMedia("(max-width: 700px)").matches), tab: null },
 };
@@ -530,12 +531,15 @@ function mapClick(lat, lon, feature = null) {
     clearMapPick(false); pick.cb(lat, lon, feature); return true;
   }
   if (S.pick) { setEndpoint(S.pick, endpointAt(lat, lon, S.pick)); return true; }
+  if (S.mapAdd) { S.mapAdd(lat, lon, feature); return true; }
   return false;
 }
-// A click on a map object while a pick waits: a point object gives its own position, an area
+// A click on a map object while a pick (or a mission's waypoints) waits: a point object gives its own position, an area
 // the clicked spot; the tool gets the object too (a waypoint takes a target's name).
 function featurePick(f, ll) {
-  if (!S.mapPick) return false;
+  const type = f.properties._ref && f.properties._ref.type;
+  // a mission being written takes targets, sites and places; nodes keep their popup
+  if (!S.mapPick && !(S.mapAdd && !S.pick && ["target", "site", "place"].includes(type))) return false;
   const point = f.geometry && f.geometry.type === "Point";
   return mapClick(point ? f.geometry.coordinates[1] : ll.lat, point ? f.geometry.coordinates[0] : ll.lng, f);
 }
@@ -775,6 +779,8 @@ function bindUI() {
     } });
   initCoord({
     store, toast, openInspector, updateInspector, pickOnMap, tempMarker: E_tempMarker, focusNode, refreshLayer,
+    draft: (path, sel) => map2d && map2d.setDraft(path, sel),
+    mapAdd: cb => { S.mapAdd = cb; document.body.classList.toggle("mapadd", !!cb); },
     nodes: () => (S.layers.nodes && S.layers.nodes.data && S.layers.nodes.data.nodes) || [],
     sites: () => ((S.layers.sites && S.layers.sites.data && S.layers.sites.data.features) || [])
       .map(f => ({ name: f.properties._title, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] })),

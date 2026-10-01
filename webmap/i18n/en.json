@@ -302,7 +302,6 @@
   "Neuer Ort": "New place",
   "Neuer Standort": "New site",
   "Neues Ziel": "New target",
-  "Noch kein Wegpunkt.": "No waypoint yet.",
   "Noch keine Aufgaben.": "No tasks yet.",
   "Noch keine Berechnung: Aufgaben → Abdeckung simulieren (braucht eine Laserscan-Szene)": "No calculation yet: Tasks → Simulate coverage (needs a laser-scan scene)",
   "Noch keine Einsätze.": "No missions yet.",
@@ -344,7 +343,6 @@
   "{port} · Bluetooth, kein USB-Gerät": "{port} · Bluetooth, not a USB device",
   "Position": "Position",
   "Position des Orts": "Position of the place",
-  "Position des Wegpunkts": "Position of the waypoint",
   "Position des neuen Standorts": "position of the new site",
   "Position des neuen Ziels": "Position of the new target",
   "Position gilt als alt nach [min]": "Position counts as old after [min]",
@@ -859,7 +857,6 @@
   "Als CSV": "As CSV",
   "Als GPX": "As GPX",
   "Art, Radius und Zeiten": "Kind, radius and times",
-  "Auf der Karte": "On the map",
   "Beenden …": "End …",
   "Beendet": "Ended",
   "Einsätze": "Missions",
@@ -891,5 +888,6 @@
   "übersprungen": "skipped",
   "{n} Funknachrichten": "{n} radio messages",
   "Als Wegpunkt hinzufügen": "Add as waypoint",
-  "Wegpunkt": "Waypoint"
+  "Wegpunkt": "Waypoint",
+  "Klick in die Karte setzt einen Wegpunkt.": "A click on the map sets a waypoint."
 }

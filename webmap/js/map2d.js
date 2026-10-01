@@ -19,7 +19,8 @@ export class Map2D {
     this.layers = {};
     this.nodeMarkers = {};  // node ID -> marker, for the node list
     this.linkGroup = L.layerGroup().addTo(this.map);
-    this.map.on("click", e => this.h.onClick(e.latlng.lat, e.latlng.lng));
+    // the click that closes a popup only closes it (it must not also set a point)
+    this.map.on("click", e => { if (Date.now() - (this.popupClosedAt || 0) > 300) this.h.onClick(e.latlng.lat, e.latlng.lng); });
     this.map.on("mousemove", e => this.h.onMove?.(e.latlng.lat, e.latlng.lng));
     // right click (long press on touch) on a free spot: what can be done here
     this.map.on("contextmenu", e => {
@@ -30,7 +31,7 @@ export class Map2D {
     });
     this.popupOpen = false;  // live layers skip their refresh while a popup is open
     this.map.on("popupopen", () => { this.popupOpen = true; });
-    this.map.on("popupclose", () => { this.popupOpen = false; });
+    this.map.on("popupclose", () => { this.popupOpen = false; this.popupClosedAt = Date.now(); });
     new ResizeObserver(() => this.map.invalidateSize()).observe(el);
   }
 
@@ -161,6 +162,23 @@ export class Map2D {
     L.polygon(points, { color: "#00707f", weight: 2, dashArray: "4 4", fillOpacity: 0.15 }).addTo(this.tempPath);
     for (const [lat, lon] of points)
       L.circleMarker([lat, lon], { radius: 5, color: "#00707f", fillColor: "#2cc4d6", fillOpacity: 1, bubblingMouseEvents: false }).addTo(this.tempPath);
+  }
+  // The waypoints of a mission being written (numbered stops, small via points, a dashed line
+  // between them), null removes them. Not clickable, so map clicks reach the form's pick.
+  setDraft(path, sel = null) {
+    if (this.draft) { this.map.removeLayer(this.draft); this.draft = null; }
+    if (!path || !path.length) return;
+    this.draft = L.layerGroup().addTo(this.map);
+    L.polyline(path.map(w => [w.lat, w.lon]), { color: "#2cc4d6", weight: 2.5, dashArray: "6 6", interactive: false }).addTo(this.draft);
+    let n = 0;
+    path.forEach((w, i) => {
+      const stop = w.kind !== "via";
+      if (stop) n++;
+      L.marker([w.lat, w.lon], { interactive: false, keyboard: false, zIndexOffset: 1000, icon: L.divIcon({
+        className: `wpdraft${stop ? "" : " via"}${i === sel ? " sel" : ""}`, iconSize: stop ? [22, 22] : [12, 12],
+        html: stop ? `<span>${n}</span>` : "" }) })
+        .bindTooltip(esc(w.name), { permanent: stop, direction: "right", className: "lbl", offset: [10, 0] }).addTo(this.draft);
+    });
   }
   // A traceroute from the node list, null removes it. The way there is the wide line, the way
   // back the dashed one on top; each leg is coloured by the SNR it was heard with. A leg across

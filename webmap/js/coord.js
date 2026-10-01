@@ -29,7 +29,8 @@ const C = {
   archive: null,       // archive panel open: the list of missions (null = closed)
 };
 
-// api: { store, toast(msg, opts), openInspector(tab), updateInspector(), pickOnMap(label, cb),
+// api: { store, toast(msg, opts), openInspector(tab), updateInspector(), pickOnMap(label, cb), draft(path, sel),
+//   mapAdd(cb or null: map clicks and clicks on targets, sites, places go to cb(lat, lon, feature)),
 //        tempMarker(lat, lon), focusNode(id), refreshLayer(id), nodes() -> rows of the node layer,
 //        sites() -> [{name, lat, lon}] }
 export function initCoord(api) {
@@ -242,6 +243,8 @@ function render() {
   const d = C.data;
   renderBadge();
   renderPlaces();
+  C.api.draft(C.form && C.form.step >= 2 ? C.form.path : null, C.form ? C.form.sel : null);
+  C.api.mapAdd(C.form && C.form.step === 2 ? addFromMap : null);
   if (!d) { box.innerHTML = `<div class="sec"><p class="msg">${esc(C.err || t("lädt …"))}</p></div>`; return; }
   const connected = d.device_state === "verbunden";
   const modeTip = d.enabled
@@ -439,12 +442,12 @@ function formHTML(d) {
     const sites = (C.api.sites() || []).map(s => `<option value="s:${esc(s.name)}">${esc(s.name)}</option>`).join("");
     const places = (d.places || []).map(p => `<option value="o:${esc(p.id)}">${esc(p.name)}</option>`).join("");
     const templates = Object.keys(d.paths || {}).map(n => `<option value="p:${esc(n)}">${esc(n)}</option>`).join("");
-    body = `<div class="wpadd"><button class="btn small" data-form="map">${symbolSVG("pin")}${t("Auf der Karte")}</button>
-        <select data-f="add" aria-label="${t("Wegpunkt hinzufügen …")}"><option value="">${t("Hinzufügen …")}</option>
-          ${targets ? `<optgroup label="${t("Ziele")}">${targets}</optgroup>` : ""}${sites ? `<optgroup label="${t("Eigene Standorte")}">${sites}</optgroup>` : ""}
-          ${places ? `<optgroup label="${t("Orte")}">${places}</optgroup>` : ""}
-          ${templates ? `<optgroup label="${t("Vorlagen")}">${templates}</optgroup>` : ""}</select></div>
-      <div class="wplist">${f.path.map((w, i) => wpHTML(w, i, f, d)).join("") || `<p class="note" style="margin:0">${t("Noch kein Wegpunkt.")}</p>`}</div>
+    // the map takes waypoints by click while this step is open (see render)
+    body = `<div class="wplist">${f.path.map((w, i) => wpHTML(w, i, f, d)).join("") || `<p class="note wphint">${symbolSVG("pin")}${t("Klick in die Karte setzt einen Wegpunkt.")}</p>`}</div>
+      <select data-f="add" aria-label="${t("Wegpunkt hinzufügen …")}"><option value="">${t("Hinzufügen …")}</option>
+        ${targets ? `<optgroup label="${t("Ziele")}">${targets}</optgroup>` : ""}${sites ? `<optgroup label="${t("Eigene Standorte")}">${sites}</optgroup>` : ""}
+        ${places ? `<optgroup label="${t("Orte")}">${places}</optgroup>` : ""}
+        ${templates ? `<optgroup label="${t("Vorlagen")}">${templates}</optgroup>` : ""}</select>
       ${f.path.length ? `<button class="lnk" data-form="template">${t("Als Vorlage speichern …")}</button>` : ""}`;
     next = f.edit ? `<button class="btn on" data-form="start" ${f.path.length ? "" : "disabled"}>${t("Pfad speichern")}</button>`
       : `<button class="btn on" data-form="next" ${f.path.length ? "" : "disabled"}>${t("Weiter")}</button>`;
@@ -476,10 +479,13 @@ function wpFrom(feature, lat, lon) {
 }
 function addFromFeature(feature) {
   const g = feature && feature.geometry, point = g && g.type === "Point";
+  addFromMap(point ? g.coordinates[1] : null, point ? g.coordinates[0] : null, feature);
+  showSection("missions");
+}
+function addFromMap(lat, lon, feature) {
   const form = $("#coordBox .jobform[data-mission]");
   if (form) readForm(form);
-  C.form.path.push(wpFrom(feature, point ? g.coordinates[1] : null, point ? g.coordinates[0] : null));
-  showSection("missions");
+  C.form.path.push(wpFrom(feature, lat, lon));
   render();
 }
 function readForm(box) {
@@ -509,11 +515,6 @@ function bindForm(box, d) {
     try { await postJSON("api/coord/paths/save", { name: name.trim(), path: f.path }); C.api.toast(t("Vorlage {name} gespeichert", { name: name.trim() })); }
     catch (e) { f.msg = e.message; render(); }
     pollSoon();
-  });
-  // each click on the map adds the next waypoint
-  form.querySelector("[data-form=map]")?.addEventListener("click", () => {
-    readForm(form);
-    C.api.pickOnMap(t("Position des Wegpunkts"), (lat, lon, feature) => { f.path.push(wpFrom(feature, lat, lon)); render(); });
   });
   form.querySelector("[data-f=add]")?.addEventListener("change", e => {
     readForm(form);

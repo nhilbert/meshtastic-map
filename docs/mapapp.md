@@ -204,9 +204,11 @@ simulated radio first.
   Cards are sorted by it.
 - **＋ Neuer Einsatz** (also *Ziel …* in a node's popup or its row in the node list) in three
   steps: *Knoten* (favourites first), *Wegpunkte* (from the targets, own sites, places and
-  templates under *Hinzufügen …*, from map clicks with *Auf der Karte*, where a click on an
-  existing target, site or place takes it over with its name, or with *Als Wegpunkt
-  hinzufügen* in its popup; a click on a row opens its kind, radius and times), *Senden* (travel
+  templates under *Hinzufügen …* below the list, or by a click on the map: while this step is
+  open every click on the map sets a waypoint, a click on a target, site or place takes it over
+  with its name, nodes keep their popup, and the click that closes a popup only closes it; the
+  waypoints are drawn on the map as a dashed draft; a click on a row opens its kind, radius and
+  times), *Senden* (travel
   profile, language, summary). Each waypoint is a *Halt* (announced, confirmed, may carry
   *Ankunft bis* and *Warten bis* as `12:55` or `+15`) or a *Durchgang* (via: with a road graph
   the route runs through it and it is passed silently; without one it is an intermediate
