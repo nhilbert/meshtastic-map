@@ -349,11 +349,15 @@ class WalkLayer(Layer):
         """Per-packet ENS prediction and residual plus the model summary, cached on disk.
         Not cached yet: computed in the background, None meanwhile; the error text if that
         failed."""
+        from meshplay.sim.scenes import scene_path
+
         gpx = ctx.data_dir / "tracks" / values["gpx"] if values["gpx"] else None
+        scene = scene_path(ctx.sim_dir)  # the scene in use: another scene, other residuals
         stamp = [
             log.stat().st_mtime,
             gpx.stat().st_mtime if gpx else 0,
-            (ctx.sim_dir / "scene" / "scene_meta.json").stat().st_mtime,
+            scene.name,
+            (scene / "scene_meta.json").stat().st_mtime,
         ]
         key_data = [values, stamp, interval, preset]
         key = hashlib.sha1(json.dumps(key_data, sort_keys=True).encode()).hexdigest()[:16]

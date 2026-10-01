@@ -76,16 +76,36 @@ class Context:
         # The scene, the models and their caches are not written for concurrent use: whatever
         # touches them holds this lock; everything else (node list, missions, messages) doesn't.
         self.model_lock = threading.RLock()
+        self._scene = None  # (name, Scene) of the loaded scene
 
-    @cached_property
+    @property
+    def scene_name(self) -> str | None:
+        """The active scene (data/sim/scenes/active.txt), None without any scene."""
+        from meshplay.sim import scenes
+
+        scenes.migrate_legacy(self.sim_dir)
+        return scenes.active_name(self.sim_dir)
+
+    @property
     def scene(self):
+        """The active scene, loaded once; switching scenes loads the new one (callers hold
+        model_lock, as for everything that touches the scene)."""
+        from meshplay.sim import scenes
         from meshplay.sim.scene import Scene
 
-        return Scene.load(self.sim_dir / "scene")
+        name = self.scene_name
+        if self._scene is None or self._scene[0] != name:
+            self._scene = None  # free the old one before loading the next
+            self._scene = (name, Scene.load(scenes.scene_path(self.sim_dir, name)))
+        return self._scene[1]
 
     @property
     def has_scene(self) -> bool:
-        return (self.sim_dir / "scene" / "scene_meta.json").exists()
+        return self.scene_name is not None
+
+    def forget_scene(self) -> None:
+        """Drop the loaded scene (it was deleted or rebuilt)."""
+        self._scene = None
 
     @cached_property
     def sites(self) -> dict:

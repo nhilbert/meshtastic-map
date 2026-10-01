@@ -13,7 +13,8 @@ area you touch: [README.md](README.md) (setup, scripts, walks), [docs/mapapp.md]
    `scripts/probe_walk.py`) or logs its positions (`scripts/listen.py`); a phone GPX track gives
    the route; `walk.py` and `scripts/coverage_map.py` turn both into maps.
 3. **Coverage simulation** (`src/meshplay/sim/`): seven ITU-R model families over a 1 m LiDAR
-   scene (NRW laser scan), scored against measurements.
+   scene (NRW laser scan; named scenes of up to 5 × 5 km in `data/sim/scenes/`, one in use),
+   scored against measurements.
 
 The **map app** (`src/meshplay/mapapp/` server + `webmap/` page) brings them together: layers,
 link calculator, background tasks (walks, simulations), sites editor, messaging pane and node
@@ -47,17 +48,19 @@ src/meshplay/packets.py     protobuf/packet dicts -> plain JSON
 src/meshplay/walk.py        walk data: load positions, probes, GPX; place probes on the track
 src/meshplay/probe.py       traceroute probes (shared by probe_walk.py and the map app task)
 src/meshplay/sim/           itu.py, p1812.py (verbatim ITU port), models.py, scene.py, link.py,
-                            predictor.py, compare.py, walkcompare.py, sites.py, view3d.py
+                            predictor.py, compare.py, walkcompare.py, sites.py, view3d.py,
+                            scenes.py (named scenes, the active one), lidar.py (tile download)
 src/meshplay/mapapp/        server.py (HTTP + API), registry.py (Layer, Setting, Context),
                             layers/ (one module per layer), tools/link.py, jobs.py (background
                             tasks), sites_store.py (sites.json editing), device.py (live USB link,
                             sending texts, packet listeners), fake_device.py (--simulate),
                             messages.py (message store for the pane), airtime.py (airtime
                             panel), i18n.py (translations),
-                            tiles.py (map tile cache), coord/ (coordination mode: missions.py
+                            tiles.py (map tile cache), scenes.py (scene manager + build
+                            task), coord/ (coordination mode: missions.py
                             decisions + API, phrases.py radio texts, routing.py + osm.py road
                             graph, areas.py, paths.py, settings.py, store.py)
-webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, messages.js,
+webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, scenes.js, messages.js,
                             nodelist.js, coord.js, panels.js, map2d.js (Leaflet), map3d.js
                             (three.js), util.js, icons.js, i18n.js, export.js (GPX/CSV)
 webmap/vendor/, i18n/       served libraries and fonts (offline use); translation catalogues

@@ -347,8 +347,17 @@ class CoverageSim(JobKind):
             from meshplay.sim.walkcompare import nearest_site
 
             home = nearest_site(ctx.sites, *ctx.settings.home)
+        from meshplay.sim import scenes
+
         return [
             Setting("site", _("Standort"), "select", home, options=sites),
+            Setting(
+                "scene",
+                _("Laserscan-Szene"),
+                "select",
+                ctx.scene_name or "",
+                options=[[n, n] for n in scenes.names(ctx.sim_dir)],
+            ),
             Setting(
                 "site_indoor",
                 _("Antenne steht"),
@@ -370,11 +379,25 @@ class CoverageSim(JobKind):
             raise ValueError(
                 _(
                     "Keine Laserscan-Szene: die Simulation braucht sie "
-                    "(README, Abschnitt „3D laser-scan data“)."
+                    "(Ebene „Laserscan-Szene“ → „＋ Neue Szene“)."
                 )
             )
         if params["site"] not in ctx.sites:
             raise ValueError(_("Standort „{name}“ gibt es nicht", name=params["site"]))
+        from meshplay.sim import scenes
+
+        if params["scene"] not in scenes.names(ctx.sim_dir):
+            raise ValueError(_("Szene „{name}“ gibt es nicht", name=params["scene"]))
+        x, y = ctx.sites[params["site"]]["utm"]
+        b = scenes.meta(ctx.sim_dir, params["scene"])["bbox"]
+        if not (b[0] < x < b[2] and b[1] < y < b[3]):
+            raise ValueError(
+                _(
+                    "Standort „{site}“ liegt nicht in der Szene „{name}“",
+                    site=params["site"],
+                    name=params["scene"],
+                )
+            )
 
     def title(self, params: dict) -> L:
         indoor = L(dict(INDOOR)[params["site_indoor"]])
@@ -401,6 +424,8 @@ class CoverageSim(JobKind):
             f"{p['step']:g}",
             "--draws",
             str(int(p["draws"])),
+            "--scene",
+            p["scene"],
         ] + (["--leafless"] if p["leafless"] else [])
         # Progress by cells done. Cells further out cost more (longer profiles), but in tests
         # no distance weighting predicted the run time better than plain counting (~25 % off).
@@ -443,11 +468,14 @@ class CoverageSim(JobKind):
 
 
 def all_kinds() -> dict[str, JobKind]:
-    """Every task kind. The road-graph download lives with the coordination mode and builds
-    on JobKind, so it is imported here, when the manager is created, not at module level."""
+    """Every task kind. The road-graph download (coordination mode) and the scene task
+    (mapapp/scenes.py) build on JobKind, so they are imported here, when the manager is
+    created, not at module level."""
     from meshplay.mapapp.coord.osm import OsmAreas, OsmDownload
+    from meshplay.mapapp.scenes import SceneBuild
 
-    return {k.id: k for k in (ProbeWalk(), CoverageSim(), OsmDownload(), OsmAreas())}
+    kinds = (ProbeWalk(), CoverageSim(), SceneBuild(), OsmDownload(), OsmAreas())
+    return {k.id: k for k in kinds}
 
 
 # ---------------------------------------------------------------- manager

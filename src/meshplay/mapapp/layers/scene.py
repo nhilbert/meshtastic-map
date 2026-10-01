@@ -1,10 +1,11 @@
-"""Extent of the laser-scan scene and the cells without measurements."""
+"""Extent of the laser-scan scenes and the cells of the active one without measurements."""
 
 import numpy as np
 
 from meshplay.mapapp.i18n import N_, _
 from meshplay.mapapp.registry import Context, Layer, Setting, collection
 from meshplay.mapapp.style import png_data_url
+from meshplay.sim.sites import to_lonlat
 
 
 class SceneLayer(Layer):
@@ -13,38 +14,51 @@ class SceneLayer(Layer):
     group = N_("Simulation")
     uses_models = True
     description = N_(
-        "Umriss der Szene (data/sim/scene) und Flächen ohne Messpunkte (interpoliert)."
+        "Umriss der Szenen (data/sim/scenes; durchgezogen = die verwendete) und Flächen ohne "
+        "Messpunkte (interpoliert). Unten: Szenen wechseln, löschen und neu erstellen."
     )
 
     def settings(self, ctx: Context) -> list[Setting]:
         return [Setting("unmeasured", _("Flächen ohne Messpunkte zeigen"), "bool", True)]
 
     def data(self, ctx: Context, values: dict) -> dict:
-        from meshplay.sim.sites import to_lonlat
+        from meshplay.mapapp.scenes import scene_list
 
         if not ctx.has_scene:
             return collection(
-                [], note=_("Keine Laserscan-Szene (README, Abschnitt „3D laser-scan data“).")
+                [],
+                note=_(
+                    "Keine Laserscan-Szene: unten unter „＋ Neue Szene“ eine erstellen "
+                    "(nur Nordrhein-Westfalen)."
+                ),
             )
+        features = []
+        for sc in scene_list(ctx)["scenes"]:
+            ring = [[lon, lat] for lat, lon in sc["ring"]]
+            ring.append(ring[0])
+            fields = {_("Größe"): "{:.1f} × {:.1f} km".format(*sc["size_km"])}
+            if sc["measured"] is not None:
+                fields[_("gemessen")] = f"{sc['measured']:.0%}"
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Polygon", "coordinates": [ring]},
+                    "properties": {
+                        "_title": _("Laserscan-Szene {name}", name=sc["name"])
+                        + (" · " + _("verwendet") if sc["active"] else ""),
+                        "_fields": fields,
+                        "_style": {
+                            "color": "#00707f",
+                            "weight": 2 if sc["active"] else 1,
+                            "fillOpacity": 0,
+                            "dash": "" if sc["active"] else "4 4",
+                        },
+                    },
+                }
+            )
+        out = collection(features)
         s = ctx.scene
         b = s.bbox
-        ring = [
-            to_lonlat(x, y) for x, y in ((b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3]))
-        ]
-        ring.append(ring[0])
-        outline = {
-            "type": "Feature",
-            "geometry": {"type": "Polygon", "coordinates": [ring]},
-            "properties": {
-                "_title": _("Laserscan-Szene"),
-                "_fields": {
-                    _("Größe"): f"{(b[2] - b[0]) / 1000:.1f} × {(b[3] - b[1]) / 1000:.1f} km",
-                    _("gemessen"): f"{s.measured.mean():.0%}",
-                },
-                "_style": {"color": "#00707f", "weight": 2, "fillOpacity": 0, "dash": "4 4"},
-            },
-        }
-        out = collection([outline])
         if values["unmeasured"] and not s.measured.all():
             k = 8  # 8 m pixels are plenty for an overview mask
             m = s.measured[: s.shape[0] // k * k, : s.shape[1] // k * k]

@@ -43,11 +43,12 @@ def tiles_for_bbox(bbox) -> list[str]:
 
 
 # ---------------------------------------------------------------- building from LAZ
-def rasterize_laz(bbox, res, laz_dir, chunk=2_000_000) -> dict:
+def rasterize_laz(bbox, res, laz_dir, chunk=2_000_000, on_tile=None) -> dict:
     """Per-cell DSM (max), DTM (min of ground points) and point counts from LAZ tiles.
 
     nab: points above ground (classes 1, 20); n20: of those class 20; nmul: of those with more
-    than one return. Noise (18) and cellar points (24) are dropped.
+    than one return. Noise (18) and cellar points (24) are dropped. on_tile(name, k, n) is
+    called before each tile that overlaps bbox is read (k from 1).
     """
     import laspy
 
@@ -59,16 +60,21 @@ def rasterize_laz(bbox, res, laz_dir, chunk=2_000_000) -> dict:
     nab = np.zeros(nx * ny, np.int32)
     nmul = np.zeros(nx * ny, np.int32)
     total = 0
+    paths = []
     for path in sorted(Path(laz_dir).glob("*.laz")):
         with laspy.open(path) as f:
             h = f.header
-            if (
+            if not (
                 h.maxs[0] < bbox[0]
                 or h.mins[0] > bbox[2]
                 or h.maxs[1] < bbox[1]
                 or h.mins[1] > bbox[3]
             ):
-                continue
+                paths.append(path)
+    for k, path in enumerate(paths, 1):
+        if on_tile:
+            on_tile(path.name, k, len(paths))
+        with laspy.open(path) as f:
             for ch in f.chunk_iterator(chunk):
                 x = np.asarray(ch.x)
                 y = np.asarray(ch.y)
@@ -172,8 +178,8 @@ class Scene:
         return self.dtm.shape
 
     @classmethod
-    def build(cls, laz_dir, bbox, res=1.0) -> Scene:
-        raw = rasterize_laz(bbox, res, laz_dir)
+    def build(cls, laz_dir, bbox, res=1.0, on_tile=None) -> Scene:
+        raw = rasterize_laz(bbox, res, laz_dir, on_tile=on_tile)
         measured = np.isfinite(raw["dsm"])
         dtm = fill_nan(raw["dtm"])
         dsm = fill_nan(raw["dsm"])
@@ -187,16 +193,19 @@ class Scene:
     @classmethod
     def load(cls, directory) -> Scene:
         directory = Path(directory)
-        raw = np.load(directory / "scene_raw.npz")
-        cls2 = np.load(directory / "scene_cls2.npz")
         meta = json.loads((directory / "scene_meta.json").read_text(encoding="utf-8"))
-        dtm = raw["dtm"].astype(float)
-        # The original export has no coverage mask; there, NaN marks cells never reached.
-        measured = raw["measured"] if "measured" in raw.files else np.isfinite(dtm)
-        nd = np.nan_to_num(raw["nd"].astype(float), nan=0.0)
-        return cls(dtm, nd, cls2["bld"], cls2["veg"], measured, tuple(meta["bbox"]), meta["res"])
+        # closed right away: on Windows an open file would keep the scene from being deleted
+        with np.load(directory / "scene_raw.npz") as raw:
+            dtm = raw["dtm"].astype(float)
+            # The original export has no coverage mask; there, NaN marks cells never reached.
+            measured = raw["measured"] if "measured" in raw.files else np.isfinite(dtm)
+            nd = np.nan_to_num(raw["nd"].astype(float), nan=0.0)
+        with np.load(directory / "scene_cls2.npz") as cls2:
+            bld, veg = cls2["bld"], cls2["veg"]
+        return cls(dtm, nd, bld, veg, measured, tuple(meta["bbox"]), meta["res"])
 
-    def save(self, directory) -> None:
+    def save(self, directory, info: dict | None = None) -> None:
+        """Write the scene; info (name, centre, source, ...) goes into scene_meta.json."""
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         extra = getattr(self, "_raw", {})
@@ -208,7 +217,8 @@ class Scene:
             **{k: (v.astype(np.float32) if v.dtype.kind == "f" else v) for k, v in extra.items()},
         )
         np.savez_compressed(directory / "scene_cls2.npz", bld=self.bld, veg=self.veg)
-        meta = dict(bbox=list(self.bbox), res=self.res, nx=self.shape[1], ny=self.shape[0])
+        meta = dict(info or {})
+        meta.update(bbox=list(self.bbox), res=self.res, nx=self.shape[1], ny=self.shape[0])
         if hasattr(self, "n_points"):
             meta["n_points"] = self.n_points
         (directory / "scene_meta.json").write_text(json.dumps(meta), encoding="utf-8")
@@ -246,48 +256,50 @@ class Scene:
 
         Per station: ground (median DTM across +-corr m), surface (highest object within
         +-core m), surface_bld / surface_veg (highest building / vegetation), clutter
-        (0 clear, 1 building, 2 vegetation). d in m from a.
+        (0 clear, 1 building, 2 vegetation). d in m from a. All stations at once (numpy); same
+        numbers as the per-station loop of the original, which tests/test_sim_scene.py keeps.
         """
         a = np.asarray(a_utm, float)
         b = np.asarray(b_utm, float)
         length = float(np.hypot(*(b - a)))
         u = (b - a) / length
         q = np.array([-u[1], u[0]])
-        ny, nx = self.shape
-        bbox, res = self.bbox, self.res
-        dtm, nd, bld, veg = self.dtm, self.nd, self.bld, self.veg
         n = int(length // step) + 1
         dd = np.arange(n) * step
         p = a[None, :] + dd[:, None] * u[None, :]
-        off = np.arange(-corr, corr + 0.5, 1.0)
-        offc = np.arange(-core, core + 0.5, 1.0)
-        g = np.empty(n)
-        sa = np.empty(n)
-        sb = np.empty(n)
-        sv = np.empty(n)
-        cl = np.zeros(n, int)
-        for t in range(n):
-            for kind, o in ((0, off), (1, offc)):
-                pts = p[t][None, :] + o[:, None] * q[None, :]
-                ii = ((pts[:, 1] - bbox[1]) / res).astype(int)
-                jj = ((pts[:, 0] - bbox[0]) / res).astype(int)
-                ok = (ii >= 0) & (ii < ny) & (jj >= 0) & (jj < nx)
-                ii, jj = ii[ok], jj[ok]
-                if kind == 0:
-                    g[t] = np.median(dtm[ii, jj])
-                    continue
-                hb = np.where(bld[ii, jj], nd[ii, jj], 0.0)
-                hv = np.where(veg[ii, jj], nd[ii, jj], 0.0)
-                ha = nd[ii, jj]
-                kb, kv, ka = int(np.argmax(hb)), int(np.argmax(hv)), int(np.argmax(ha))
-                sb[t] = dtm[ii[kb], jj[kb]] + hb[kb] if hb[kb] > 0 else g[t]
-                sv[t] = dtm[ii[kv], jj[kv]] + hv[kv] if hv[kv] > 0 else g[t]
-                sa[t] = max(dtm[ii[ka], jj[ka]] + ha[ka], g[t])
-                cl[t] = 1 if hb[kb] > 2.5 else (2 if hv[kv] > 2.5 else 0)
-            sb[t] = max(sb[t], g[t])
-            sv[t] = max(sv[t], g[t])
+
+        # ground: median terrain across the corridor, over the cells inside the scene
+        ii, jj, ok = self._cross(p, q, np.arange(-corr, corr + 0.5, 1.0))
+        vals = np.where(ok, self.dtm[ii, jj], np.inf)  # outside sorts last
+        cnt = ok.sum(axis=1)
+        srt = np.sort(vals, axis=1)
+        rows = np.arange(n)
+        lo, hi = np.maximum(cnt - 1, 0) // 2, cnt // 2
+        with np.errstate(invalid="ignore"):
+            g = (srt[rows, lo] + srt[rows, hi]) / 2
+        g[(cnt == 0) | (np.isnan(vals) & ok).any(axis=1)] = np.nan
         if not np.isfinite(g).all():
             raise ValueError("path leaves the scene data (no terrain heights); add LAZ tiles")
+
+        # surface: highest building, vegetation and object in the narrow core
+        ii, jj, ok = self._cross(p, q, np.arange(-core, core + 0.5, 1.0))
+        if not ok.any(axis=1).all():
+            raise ValueError("path leaves the scene data (no terrain heights); add LAZ tiles")
+        nd = self.nd[ii, jj]
+        z0 = self.dtm[ii, jj]
+
+        def top(h):
+            """Height of the first highest cell inside the scene and the ground under it."""
+            k = np.argmax(np.where(ok, h, -np.inf), axis=1)
+            return h[rows, k], z0[rows, k]
+
+        hb, zb = top(np.where(self.bld[ii, jj], nd, 0.0))
+        hv, zv = top(np.where(self.veg[ii, jj], nd, 0.0))
+        ha, za = top(nd)
+        sb = np.maximum(np.where(hb > 0, zb + hb, g), g)
+        sv = np.maximum(np.where(hv > 0, zv + hv, g), g)
+        sa = np.maximum(za + ha, g)
+        cl = np.where(hb > 2.5, 1, np.where(hv > 2.5, 2, 0))
         return dict(
             L=length,
             az=float(np.degrees(np.arctan2(u[0], u[1])) % 360),
@@ -300,6 +312,18 @@ class Scene:
             a_utm=list(map(float, a)),
             b_utm=list(map(float, b)),
         )
+
+    def _cross(self, p, q, offsets):
+        """Cells across the path: row/column per station and offset, and which lie inside.
+
+        Indices outside are clipped (so they can be read) and masked by ok.
+        """
+        pts = p[:, None, :] + offsets[None, :, None] * q[None, None, :]
+        ii = ((pts[..., 1] - self.bbox[1]) / self.res).astype(int)
+        jj = ((pts[..., 0] - self.bbox[0]) / self.res).astype(int)
+        ny, nx = self.shape
+        ok = (ii >= 0) & (ii < ny) & (jj >= 0) & (jj < nx)
+        return np.clip(ii, 0, ny - 1), np.clip(jj, 0, nx - 1), ok
 
     def quick_profile(self, a_utm, b_utm, step=5.0, corr=3.0):
         """Coarse profile for large searches (site/search.py): 3 samples across the path.

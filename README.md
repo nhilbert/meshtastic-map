@@ -143,7 +143,7 @@ they talk to the device (otherwise `MESHTASTIC_PORT` from `.env` or auto-detecti
 | `coord_import_osm.py` | road graph for the coordination mode from an `.osm` file instead of the Overpass download |
 | **Simulation** | |
 | `sim_fetch_tiles.py` | lists and downloads the NRW laser-scan tiles around home ([details](#3d-laser-scan-data)) |
-| `sim_build_scene.py` | builds the 3D scene (terrain, buildings, trees) from the tiles |
+| `sim_build_scene.py` | builds a named 3D scene (terrain, buildings, trees) from the tiles; lists and switches scenes |
 | `sim_coverage_map.py` | predicted coverage around a site, per model |
 | `sim_compare_walk.py` | scores a walk against the models |
 | `sim_predict.py`, `sim_score.py` | frozen predictions for fixed links, scored against `measure_logger.py` results |
@@ -233,9 +233,9 @@ map tiles are cached once seen (docs/mapapp.md, "Offline use").
 
 The 3D view, the link calculator, the coverage simulation and the comparison of walks with the
 models all work on a **scene**: 1 m rasters of terrain, surface height, buildings and trees,
-built from an airborne laser scan. The scene has to be downloaded and prepared once, by hand
-with some script help. Without it the map app still runs — the 2D map, nodes, walks, sites and
-traceroute walks work; the parts that need the scene say so.
+built from an airborne laser scan. A scene is a square of 1–5 km; you can keep several (home
+town, holiday area) and switch between them. Without any scene the map app still runs — the 2D
+map, nodes, walks, sites and traceroute walks work; the parts that need the scene say so.
 
 ### The data
 
@@ -249,30 +249,58 @@ traceroute walks work; the parts that need the scene say so.
 - **Download folder:** <https://www.opengeodata.nrw.de/produkte/geobasis/hm/3dm_l_las/3dm_l_las/>.
   Opened in a browser it lists every tile with size and date; the tile itself is that address
   plus the file name. The same folder has `3dm_meta.zip` with the official documentation.
-- **How much:** a scene of 3 × 3 km around your home usually touches 16 tiles (the square
-  rarely lines up with the kilometre grid), so 1–1.6 GB to download. The scene itself is much
-  smaller (about 70 MB for 3 × 4 km); the tiles can be deleted afterwards if you won't rebuild.
+- **How much:** a scene of 3 × 3 km usually touches 16 tiles (the square rarely lines up with
+  the kilometre grid), so 1–1.6 GB to download. The scene itself is much smaller (about 70 MB
+  for 3 × 4 km); the tiles are only needed to build it and can be deleted afterwards.
 
 Choose the area generously: coverage simulations, links and walks can only be computed where the
-scene has data. `--radius 1500` (3 × 3 km) is a good start for a town; the scripts take any
-radius or an exact `--bbox` in EPSG:25832.
+scene has data. 3 × 3 km is a good start for a town; 5 × 5 km is the most the map app offers
+(about 0.5 GB of memory in the server).
 
-### Step 1a: download with the script (recommended)
+### In the map app (recommended)
 
-Set `MESHPLAY_HOME` in `.env` first; the area is a square around it.
+Layer *Laserscan-Szene* → settings (⚙) → **＋ Neue Szene**, click the centre on the map, give it
+a name and an edge length. The form shows how many tiles are needed and how many are already
+there. *Erstellen* starts a background task (*Aufgaben*) that downloads the missing tiles
+(an interrupted or cancelled download continues next time), builds the scene in a separate
+process and prepares the 3D view. With *Danach verwenden* the new scene is used right away
+(the page offers to reload).
+
+The same list shows all scenes: *Verwenden* switches (the page reloads, the 3D view is built for
+one scene), ✕ deletes one, *Kacheln löschen* frees the space of the downloaded tiles.
+
+### With the scripts
+
+Set `MESHPLAY_HOME` in `.env` first (or pass `--center LAT,LON`); the area is a square around
+it.
 
 ```powershell
 python scripts/sim_fetch_tiles.py --radius 1500              # list: names, sizes, what you have
 python scripts/sim_fetch_tiles.py --radius 1500 --download   # download into data/sim/laz/
+python scripts/sim_build_scene.py --name home --radius 1500  # build data/sim/scenes/home/
+python scripts/sim_build_scene.py --list                     # scenes; * = the one in use
+python scripts/sim_build_scene.py --use home                 # switch
 ```
 
 The list marks tiles you already have and tiles the server doesn't have (outside NRW). The
-download skips tiles that are present, so an interrupted download can simply be started again
-(delete a leftover `*.part` file first).
+download skips tiles that are present and continues a leftover `*.part` file.
 
-### Step 1b: download by hand
+The build reads the tiles and writes `data/sim/scenes/<name>/` (`scene_raw.npz`,
+`scene_cls2.npz`, `scene_meta.json`): terrain from the ground points, surface from the points
+above ground, and per 1 m cell whether it is a building or vegetation (the laser scan has no
+building class; the share of last returns and of multiple returns separates roofs from trees).
+Missing tiles are reported and their area interpolated; cells without any data are marked as
+not measured. A 3 × 3 km scene takes about a minute and about 1 GB of RAM. The first scene is
+used automatically, later ones with `--activate` or `--use`; `--force` replaces a scene of the
+same name. A scene in the old single folder `data/sim/scene/` is moved to
+`data/sim/scenes/default/` on first use.
 
-If the script can't reach the server (proxy, firewall) or you want to pick the tiles yourself:
+The simulation scripts (`sim_coverage_map.py`, `sim_predict.py`, `sim_compare_walk.py`,
+`sim_relay_search.py`) use the scene in use, or the one named with `--scene`.
+
+### By hand
+
+If neither can reach the server (proxy, firewall) or you want to pick the tiles yourself:
 
 1. **Find the tile names.** Convert your position to UTM32, e.g. with the project's own
    converter (longitude first):
@@ -286,32 +314,16 @@ If the script can't reach the server (proxy, firewall) or you want to pick the t
    covered. `python scripts/sim_fetch_tiles.py --radius 1500` (without `--download`) prints the
    exact list for a radius, even if you then download by hand.
 2. **Download** each file from the download folder above (browser, or any download manager).
-3. **Put the files** unchanged into `data/sim/laz/` (create the folder).
+3. **Put the files** unchanged into `data/sim/laz/` (create the folder) and build the scene in
+   the map app (it finds them) or with `sim_build_scene.py`.
 
-### Step 2: build the scene
+### Use it
 
-```powershell
-python scripts/sim_build_scene.py --radius 1500             # same area as the download
-```
-
-This reads the tiles and writes `data/sim/scene/` (`scene_raw.npz`, `scene_cls2.npz`,
-`scene_meta.json`): terrain from the ground points, surface from the points above ground, and
-per 1 m cell whether it is a building or vegetation (the laser scan has no building class; the
-share of last returns and of multiple returns separates roofs from trees). Missing tiles are
-reported and their area interpolated; cells without any data are marked as not measured. A
-3 × 3 km scene takes about a minute and about 1 GB of RAM. To rebuild (e.g. a larger area), add
-`--force`.
-
-### Step 3: use it
-
-Restart the map app (`python scripts/mapapp.py --open`). The first start after a new scene
-prepares the 3D view (about a minute, shown in the terminal). Then:
-
-- the 3D view shows terrain, buildings and trees; the layer *Laserscan-Szene* shows the extent
-  and unmeasured areas;
+- the 3D view shows terrain, buildings and trees of the scene in use; the layer
+  *Laserscan-Szene* shows the outlines of all scenes and the unmeasured areas;
 - the layer *Strecke A → B* computes links;
-- *Aufgaben → ＋ Abdeckung simulieren* computes coverage maps, and the walk layer can compare
-  measurements with the models (*Messung − Modell*).
+- *Aufgaben → ＋ Abdeckung simulieren* computes coverage maps (on any scene that contains the
+  site), and the walk layer can compare measurements with the models (*Messung − Modell*).
 
 ### Outside North Rhine-Westphalia
 
@@ -401,12 +413,12 @@ data/                  everything local (not committed, see below)
 | `data/tracks/*.gpx` | phone GPX tracks |
 | `data/maps/` | walk maps from `coverage_map.py` |
 | `data/exports/` | node list exports |
-| `data/sim/` | sites, laser-scan tiles, scene, predictions, coverage grids ([details](docs/simulation.md#data-not-committed)) |
+| `data/sim/` | sites, laser-scan tiles, scenes, predictions, coverage grids ([details](docs/simulation.md#data-not-committed)) |
 | `data/messages.jsonl` | messages sent and received in the map app (`messages-sim.jsonl` with `--simulate`) |
 | `data/coord/` | coordination mode: settings, targets, paths, areas, places, missions, event log |
 | `data/osm/` | road graphs for the coordination mode (from Overpass or `coord_import_osm.py`) |
 | `data/tiles/` | cached OpenStreetMap tiles for offline use |
-| `data/mapapp/` | map app: 3D export, caches, background task logs, layer defaults |
+| `data/mapapp/` | map app: 3D export per scene, caches, background task logs, layer defaults |
 
 ## Troubleshooting
 
@@ -421,11 +433,11 @@ data/                  everything local (not committed, see below)
   pick the port in the map app (*Gerät (USB)* lists all ports) or pass `--port`. On Windows the
   port is listed in Device Manager → Ports (COM & LPT).
 - **Map background blank:** open maps with `--open` (a local web server), not as a file.
-- **3D view empty or "Keine Laserscan-Szene":** download the tiles and build the scene
-  ([3D laser-scan data](#3d-laser-scan-data)), then restart the map app. The 3D view also needs
-  WebGL in the browser.
-- **`sim_fetch_tiles.py` says "not available" or "No tiles for this area":** the area is
-  outside North Rhine-Westphalia, or `MESHPLAY_HOME` is wrong (latitude first).
+- **3D view empty or "Keine Laserscan-Szene":** create a scene (layer *Laserscan-Szene* →
+  *＋ Neue Szene*, or [3D laser-scan data](#3d-laser-scan-data)). The 3D view also needs WebGL in
+  the browser.
+- **"not available" or "No tiles for this area" (script or scene task):** the area is outside
+  North Rhine-Westphalia, or `MESHPLAY_HOME` / the centre is wrong (latitude first).
 - **The map app doesn't show a change:** reload with Ctrl+F5; after updating the code, restart
   `mapapp.py`.
 - **A traceroute walk gets no answers:** tracker switched on, same private channel (name and

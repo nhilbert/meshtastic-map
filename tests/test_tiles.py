@@ -59,7 +59,7 @@ def test_server_serves_tiles(tmp_path, monkeypatch):
     ctx = Context(Settings(port=None, data_dir=tmp_path, log_level="INFO", home=None))
     ctx.tiles = tiles.TileCache(tmp_path / "tiles")
     monkeypatch.setattr(tiles.urllib.request, "urlopen", lambda req, timeout: FakeResponse(b"PNGX"))
-    handler = make_handler(ctx, None)
+    handler = make_handler(ctx)
     sent = {}
 
     class Probe(handler):

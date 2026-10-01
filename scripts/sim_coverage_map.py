@@ -1,16 +1,16 @@
 """Predicted coverage around a site, as map layers per model family.
 
 python scripts/sim_coverage_map.py [--site HOME] [--radius 800] [--step 25] [--preset ShortSlow]
-    [--walk data/sim/compare/walk-<id>-<date>.csv] [--open]
+    [--scene NAME] [--walk data/sim/compare/walk-<id>-<date>.csv] [--open]
 
 For each grid cell the models predict the delivery probability of a single packet from a
 walker (T1000-E, street level) to the site. Each model family becomes a layer, so you can switch
 between them and see where they disagree. --walk overlays the scored packets from
 sim_compare_walk.py for a direct visual comparison.
 
-Writes data/sim/maps/coverage-<site>-<preset>-<placement>-<radius>m-<step>m[-winter].html and
-.npz (the grid, with the setup as "meta" so the map app can label it). 25 m cells over 800 m
-radius take 10-15 minutes.
+Writes data/sim/maps/coverage-<site>-<preset>-<placement>-<radius>m-<step>m[-winter]-<scene>
+.html and .npz (the grid, with the setup as "meta" so the map app can label it). 25 m cells over
+800 m radius take 10-15 minutes.
 The map app starts this script as a background task (Aufgaben -> Abdeckung simulieren).
 """
 
@@ -28,7 +28,7 @@ import numpy as np
 from meshplay import load_settings
 from meshplay.config import DEFAULT_PRESET
 from meshplay.sim.predictor import LinkSetup, Predictor
-from meshplay.sim.scene import Scene
+from meshplay.sim.scenes import load_for_script
 from meshplay.sim.sites import load_config, to_utm
 from meshplay.walk import serve
 
@@ -75,17 +75,19 @@ def main() -> None:
     parser.add_argument("--leafless", action="store_true")
     parser.add_argument("--walk", help="CSV from sim_compare_walk.py to overlay")
     parser.add_argument("--open", action="store_true")
+    parser.add_argument("--scene", help="scene name (default: the active scene)")
     args = parser.parse_args()
 
     sim_dir = load_settings().data_dir / "sim"
     cfg = load_config(sim_dir / "sites.json")
     name = args.site or next(iter(cfg["sites"]))
     site = cfg["sites"][name]
-    scene = Scene.load(sim_dir / "scene")
+    scene_name, scene = load_for_script(sim_dir, args.scene)
     setup = LinkSetup(
         preset=args.preset,
         site_indoor=INDOOR[args.site_indoor],
         draws=args.draws,
+        scene=scene_name,
         cheap_grid=3,
         leaf="unbelaubt" if args.leafless else "belaubt",
     )
@@ -118,8 +120,10 @@ def main() -> None:
     out_dir = sim_dir / "maps"
     out_dir.mkdir(parents=True, exist_ok=True)
     # all parameters that change the result, so different runs don't overwrite each other
-    stem = f"coverage-{name}-{args.preset}-{args.site_indoor}-{args.radius:g}m-{args.step:g}m" + (
-        "-winter" if args.leafless else ""
+    stem = (
+        f"coverage-{name}-{args.preset}-{args.site_indoor}-{args.radius:g}m-{args.step:g}m"
+        + ("-winter" if args.leafless else "")
+        + f"-{scene_name}"
     )
     meta = dict(
         site=name,

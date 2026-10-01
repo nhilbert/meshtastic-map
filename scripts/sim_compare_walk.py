@@ -1,7 +1,8 @@
 """Compare a coverage walk with the propagation models.
 
 python scripts/sim_compare_walk.py --tracker !abcd1234 [--date 2026-09-29]
-    [--gpx data/tracks/walk.gpx] [--home-site HOME] [--home-indoor open] [--preset P] [--open]
+    [--gpx data/tracks/walk.gpx] [--home-site HOME] [--home-indoor open] [--preset P] [--scene NAME]
+    [--open]
 python scripts/sim_compare_walk.py --tracker !abcd1234 --probes --gpx data/tracks/walk.gpx ...
 
 For every position packet the home node received directly (0 hops), the models predict the
@@ -35,7 +36,7 @@ from meshplay import load_settings
 from meshplay.config import DEFAULT_PRESET
 from meshplay.sim.compare import summarize
 from meshplay.sim.predictor import LinkSetup, Predictor
-from meshplay.sim.scene import Scene
+from meshplay.sim.scenes import load_for_script
 from meshplay.sim.sites import load_config
 from meshplay.sim.walkcompare import model_names, nearest_site, score_packets, score_slots
 from meshplay.walk import (
@@ -107,6 +108,7 @@ def main() -> None:
     parser.add_argument("--draws", type=int, default=4000)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--open", action="store_true", help="serve the map and open a browser")
+    parser.add_argument("--scene", help="scene name (default: the active scene)")
     args = parser.parse_args()
     args.leaf = "unbelaubt" if args.leafless else "belaubt"
     if args.probes and not args.gpx:
@@ -141,7 +143,7 @@ def main() -> None:
     if not points:
         raise SystemExit(f"Nothing from this tracker in {log}.")
 
-    scene = Scene.load(sim_dir / "scene")
+    _, scene = load_for_script(sim_dir, args.scene)
     setup = LinkSetup(
         rx_height_m=tuple(args.rx_height),
         rx_clutter_m=args.rx_clutter,

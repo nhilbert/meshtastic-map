@@ -14,7 +14,7 @@ def run(ctx: Context, body: dict) -> dict:
         raise ValueError(
             _(
                 "Keine Laserscan-Szene: die Streckenberechnung braucht sie "
-                "(README, Abschnitt „3D laser-scan data“)."
+                "(Ebene „Laserscan-Szene“ → „＋ Neue Szene“)."
             )
         )
     from meshplay.sim.link import Endpoint, predict_link

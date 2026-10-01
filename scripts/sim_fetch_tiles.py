@@ -5,29 +5,19 @@ python scripts/sim_fetch_tiles.py [--radius 1500] [--bbox XMIN YMIN XMAX YMAX] [
 Tiles are 1 km x 1 km in UTM32 (EPSG:25832), about 60-130 MB each, from Geobasis NRW
 (3D-Messdaten Laserscanning, open data, dl-de/zero-2-0). Without --download the script only
 prints the list with sizes and marks tiles already present in data/sim/laz/. Tiles the server
-doesn't have (outside North Rhine-Westphalia) are listed as "not available" and skipped. The
-README (section "3D laser-scan data") explains the manual way.
+doesn't have (outside North Rhine-Westphalia) are listed as "not available" and skipped. An
+interrupted download continues where it stopped. The map app does the same (and builds the
+scene) in the layer "Laserscan-Szene"; the README (section "3D laser-scan data") explains the
+manual way.
 """
 
 import argparse
 import urllib.error
-import urllib.request
 
 from meshplay import load_settings
+from meshplay.sim.lidar import download_tile, remote_size
 from meshplay.sim.scene import TILE_URL, tiles_for_bbox
 from meshplay.sim.sites import to_utm
-
-
-def remote_size(name: str) -> int | None:
-    """Size of a tile on the server in bytes, or None if the server doesn't have it."""
-    req = urllib.request.Request(TILE_URL + name, method="HEAD")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return int(r.headers.get("Content-Length", 0))
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None
-        raise
 
 
 def main() -> None:
@@ -74,15 +64,15 @@ def main() -> None:
         )
 
     if args.download:
-        laz_dir.mkdir(parents=True, exist_ok=True)
         for name in available:
-            target = laz_dir / name
-            if target.exists():
+            if (laz_dir / name).exists():
                 continue
-            print(f"downloading {name} ...", flush=True)
-            tmp = target.with_suffix(".part")
-            urllib.request.urlretrieve(TILE_URL + name, tmp)
-            tmp.rename(target)
+
+            def show(done: int, total: int, name=name) -> None:
+                print(f"  {name}  {done / 1e6:6.1f} / {total / 1e6:.1f} MB", end="\r", flush=True)
+
+            download_tile(name, laz_dir, show)
+            print()
         print("done.")
 
 

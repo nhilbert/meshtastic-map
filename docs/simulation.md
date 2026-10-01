@@ -15,7 +15,7 @@ project's notes, kept locally in `data/sim/reference/2026-09-20/` (`PROJEKT.md`,
 NRW laser-scan tiles (LAZ)     sim_fetch_tiles.py
         │
         ▼
-scene: terrain, surface,       sim_build_scene.py      data/sim/scene/
+scene: terrain, surface,       sim_build_scene.py      data/sim/scenes/<name>/
 buildings / vegetation
         │
         ├──► sim_predict.py        fixed links, frozen     data/sim/predictions/
@@ -141,8 +141,9 @@ What was carried over unchanged, what was changed, and why.
   reproduces the surface raster and the point counts exactly, but not the terrain raster: the
   export's terrain differs from the minimum of the ground points even in measured cells, and
   neither of the original gap fillers reproduces it. Terrain can therefore differ by a few
-  metres, mostly under buildings. The original export in `data/sim/scene/` stays the reference
-  for the frozen predictions; `--import` restores it.
+  metres, mostly under buildings. The original export (`data/sim/reference/2026-09-20/scene/`)
+  stays the reference for the frozen predictions; `sim_build_scene.py --name <name> --import
+  <folder>` makes it a scene again.
 - *Scoring the ITU predictions was not possible*: `run.py` only stored percentiles and used
   scenario IDs (A1 …) that the logger and `score.py` (S1 … from v3) didn't know. Predictions now
   also store samples (.npz) and share IDs with the logger.
@@ -169,9 +170,9 @@ What was carried over unchanged, what was changed, and why.
 | `data/sim/sites.json` | sites and scenarios |
 | `data/sim/laz/` | NRW laser-scan tiles (`sim_fetch_tiles.py --download`) |
 | `data/sim/reference/2026-09-20/` | Mesh Bonn notes, coordinates, frozen outputs, PDFs |
-| `data/sim/scene/` | scene rasters (`sim_build_scene.py`) |
+| `data/sim/scenes/<name>/` | scene rasters (`sim_build_scene.py` or the map app); `active.txt` names the one in use |
 | `data/sim/predictions/` | frozen predictions |
-| `data/sim/maps/` | coverage grids `coverage-<site>-<preset>-<placement>-<radius>m-<step>m.npz` and maps |
+| `data/sim/maps/` | coverage grids `coverage-<site>-<preset>-<placement>-<radius>m-<step>m[-winter]-<scene>.npz` and maps |
 | `data/sim/compare/` | walk comparisons (`sim_compare_walk.py`) |
 | `data/sim/itu-p1812/` | ITU validation data for `sim_validate_p1812.py` |
 | `data/measurements/` | measurement protocol |

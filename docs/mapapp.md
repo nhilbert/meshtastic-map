@@ -9,9 +9,10 @@ python scripts/mapapp.py --open          # http://localhost:8770
 ```
 
 The map app needs the simulation extras (`pip install -e ".[sim]"`). The 3D view, the link
-calculator and the coverage simulation also need a laser-scan scene (`scripts/sim_build_scene.py`,
-see [simulation.md](simulation.md)); without one they stay empty and the rest works. The first
-start after a new scene exports the 3D data (about a minute, `data/mapapp/scene/`). The page is
+calculator and the coverage simulation also need a laser-scan scene (layer *Laserscan-Szene* →
+*＋ Neue Szene*, or `scripts/sim_build_scene.py`, see the README); without one they stay empty
+and the rest works. The first use of a new scene exports its 3D data (about a minute,
+`data/mapapp/scene/<name>/`). The page is
 in German, English and French (see [Languages](#languages)).
 
 ## Using it
@@ -106,8 +107,8 @@ Results are kept in memory until the server restarts.
 ## Background tasks (Aufgaben)
 
 Long jobs run in the server, not in the page: closing or reloading the page doesn't stop them.
-**＋ Traceroute-Rundgang**, **＋ Abdeckung simulieren** and **＋ Straßennetz laden** (the road
-graph of the coordination mode, see there) open a form (defaults and last used values);
+**＋ Traceroute-Rundgang**, **＋ Abdeckung simulieren**, **＋ Laserscan-Szene erstellen** and
+**＋ Straßennetz laden** (the road graph of the coordination mode, see there) open a form (defaults and last used values);
 **Starten** checks the input and starts the task. The list shows state (wartet, läuft,
 fertig, Fehler, abgebrochen), progress, what the task is doing and how long it runs, with
 *Stoppen/Abbrechen*, *Protokoll* (live log in the right panel), *Entfernen* for finished tasks and
@@ -123,9 +124,27 @@ when a task ends or fails.
   phone's GPX track (*GPX-Spur hochladen …*, stored in `data/tracks/`): the walk layer then shows
   the probes on the track.
 - **Abdeckung simulieren** runs `scripts/sim_coverage_map.py` as a separate process (progress
-  from its row counter, *Abbrechen* ends the process). The grid is named after its setup,
-  `coverage-<site>-<preset>-<placement>-<radius>m-<step>m[-winter].npz`, and carries it as
-  metadata, which the layer *Simulierte Abdeckung* shows in its selection.
+  from its row counter, *Abbrechen* ends the process) on the chosen scene (default: the one in
+  use; the site must lie inside it). The grid is named after its setup,
+  `coverage-<site>-<preset>-<placement>-<radius>m-<step>m[-winter]-<scene>.npz`, and carries it
+  as metadata, which the layer *Simulierte Abdeckung* shows in its selection.
+- **Laserscan-Szene erstellen** downloads the missing NRW tiles inside the server (resumable:
+  a cancelled download continues next time) and builds the scene with
+  `scripts/sim_build_scene.py` as a separate process; with *Danach verwenden* it switches to the
+  new scene and prepares its 3D view. The scene manager (next section) starts it with a centre
+  picked on the map.
+
+## Laser-scan scenes (Laserscan-Szene)
+
+The ⚙ of the layer *Laserscan-Szene* lists the scenes (`data/sim/scenes/<name>/`; the one in use
+is marked *verwendet*). **＋ Neue Szene** and a click in the map set the centre; name and edge
+length (1–5 km) complete the form, which shows the tiles needed, how many are already there, the
+download estimate and the free disk space, and draws the square on the map. *Erstellen* starts
+the task above. *Verwenden* switches the scene and reloads the page (the 3D view is built for
+one scene; its data is exported on first use into `data/mapapp/scene/<name>/`). ✕ deletes a
+scene (not while a task uses it); *Kacheln löschen* deletes the downloaded tiles in
+`data/sim/laz/`, which are only needed to build. The link tool, the walk comparison and the site
+suggestions always use the scene in use.
 
 ## Coordination mode (Koordination)
 
@@ -332,7 +351,7 @@ Two things need the internet once:
 | Meshtastic-Knoten | live from the connected device, or `data/exports/nodes-*.json` (`scripts/export_nodes.py`) | source, refresh interval, colour by hops/SNR, max. age, badge or dot |
 | Rundgang (Messung) | position packets `data/packets/<date>.jsonl` (`scripts/listen.py`) or traceroutes `data/probes/<date>.jsonl`, `data/tracks/*.gpx` | date, tracker (positions or traceroutes), GPX track, colour by SNR or measured − model, home site and placement, preset (from the log) |
 | Simulierte Abdeckung | `data/sim/maps/coverage-*.npz` (task or `scripts/sim_coverage_map.py`) | calculation (newest first), model, opacity |
-| Laserscan-Szene | `data/sim/scene/` | show unmeasured areas |
+| Laserscan-Szene | `data/sim/scenes/` (outlines; unmeasured areas of the scene in use) | show unmeasured areas; scene manager (see below) |
 | Koordination | the coordination mode's missions, targets, areas and places (`data/coord/`) | refresh interval |
 
 Default on/off state and default settings per layer: copy
@@ -350,13 +369,15 @@ work on the scene and the models holds the server's model lock (`ctx.model_lock`
 ```
 src/meshplay/mapapp/
   server.py        HTTP server: page, /scene/* (3D data), /api/app, /api/layers/<id>,
-                   /api/tools/<name>, /api/device, /api/jobs, /api/sites, /api/tracks,
-                   /api/messages, /api/coord/*
+                   /api/tools/<name>, /api/device, /api/jobs, /api/sites, /api/scenes,
+                   /api/tracks, /api/messages, /api/coord/*
   device.py        live USB connection: node list, packet logging, packet listeners
   fake_device.py   simulated radio (--simulate)
   coord/           coordination mode: missions.py (Coordinator, decisions, API), phrases.py
                    (radio texts, commands), paths.py, settings.py, store.py, geo.py
   jobs.py          background tasks: manager, task kinds (traceroute walk, coverage simulation)
+  scenes.py        laser-scan scenes: list, switch, delete, 3D export per scene, the task that
+                   downloads the tiles and builds a scene
   sites_store.py   editing data/sim/sites.json
   messages.py      message store for the messaging pane (data/messages.jsonl, traffic list)
   i18n.py          translations: _(), N_(), L(), language per request
@@ -373,6 +394,7 @@ webmap/
   js/tasks.js      task forms, list, log view
   js/coord.js      coordination mode: section, mission form, cards, targets, inspector tab
   js/sites.js      sites editor
+  js/scenes.js     scene manager (layer Laserscan-Szene)
   js/messages.js   messaging pane
   js/nodelist.js   node list (inspector tab Knoten)
   js/i18n.js       language choice, t(), static HTML translation
