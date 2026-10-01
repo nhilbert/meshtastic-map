@@ -43,6 +43,7 @@ class SitesLayer(Layer):
                     _fields=fields,
                     _style={"color": "#00707f", "fillColor": "#2cc4d6", "radius": 8, "weight": 2},
                     _z=float(s["height_m"][1]),
+                    _ref={"type": "site", "id": name},
                     _endpoint={
                         "name": name,
                         "height_m": list(s["height_m"]),

@@ -42,6 +42,15 @@ pixel-exact representations of the available map data.
   map picking returns to the originating drawer form. The light/dark choice is remembered.
 - **Ebenen**: each layer has a checkbox and a ⚙ with its settings and legend. Settings are
   remembered per browser.
+- **Objects on the map** have their actions in the popup (click) and in a menu (right click,
+  long press on touch screens): nodes *Direktnachricht*, *Traceroute* and *Position anfragen*
+  (📡 = sends on the mesh, disabled without a device; the result shows under the node in the
+  node list), *Ziel zuweisen* or *Einsatz anzeigen*; sites *Bearbeiten*, *Verschieben*,
+  *Abdeckung simulieren*, *Löschen*; targets, areas, places and OSM suggestions what their
+  editors offer; scenes *Verwenden*, *Löschen*; anything usable as an endpoint *als A* / *als B*.
+  A right click on a free spot offers to create a site, target, place or scene there, to set A
+  or B, or to copy the coordinates. Editing opens the editor in the side panel. Only the 2D
+  map has the menu so far.
 - **Strecke A → B** (first layer) is the direct-link calculator. While it is on, a click in the
   map sets A or B ("Klick in die Karte setzt: A | B | aus", Esc ends it); while it is off, map
   clicks do nothing. Sites, nodes and walk points have "als A" / "als B" in their popup, which
@@ -73,7 +82,7 @@ pane's bar, or `--device`).
   with the firmware's reason. Received ones show sender, time, SNR and hops; the sender's name
   shows the node on the map.
 - **Direct messages** go to a node with channel 0 (the firmware encrypts them for the recipient
-  when it knows its key). Start one with **Nachricht** in a node's popup on the map or ✉ in the node
+  when it knows its key). Start one with **Direktnachricht** in a node's popup on the map or ✉ in the node
   list. A new direct message pops up as a notice; unread counts are in the header, the pane's bar
   and the conversation list.
 - **Alle Pakete** lists the packets received since the map app started (time, sender, recipient,
@@ -450,7 +459,10 @@ and `bbox` are text fields with a button to pick them on the map, as `lat, lon` 
 `south, west, north, east`, previewed on the map, with `square_km_from` and `max` for the
 square around a point and the largest side of a box) and draws
 the result on both views. Feature conventions (`_style`, `_title`, `_fields`, `_label`, `_z`,
-`_icon`, `_endpoint`) and raster payloads are documented in `registry.py`. `_icon` draws a badge
+`_icon`, `_endpoint`, `_ref`) and raster payloads are documented in `registry.py`. `_ref`
+(`{"type", "id", …}`) says what a feature is; the page's modules register their actions per type
+with `registerActions(type, provider)` (`webmap/js/actions.js`), and popup and right-click menu
+show them, so a new object type needs a `_ref` on the server and a provider on the page. `_icon` draws a badge
 with a symbol (router, tracker, client, sensor, home) and a short text instead of a circle, in
 2D as a marker and in 3D as a label at fixed screen size; nodes use it with the short name,
 coloured by hops or SNR, faded when not heard for 2 h, your own node with a turquoise ring.

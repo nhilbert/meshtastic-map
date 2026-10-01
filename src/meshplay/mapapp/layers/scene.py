@@ -47,6 +47,7 @@ class SceneLayer(Layer):
                         "_title": _("Laserscan-Szene {name}", name=sc["name"])
                         + (" · " + _("verwendet") if sc["active"] else ""),
                         "_fields": fields,
+                        "_ref": {"type": "scene", "id": sc["name"], "active": sc["active"]},
                         "_style": {
                             "color": "#00707f",
                             "weight": 2 if sc["active"] else 1,

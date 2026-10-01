@@ -156,6 +156,7 @@ class NodesLayer(Layer):
                     },
                     _z=3.0,
                     _node_id=user.get("id"),
+                    _ref={"type": "node", "id": user.get("id"), "own": own},
                     _endpoint={
                         "name": user.get("shortName", _("Knoten")),
                         "height_m": [1.5, 3.0],

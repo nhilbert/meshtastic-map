@@ -3,16 +3,41 @@
 // to delete a site that variants, scenarios or the corridor still use.
 import { t } from "./i18n.js";
 import { esc, fmt, getJSON, postJSON } from "./util.js";
+import { registerActions } from "./actions.js";
+import { openTaskForm } from "./tasks.js";
 
-const E = { sites: [], edit: null, msg: "", api: null, box: null };
+const E = { sites: [], edit: null, msg: "", api: null, box: null, loaded: null };
 
-// api: { pickOnMap(label, cb), tempMarker(lat, lon) (null clears), changed(), toast(msg, opts) }
-export function initSites(api) { E.api = api; }
+// api: { pickOnMap(label, cb), tempMarker(lat, lon) (null clears), changed(), toast(msg, opts),
+//        openPanel() (the layer's settings, where this editor lives) }
+export function initSites(api) {
+  E.api = api;
+  registerActions("site", ref => [
+    { label: t("Bearbeiten"), run: () => inEditor(() => startEdit(ref.id)) },
+    { label: t("Verschieben"), run: () => inEditor(() => move(ref.id)) },
+    { label: t("Abdeckung simulieren"), run: () => openTaskForm("coverage", { site: ref.id }) },
+    { label: t("Löschen"), danger: true, run: () => inEditor(() => remove(ref.id)) },
+  ]);
+  registerActions("map", ({ lat, lon }) => [
+    { label: t("Standort hier anlegen"), run: () => inEditor(() => addAt(lat, lon)) },
+  ]);
+}
 
-export async function renderSites(box) {
+export function renderSites(box) {
   E.box = box;
-  try { E.sites = (await getJSON("api/sites")).sites; } catch (e) { E.msg = e.message; }
-  draw();
+  E.loaded = (async () => {
+    try { E.sites = (await getJSON("api/sites")).sites; } catch (e) { E.msg = e.message; }
+    draw();
+  })();
+  return E.loaded;
+}
+
+// From the map: open the editor (it shows the form and the messages), then act.
+async function inEditor(fn) {
+  E.api.openPanel();
+  await E.loaded;
+  fn();
+  E.box?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function draw() {
@@ -63,16 +88,18 @@ function readForm() {
 
 function startAdd() {
   E.msg = "";
-  E.api.pickOnMap(t("Position des neuen Standorts"), async (lat, lon) => {
-    let sug = { clutter_m: 12, in_scene: false };
-    try { sug = await getJSON(`api/sites/suggest?lat=${lat}&lon=${lon}`); } catch (_) { }
-    E.edit = { isNew: true, name: "", description: "", h0: 2, h1: 4, clutter: sug.clutter_m, lat, lon,
-      hint: sug.in_scene ? t("Umgebung aus dem Laserscan: höchste Oberfläche im Umkreis von 10 m ({height} m).", { height: fmt(sug.clutter_m, 1) })
-        : t("Außerhalb des Laserscans: Umgebung bitte schätzen (Dach- oder Baumhöhe rundum).") };
-    E.api.tempMarker(lat, lon);
-    draw();
-    const name = E.box.querySelector("[data-f=name]"); if (name) name.focus();
-  });
+  E.api.pickOnMap(t("Position des neuen Standorts"), addAt);
+}
+async function addAt(lat, lon) {
+  E.msg = "";
+  let sug = { clutter_m: 12, in_scene: false };
+  try { sug = await getJSON(`api/sites/suggest?lat=${lat}&lon=${lon}`); } catch (_) { }
+  E.edit = { isNew: true, name: "", description: "", h0: 2, h1: 4, clutter: sug.clutter_m, lat, lon,
+    hint: sug.in_scene ? t("Umgebung aus dem Laserscan: höchste Oberfläche im Umkreis von 10 m ({height} m).", { height: fmt(sug.clutter_m, 1) })
+      : t("Außerhalb des Laserscans: Umgebung bitte schätzen (Dach- oder Baumhöhe rundum).") };
+  E.api.tempMarker(lat, lon);
+  draw();
+  const name = E.box.querySelector("[data-f=name]"); if (name) name.focus();
 }
 function startEdit(name) {
   const s = E.sites.find(x => x.name === name); if (!s) return;

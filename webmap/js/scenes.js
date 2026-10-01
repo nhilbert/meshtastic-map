@@ -5,17 +5,39 @@
 // scene as a background task. Switching reloads the page: the 3D view is built for one scene.
 import { t } from "./i18n.js";
 import { esc, fmt, getJSON, postJSON } from "./util.js";
+import { registerActions } from "./actions.js";
 
-const E = { data: null, plan: null, form: null, msg: "", api: null, box: null };
+const E = { data: null, plan: null, form: null, msg: "", api: null, box: null, loaded: null };
 const SIZES = [1, 2, 3, 4, 5];
 
-// api: { pickOnMap(label, cb), tempArea(points) (null clears), taskStarted(job), toast(msg, opts) }
-export function initScenes(api) { E.api = api; }
+// api: { pickOnMap(label, cb), tempArea(points) (null clears), taskStarted(job), toast(msg, opts),
+//        openPanel() (the layer's settings, where this manager lives) }
+export function initScenes(api) {
+  E.api = api;
+  registerActions("scene", ref => [
+    ref.active ? null : { label: t("Verwenden"), run: () => use(ref.id) },
+    { label: t("Löschen"), danger: true, run: () => inManager(() => remove(ref.id)) },
+  ]);
+  registerActions("map", ({ lat, lon }) => [
+    { label: t("Szene hier erstellen"), run: () => inManager(() => newAt(lat, lon)) },
+  ]);
+}
 
-export async function renderScenes(box) {
+export function renderScenes(box) {
   E.box = box;
-  try { E.data = await getJSON("api/scenes"); E.msg = ""; } catch (e) { E.msg = e.message; }
-  draw();
+  E.loaded = (async () => {
+    try { E.data = await getJSON("api/scenes"); E.msg = ""; } catch (e) { E.msg = e.message; }
+    draw();
+  })();
+  return E.loaded;
+}
+
+// From the map: open the manager (form, tile list and messages are there), then act.
+async function inManager(fn) {
+  E.api.openPanel();
+  await E.loaded;
+  fn();
+  E.box?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 const gb = mb => mb >= 1000 ? `${fmt(mb / 1000, 1)} GB` : `${fmt(mb, 0)} MB`;
@@ -89,13 +111,15 @@ function bindForm() {
 
 function startNew() {
   E.msg = "";
-  E.api.pickOnMap(t("Mitte der neuen Szene"), (lat, lon) => {
-    const first = !E.data || !E.data.scenes.length;
-    E.form = { lat, lon, size: 3, name: first ? "home" : "", activate: true };
-    E.plan = null;
-    draw(); loadPlan();
-    E.box.querySelector("[data-f=name]")?.focus();
-  });
+  E.api.pickOnMap(t("Mitte der neuen Szene"), newAt);
+}
+function newAt(lat, lon) {
+  E.msg = "";
+  const first = !E.data || !E.data.scenes.length;
+  E.form = { lat, lon, size: 3, name: first ? "home" : "", activate: true };
+  E.plan = null;
+  draw(); loadPlan();
+  E.box.querySelector("[data-f=name]")?.focus();
 }
 
 async function loadPlan() {

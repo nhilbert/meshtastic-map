@@ -8,6 +8,7 @@ import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { showSection } from "./workspace.js";
 import { buttonLabel, symbolSVG } from "./icons.js";
 import { csv, download, gpx } from "./export.js";
+import { registerActions } from "./actions.js";
 
 // Mission states are German codes: t("zugewiesen") t("unterwegs") t("wartet") t("erreicht")
 // t("abgebrochen") t("beendet"); message kinds: t("assign") t("status") t("route") t("target")
@@ -40,7 +41,61 @@ export function initCoord(api) {
   $("#btnCoord").addEventListener("click", () => {
     showSection("coord");
   });
+  registerMapActions();
   poll();
+}
+
+// ---------------------------------------------------------------- actions on the map
+// The editors' actions for the objects on the map; editing opens the editor in the rail.
+function registerMapActions() {
+  const edit = t("Bearbeiten"), del = t("Löschen");
+  registerActions("node", ref => {
+    if (ref.own || !C.data) return [];
+    const m = C.data.missions.find(x => x.node === ref.id && ACTIVE.includes(x.state));
+    return [m ? { label: t("Einsatz anzeigen"), run: () => showDetail(ref.id) }
+      : { label: t("Ziel zuweisen"), run: () => assignTo(ref.id) }];
+  });
+  registerActions("target", ref => [
+    { label: edit, run: () => inEditor("targets", () => targetAction("edit", ref.id)) },
+    { label: t("Verschieben"), run: () => targetAction("move", ref.id) },
+    { label: del, danger: true, run: () => targetAction("del", ref.id) },
+  ]);
+  registerActions("area", ref => [
+    { label: edit, run: () => inEditor("areas", () => areaAction("edit", ref.id)) },
+    { label: t("Neu zeichnen"), run: () => areaAction("redraw", ref.id) },
+    { label: del, danger: true, run: () => areaAction("del", ref.id) },
+  ]);
+  registerActions("place", ref => [
+    { label: edit, run: () => inEditor("areas", () => areaAction("editp", ref.id)) },
+    { label: t("Verschieben"), run: () => areaAction("movep", ref.id) },
+    { label: del, danger: true, run: () => areaAction("delp", ref.id) },
+  ]);
+  registerActions("suggestion", ref => [
+    { label: t("Als Sperrgebiet übernehmen"), run: () => areaAction("acceptg", ref.id) },
+    { label: t("Verwerfen"), run: () => areaAction("dismissg", ref.id) },
+  ]);
+  const mission = ref => [{ label: t("Einsatz anzeigen"), run: () => showDetail(ref.node) }];
+  registerActions("waypoint", mission);
+  registerActions("mission", mission);
+  registerActions("map", ({ lat, lon }) => [
+    { label: t("Ziel hier anlegen"), run: () => inEditor("targets", () => {
+      C.editTarget = { isNew: true, name: "", note: "", radius_m: null, lat, lon }; C.api.tempMarker(lat, lon); render();
+      $("#coordBox [data-tf=name]")?.focus();
+    }) },
+    { label: t("Ort hier anlegen"), run: () => inEditor("areas", () => {
+      C.editPlace = { isNew: true, name: "", text: "", radius_m: 100, lat, lon }; C.api.tempMarker(lat, lon); render();
+      $("#coordBox [data-pf=name]")?.focus();
+    }) },
+  ]);
+}
+// Open the targets or the areas editor in the rail, then act there.
+function inEditor(which, fn) {
+  if (!C.data) { C.api.toast(t("Die Koordination lädt noch.")); return; }
+  C[which] = true; C.api.store.set("coord." + which, true);
+  showSection("coord");
+  render();
+  fn();
+  $("#coordBox .siteform")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 export const selectedMission = () => (C.sel && C.data && C.data.missions.find(m => m.node === C.sel)) || null;
 export const hasMissionDetail = () => !!(C.arch || selectedMission());

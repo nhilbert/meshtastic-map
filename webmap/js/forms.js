@@ -58,7 +58,7 @@ export function inputsHTML(settings, values, idPrefix = "f") {
       const id = `dl_${idPrefix}_${s.name}`, list = s.options && s.options.length;
       const ph = s.type === "bbox" ? "50.70, 7.05, 50.76, 7.15" : "50.73740, 7.09820";
       return `<label${tip}>${esc(s.label)}<span class="pickfield"><input type="text" data-s="${s.name}" value="${esc(v ?? "")}" placeholder="${ph}" autocomplete="off" ${list ? `list="${id}"` : ""}>
-        <button type="button" class="btn small" data-pick="${s.name}">${t("Auf der Karte wählen")}</button></span>
+        <button type="button" class="btn small" data-mappick="${s.name}">${t("Auf der Karte wählen")}</button></span>
         ${list ? `<datalist id="${id}">${s.options.map(([ov, ol]) => `<option value="${esc(ov)}">${esc(ol)}</option>`).join("")}</datalist>` : ""}
         <span class="note" data-area="${s.name}"></span></label>`;
     }
@@ -86,8 +86,8 @@ export function bindInputs(root, settings, values, onChange) {
     onChange(s, deps.length > 0);
     showArea(root, settings, values);
   }));
-  root.querySelectorAll("[data-pick]").forEach(btn => btn.addEventListener("click", () => {
-    const s = settings.find(x => x.name === btn.dataset.pick);
+  root.querySelectorAll("[data-mappick]").forEach(btn => btn.addEventListener("click", () => {
+    const s = settings.find(x => x.name === btn.dataset.mappick);
     if (!mapApi) return;
     const bbox = s.type === "bbox";
     mapApi.pick(bbox ? t("zwei gegenüberliegende Ecken von „{label}“", { label: s.label }) : s.label,

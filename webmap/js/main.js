@@ -1,6 +1,7 @@
 // Wiring: layer panel (settings forms from the server's declarations), the link layer (A/B
 // endpoints, computed in the browser session), the inspector on the right.
 import { Map2D } from "./map2d.js";
+import { registerActions } from "./actions.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
 import { assignTo, hasMissionDetail, initCoord, renderMissionDetail } from "./coord.js";
 import { bindInputs, initialValues, inputsHTML, setFormMap } from "./forms.js";
@@ -12,7 +13,7 @@ import { initScenes, renderScenes } from "./scenes.js";
 import { initSites, renderSites } from "./sites.js";
 import { initTasks, pollSoon, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
 import { $, css, esc, fmt, getJSON, grade, legendHTML, postJSON } from "./util.js";
-import { initWorkspace, setRail } from "./workspace.js";
+import { initWorkspace, setRail, showSection } from "./workspace.js";
 import { buttonLabel, symbolSVG } from "./icons.js";
 
 const status = (msg, bad) => { const s = $("#status"); s.textContent = msg; s.style.color = bad ? "var(--bad)" : ""; };
@@ -228,6 +229,33 @@ function updateInspector() {
   if (show && S.insp.tab === "job") renderDetailIfShown();
   if (show && S.insp.tab === "coord") renderMissionDetail();
 }
+// A layer's settings in the rail, opened and in view (the sites editor and the scene manager live
+// there; the map's actions open them).
+function openLayerPanel(id) {
+  const desc = S.app.layers.find(l => l.id === id), st = S.layers[id];
+  if (!desc || !st) return;
+  showSection("layers");
+  if (!st.open) { st.open = true; persist(id); renderLayer(desc); showExtras(desc); }
+  document.getElementById("lyr_" + id)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+// The link tool's actions on the map: any feature with _endpoint, or a free spot, as A or B.
+function registerLinkActions() {
+  const as = (which, ep) => () => { if (!S.link.on) setLinkOn(true); setEndpoint(which, ep()); };
+  registerActions("*", (ref, f) => f && f.properties._endpoint ? [
+    { label: t("als A"), run: as("a", () => endpointFromFeature(f)) },
+    { label: t("als B"), run: as("b", () => endpointFromFeature(f)) },
+  ] : []);
+  registerActions("map", ({ lat, lon }) => [
+    { label: t("als A"), run: as("a", () => endpointAt(lat, lon, "a")) },
+    { label: t("als B"), run: as("b", () => endpointAt(lat, lon, "b")) },
+    { label: t("Koordinaten kopieren"), run: async () => {
+      const text = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+      try { await navigator.clipboard.writeText(text); toast(t("Kopiert: {text}", { text })); }
+      catch (_) { toast(text); }
+    } },
+  ]);
+}
+
 // Redraw one server layer (after the coordination mode changed something on the map).
 function refreshLayer(id) {
   const desc = S.app && S.app.layers.find(l => l.id === id);
@@ -664,12 +692,6 @@ function bindUI() {
   map2d = new Map2D($("#map2d"), S.app.home || null, {
     onClick: (lat, lon) => mapClick(lat, lon),
     onMove: (lat, lon) => mapMove(lat, lon),
-    onFeatureAction: (f, which) => {
-      if (which === "msg") { openConversation("dm:" + f.properties._node_id); return; }
-      if (which === "coord") { assignTo(f.properties._node_id); return; }
-      if (!S.link.on) setLinkOn(true);
-      setEndpoint(which, endpointFromFeature(f));
-    },
   });
   map3d = new Map3D($("#c"), {
     onPick: (lat, lon) => mapClick(lat, lon),
@@ -689,7 +711,7 @@ function bindUI() {
       t("Die 2D-Karte und alle anderen Ebenen funktionieren ohne.")].map(esc).join("<br>");
     $("#loading .bar").hidden = true;
   }
-  initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast });
+  initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast, openPanel: () => openLayerPanel("sites") });
   // areas of task forms are picked on the 2D map: the rectangle and preview are drawn there
   setFormMap({
     pick: (label, count, cb) => {
@@ -698,10 +720,11 @@ function bindUI() {
     },
     preview: ring => map2d.setPreview(ring),
   });
-  initScenes({ pickOnMap, toast, tempArea: pts => map2d.setTempPath(pts),
+  initScenes({ pickOnMap, toast, tempArea: pts => map2d.setTempPath(pts), openPanel: () => openLayerPanel("scene"),
     taskStarted: job => { toast(t("Gestartet: {title}", { title: job.title })); pollSoon(); } });
   initNodeList({ store, toast, focusNode, message: id => openConversation("dm:" + id), assign: assignTo,
     connected: () => S.devState === "verbunden", refreshNodes: () => refreshLayer("nodes"),
+    openList: () => openInspector("nodes"),
     showRoute: r => {
       if (r && document.body.classList.contains("is3d")) setView("2d");
       if (map2d) map2d.setRoute(r);
@@ -716,6 +739,7 @@ function bindUI() {
     onOpen: () => { if (matchMedia("(max-width: 700px)").matches && !$("#right").hidden) toggleInspector(false); },
   });
   initTasks({ store, toast, openInspector, updateInspector, onTransition: taskTransition, actions: taskActions });
+  registerLinkActions();
   initLayers();
   S.devState = null;
   deviceStatus(); setInterval(() => deviceStatus(), 5000);

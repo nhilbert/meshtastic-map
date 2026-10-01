@@ -36,15 +36,15 @@ function renderStart() {
 
 // ---------------------------------------------------------------- start form
 // Other parts of the page start a task kind through its form (the coordination mode's road
-// graph download).
-export function openTaskForm(kindId) {
+// graph download, a site's coverage from the map); preset fills some of its values.
+export function openTaskForm(kindId, preset = null) {
   showSection("jobs");
-  openForm(kindId);
+  openForm(kindId, preset);
 }
-async function openForm(kindId) {
+async function openForm(kindId, preset = null) {
   try { await loadKinds(); } catch (e) { T.api.toast(e.message, { bad: true }); return; }  // fresh nodes, sites
   const kind = T.kinds.find(k => k.id === kindId);
-  T.form = { kind, values: initialValues(kind.settings, T.api.store.get("job." + kindId, null)) };
+  T.form = { kind, values: initialValues(kind.settings, { ...T.api.store.get("job." + kindId, null), ...preset }) };
   renderForm();
   $("#jobForm").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }

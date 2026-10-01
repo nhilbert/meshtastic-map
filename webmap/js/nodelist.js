@@ -6,6 +6,7 @@
 import { locale, t } from "./i18n.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { symbolSVG } from "./icons.js";
+import { registerActions } from "./actions.js";
 
 const SORTS = {
   last: [() => t("zuletzt gehört"), (a, b) => (b.last || 0) - (a.last || 0)],
@@ -18,11 +19,33 @@ const L = { api: null, data: null, filter: "", sort: "last", built: false, req: 
 const POLL_MS = 1500;
 
 // api: { store, toast, focusNode(id), message(id), assign(id), connected(), refreshNodes(),
-//        showRoute(traceroute | null) }
+//        showRoute(traceroute | null), openList() }
 export function initNodeList(api) {
   L.api = api;
   L.sort = api.store.get("nodes.sort", "last");
+  // on the map: the node's actions; a request's result shows under its row in the list
+  registerActions("node", ref => {
+    const list = { label: t("In der Knotenliste zeigen"), run: () => showInList(ref.id) };
+    if (ref.own) return [list];
+    const off = L.api.connected() ? null : t("Gerät nicht verbunden");
+    return [
+      { label: t("Direktnachricht"), run: () => L.api.message(ref.id) },
+      { label: t("Traceroute"), radio: true, disabled: off, run: () => { request(ref.id, "traceroute"); showInList(ref.id); } },
+      { label: t("Position anfragen"), radio: true, disabled: off, run: () => { request(ref.id, "position"); showInList(ref.id); } },
+      list,
+    ];
+  });
   poll();
+}
+
+// The node's row in the inspector's list, scrolled into view and briefly highlighted.
+function showInList(id) {
+  L.api.openList();
+  if (L.filter) { L.filter = ""; const f = $("#nlFilter"); if (f) f.value = ""; fill(); }
+  L.flash = { id, until: Date.now() + 2000 };  // survives the redraws of the next polls
+  fill();
+  document.querySelector(`#t_nodes [data-focus="${CSS.escape(id)}"]`)?.closest("tr")
+    ?.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
 // Results of the requests; while one runs, again shortly. A position that came back is on the
@@ -131,7 +154,7 @@ function fill() {
   $("#t_nodes .nl-count").textContent = t("{n} Knoten, {m} mit Position", { n: nodes.length, m: withPos })
     + (q ? " · " + t("{n} passen zum Filter", { n: shown.length }) : "");
   body.innerHTML = shown.length ? `<table class="nodes"><tr><th>${t("Knoten")}</th><th>${t("Hops")}</th><th>SNR</th><th>${t("gehört")}</th></tr>
-    ${shown.map(n => `<tr class="${n.own ? "own" : ""}">
+    ${shown.map(n => `<tr class="${n.own ? "own" : ""}${L.flash && L.flash.id === n.id && Date.now() < L.flash.until ? " flash" : ""}">
       <td><button class="lnk nodebtn" data-focus="${esc(n.id)}" ${n.lat == null ? `disabled title="${t("keine Position")}"` : `title="${t("auf der Karte zeigen")}"`}>
         <span class="sn">${esc(n.short || n.id.slice(-4))}</span> ${esc(n.long || n.id)}</button>
         <div class="sub">${esc(n.id)}${n.hw ? " · " + esc(n.hw) : ""}${n.battery != null ? " · " + t("Akku {n} %", { n: n.battery }) : ""}${n.own ? " · " + t("eigenes Gerät") : ""}</div>

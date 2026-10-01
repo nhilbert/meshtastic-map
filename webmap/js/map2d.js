@@ -1,11 +1,12 @@
 // 2D view: Leaflet with OpenStreetMap. Draws layer payloads and the current link.
 import { t } from "./i18n.js";
 import { badgeHTML } from "./icons.js";
+import { actionsFor, actionsHTML, bindActions, openMenu } from "./actions.js";
 import { esc, featureHTML, fmt } from "./util.js";
 
 export class Map2D {
   constructor(el, center, handlers) {
-    this.h = handlers;          // { onClick(lat, lon), onMove(lat, lon), onFeatureAction(feature, "a"|"b") }
+    this.h = handlers;          // { onClick(lat, lon), onMove(lat, lon) }
     this.map = L.map(el, { zoomControl: true });
     // without a home position: Germany, to find the own area
     if (center) this.map.setView([center.lat, center.lon], 15); else this.map.setView([51.2, 10.4], 6);
@@ -20,6 +21,13 @@ export class Map2D {
     this.linkGroup = L.layerGroup().addTo(this.map);
     this.map.on("click", e => this.h.onClick(e.latlng.lat, e.latlng.lng));
     this.map.on("mousemove", e => this.h.onMove?.(e.latlng.lat, e.latlng.lng));
+    // right click (long press on touch) on a free spot: what can be done here
+    this.map.on("contextmenu", e => {
+      if (Date.now() - (this.featureMenuAt || 0) < 300) return;  // a feature's menu opened
+      const { lat, lng } = e.latlng;
+      openMenu(e.originalEvent.clientX, e.originalEvent.clientY, `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+        actionsFor({ type: "map", lat, lon: lng }));
+    });
     this.popupOpen = false;  // live layers skip their refresh while a popup is open
     this.map.on("popupopen", () => { this.popupOpen = true; });
     this.map.on("popupclose", () => { this.popupOpen = false; });
@@ -61,13 +69,20 @@ export class Map2D {
           const p = f.properties;
           if (p._node_id) this.nodeMarkers[p._node_id] = lyr;
           if (p._label) lyr.bindTooltip(p._label, { permanent: true, direction: "right", className: "lbl", offset: [6, 0] });
-          if (p._title || p._fields) {
-            lyr.bindPopup(featureHTML(p));
-            lyr.on("popupopen", e => {
-              e.popup.getElement().querySelectorAll("[data-set]").forEach(b =>
-                b.addEventListener("click", () => { this.h.onFeatureAction(f, b.dataset.set); this.map.closePopup(); }));
-            });
-          }
+          // built on every opening: the actions depend on the moment (device connected, mission)
+          if (p._title || p._fields) lyr.bindPopup(() => {
+            const el = document.createElement("div");
+            el.innerHTML = featureHTML(p);
+            const acts = actionsFor(p._ref, f), box = el.querySelector(".acts");
+            box.innerHTML = actionsHTML(acts);
+            bindActions(box, acts, () => this.map.closePopup());
+            return el.firstElementChild;
+          });
+          lyr.on("contextmenu", e => {
+            L.DomEvent.stop(e);
+            this.featureMenuAt = Date.now();
+            openMenu(e.originalEvent.clientX, e.originalEvent.clientY, p._title || "", actionsFor(p._ref, f));
+          });
         },
       }).addTo(group);
     }

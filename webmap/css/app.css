@@ -307,7 +307,7 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
 .leaflet-popup-content{font-family:var(--sans);font-size:12px;margin:10px 12px}
 .pop h3{margin:0 0 4px;font-size:12.5px}
 .pop table td{padding:1px 4px}
-.pop .acts{display:flex;gap:6px;margin-top:6px}
+.pop .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .lbl{background:var(--panel-solid);border:1px solid var(--line);border-radius:4px;box-shadow:none;font-weight:600;color:var(--ink)}
 .lbl::before{display:none}
 /* badge markers (features with _icon) */
@@ -406,3 +406,12 @@ td.acts{display:flex;gap:3px;justify-content:flex-end}
 }
 @media (prefers-reduced-motion:reduce){.btn{transition:none}}
 @media (pointer:coarse){#langSeg .btn{min-height:44px;min-width:44px}}
+/* right-click menu of map objects (actions.js) */
+.ctxmenu{position:fixed;z-index:2000;min-width:190px;max-width:280px;padding:4px;display:flex;flex-direction:column;background:var(--panel-solid);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}
+.ctxmenu .hd{padding:6px 10px 4px;font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctxmenu .item{all:unset;box-sizing:border-box;padding:7px 10px;border-radius:5px;font:13px var(--sans);color:var(--ink);cursor:pointer}
+.ctxmenu .item:hover,.ctxmenu .item:focus-visible{background:var(--accent-soft);color:var(--accent)}
+.ctxmenu .item[disabled]{color:var(--ink3);cursor:default;background:none}
+.ctxmenu .item.danger,.pop .btn.danger{color:var(--bad)}
+.pop .acts:empty{display:none}
+table.nodes tr.flash td{background:var(--accent-soft);transition:background .3s}

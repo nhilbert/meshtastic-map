@@ -807,7 +807,7 @@ class Coordinator:
                                 f"{t['by']} {hhmm(t['created'])}" if t.get("by") else "–"
                             ),
                         },
-                        _target=name,
+                        _ref={"type": "target", "id": name},
                         _z=2.0,
                     )
                 )
@@ -829,6 +829,7 @@ class Coordinator:
                             "weight": 2,
                             "dash": "6 4" if nogo else None,
                         },
+                        _ref={"type": "area", "id": a.id},
                     )
                 )
             for d in self.open_suggestions():
@@ -839,7 +840,6 @@ class Coordinator:
                         _fields={
                             _("Art"): _(d["reason"]),
                             _("Fläche"): f"{d['area_m2'] / 1e4:.1f} ha",
-                            _("Übernehmen"): _("im Gebiete-Editor der Koordination"),
                         },
                         _style={
                             "color": "#8a6d00",
@@ -847,6 +847,7 @@ class Coordinator:
                             "weight": 1.5,
                             "dash": "2 5",
                         },
+                        _ref={"type": "suggestion", "id": d["id"]},
                     )
                 )
             for p in self.places:
@@ -861,6 +862,7 @@ class Coordinator:
                             "fillOpacity": 0.1,
                             "weight": 1,
                         },
+                        _ref={"type": "place", "id": p.id},
                     )
                 )
             for m in self.missions.values():
@@ -888,11 +890,18 @@ class Coordinator:
                             },
                             _style={"color": color, "fillColor": color, "radius": 7},
                             _z=2.0,
+                            _ref={"type": "waypoint", "node": m.node, "index": i},
                         )
                     )
                 pts = [(p["lon"], p["lat"]) for p in m.positions]
                 if len(pts) > 1:
-                    out.append(line(pts, _style={"color": color, "weight": 3, "opacity": 0.8}))
+                    out.append(
+                        line(
+                            pts,
+                            _style={"color": color, "weight": 3, "opacity": 0.8},
+                            _ref={"type": "mission", "node": m.node},
+                        )
+                    )
                 if m.active and m.route is not None:
                     out.append(
                         line(
@@ -900,6 +909,7 @@ class Coordinator:
                             _style={"color": color, "weight": 4, "opacity": 0.85},
                             _title=_("Route zu {name}", name=m.stop.name),
                             _fields={_("Länge"): f"{m.route.length_m:.0f} m"},
+                            _ref={"type": "mission", "node": m.node},
                         )
                     )
                     for seg in m.route_ahead:

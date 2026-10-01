@@ -9,8 +9,11 @@ A layer returns one of two payloads from data():
             _z         height above ground in the 3D view [m] (default 2)
             _icon      badge marker instead of a circle: {"text", "symbol" (router, tracker,
                        client, sensor, home, target, via), "color", "own", "faded", "hint"}
-            _node_id   Meshtastic node ID ("!abcd1234"): the popup offers "Nachricht", the node
-                       list in the inspector finds the marker
+            _node_id   Meshtastic node ID ("!abcd1234"): the node list finds the marker
+            _ref       what the feature is, for the actions in its popup and right-click menu:
+                       {"type": "node" | "site" | "target" | "area" | "place" | "suggestion"
+                       | "waypoint" | "mission" | "scene", "id", ...}; the page registers the
+                       actions per type (webmap/js/actions.js)
             _endpoint  makes the feature usable as start/end of the link tool:
                        {"height_m": [lo, hi], "clutter_m", "indoor", "device", "measured": {...}}
   raster  {"type": "raster", "image": <PNG data URL>, "bounds": [[south, west], [north, east]]}
