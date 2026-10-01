@@ -3,7 +3,8 @@
 // to delete a site that variants, scenarios or the corridor still use.
 import { t } from "./i18n.js";
 import { esc, fmt, getJSON, postJSON } from "./util.js";
-import { registerActions } from "./actions.js";
+import { G, registerActions } from "./actions.js";
+import { iconButton } from "./icons.js";
 import { openTaskForm } from "./tasks.js";
 
 const E = { sites: [], edit: null, msg: "", api: null, box: null, loaded: null };
@@ -13,13 +14,14 @@ const E = { sites: [], edit: null, msg: "", api: null, box: null, loaded: null }
 export function initSites(api) {
   E.api = api;
   registerActions("site", ref => [
-    { label: t("Bearbeiten"), run: () => inEditor(() => startEdit(ref.id)) },
-    { label: t("Verschieben"), run: () => inEditor(() => move(ref.id)) },
-    { label: t("Abdeckung simulieren"), run: () => openTaskForm("coverage", { site: ref.id }) },
-    { label: t("Löschen"), danger: true, run: () => inEditor(() => remove(ref.id)) },
+    { label: t("Bearbeiten …"), short: t("Bearbeiten"), icon: "edit", group: G.main, run: () => inEditor(() => startEdit(ref.id)) },
+    { label: t("Verschieben"), icon: "move", group: G.work, run: () => inEditor(() => move(ref.id)) },
+    { label: t("Abdeckung simulieren …"), short: t("Abdeckung"), icon: "coverage", group: G.work,
+      run: () => openTaskForm("coverage", { site: ref.id }) },
+    { label: t("Löschen …"), icon: "trash", danger: true, run: () => inEditor(() => remove(ref.id)) },
   ]);
   registerActions("map", ({ lat, lon }) => [
-    { label: t("Standort hier anlegen"), run: () => inEditor(() => addAt(lat, lon)) },
+    { label: t("Standort hier anlegen …"), icon: "home", group: G.main, run: () => inEditor(() => addAt(lat, lon)) },
   ]);
 }
 
@@ -63,9 +65,9 @@ function rowHTML(s) {
     : t("{range} m ü. Grund", { range }));
   const n = esc(s.name);
   return `<div class="site"><div class="txt"><span class="nm">${n}</span><span class="sub" title="${esc(s.description)}">${sub}</span></div>
-    <button class="btn small" data-edit="${n}" aria-label="${esc(t("{name} bearbeiten", { name: s.name }))}" title="${t("Bearbeiten")}">✎</button>
-    ${s.same_as ? "" : `<button class="btn small" data-move="${n}" aria-label="${esc(t("{name} verschieben", { name: s.name }))}" title="${t("Verschieben: Klick in die Karte")}">⌖</button>`}
-    <button class="btn small" data-del="${n}" aria-label="${esc(t("{name} löschen", { name: s.name }))}" title="${esc(s.refs.length ? t("Wird verwendet: {refs}", { refs: s.refs.join(", ") }) : t("Löschen"))}">✕</button></div>`;
+    ${iconButton("edit", t("{name} bearbeiten", { name: s.name }), `data-edit="${n}"`)}
+    ${s.same_as ? "" : iconButton("move", t("{name} verschieben", { name: s.name }), `data-move="${n}"`)}
+    ${iconButton("trash", s.refs.length ? t("Wird verwendet: {refs}", { refs: s.refs.join(", ") }) : t("{name} löschen", { name: s.name }), `data-del="${n}"`, { danger: true })}</div>`;
 }
 
 function formHTML(ed) {

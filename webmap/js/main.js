@@ -1,7 +1,7 @@
 // Wiring: layer panel (settings forms from the server's declarations), the link layer (A/B
 // endpoints, computed in the browser session), the inspector on the right.
 import { Map2D } from "./map2d.js";
-import { registerActions } from "./actions.js";
+import { G, registerActions } from "./actions.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
 import { assignTo, hasMissionDetail, initCoord, renderMissionDetail } from "./coord.js";
 import { bindInputs, initialValues, inputsHTML, setFormMap } from "./forms.js";
@@ -241,14 +241,15 @@ function openLayerPanel(id) {
 // The link tool's actions on the map: any feature with _endpoint, or a free spot, as A or B.
 function registerLinkActions() {
   const as = (which, ep) => () => { if (!S.link.on) setLinkOn(true); setEndpoint(which, ep()); };
-  registerActions("*", (ref, f) => f && f.properties._endpoint ? [
-    { label: t("als A"), run: as("a", () => endpointFromFeature(f)) },
-    { label: t("als B"), run: as("b", () => endpointFromFeature(f)) },
-  ] : []);
+  const ab = (a, b) => [
+    { label: t("Als Startpunkt A"), short: "A", icon: "endA", group: G.link, quick: false, run: as("a", a) },
+    { label: t("Als Endpunkt B"), short: "B", icon: "endB", group: G.link, quick: false, run: as("b", b) },
+  ];
+  registerActions("*", (ref, f) => f && f.properties._endpoint
+    ? ab(() => endpointFromFeature(f), () => endpointFromFeature(f)) : []);
   registerActions("map", ({ lat, lon }) => [
-    { label: t("als A"), run: as("a", () => endpointAt(lat, lon, "a")) },
-    { label: t("als B"), run: as("b", () => endpointAt(lat, lon, "b")) },
-    { label: t("Koordinaten kopieren"), run: async () => {
+    ...ab(() => endpointAt(lat, lon, "a"), () => endpointAt(lat, lon, "b")),
+    { label: t("Koordinaten kopieren"), icon: "copy", group: G.copy, run: async () => {
       const text = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
       try { await navigator.clipboard.writeText(text); toast(t("Kopiert: {text}", { text })); }
       catch (_) { toast(text); }
@@ -725,6 +726,7 @@ function bindUI() {
   initNodeList({ store, toast, focusNode, message: id => openConversation("dm:" + id), assign: assignTo,
     connected: () => S.devState === "verbunden", refreshNodes: () => refreshLayer("nodes"),
     openList: () => openInspector("nodes"),
+    panTo: id => map2d.panToNode(id), feature: id => map2d.nodeFeature(id),
     showRoute: r => {
       if (r && document.body.classList.contains("is3d")) setView("2d");
       if (map2d) map2d.setRoute(r);

@@ -6,9 +6,9 @@ import { locale, t } from "./i18n.js";
 import { openTaskForm } from "./tasks.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { showSection } from "./workspace.js";
-import { buttonLabel, symbolSVG } from "./icons.js";
+import { buttonLabel, iconButton, symbolSVG } from "./icons.js";
 import { csv, download, gpx } from "./export.js";
-import { registerActions } from "./actions.js";
+import { G, registerActions } from "./actions.js";
 
 // Mission states are German codes: t("zugewiesen") t("unterwegs") t("wartet") t("erreicht")
 // t("abgebrochen") t("beendet"); message kinds: t("assign") t("status") t("route") t("target")
@@ -48,41 +48,43 @@ export function initCoord(api) {
 // ---------------------------------------------------------------- actions on the map
 // The editors' actions for the objects on the map; editing opens the editor in the rail.
 function registerMapActions() {
-  const edit = t("Bearbeiten"), del = t("Löschen");
+  const edit = run => ({ label: t("Bearbeiten …"), short: t("Bearbeiten"), icon: "edit", group: G.main, run });
+  const del = run => ({ label: t("Löschen …"), icon: "trash", danger: true, run });
+  const showMission = node => ({ label: t("Einsatz anzeigen"), short: t("Einsatz"), icon: "target", group: G.work, run: () => showDetail(node) });
   registerActions("node", ref => {
     if (ref.own || !C.data) return [];
     const m = C.data.missions.find(x => x.node === ref.id && ACTIVE.includes(x.state));
-    return [m ? { label: t("Einsatz anzeigen"), run: () => showDetail(ref.id) }
-      : { label: t("Ziel zuweisen"), run: () => assignTo(ref.id) }];
+    return [m ? showMission(ref.id)
+      : { label: t("Ziel zuweisen …"), short: t("Ziel …"), icon: "target", group: G.work, run: () => assignTo(ref.id) }];
   });
   registerActions("target", ref => [
-    { label: edit, run: () => inEditor("targets", () => targetAction("edit", ref.id)) },
-    { label: t("Verschieben"), run: () => targetAction("move", ref.id) },
-    { label: del, danger: true, run: () => targetAction("del", ref.id) },
+    edit(() => inEditor("targets", () => targetAction("edit", ref.id))),
+    { label: t("Verschieben"), icon: "move", group: G.work, run: () => targetAction("move", ref.id) },
+    del(() => targetAction("del", ref.id)),
   ]);
   registerActions("area", ref => [
-    { label: edit, run: () => inEditor("areas", () => areaAction("edit", ref.id)) },
-    { label: t("Neu zeichnen"), run: () => areaAction("redraw", ref.id) },
-    { label: del, danger: true, run: () => areaAction("del", ref.id) },
+    edit(() => inEditor("areas", () => areaAction("edit", ref.id))),
+    { label: t("Neu zeichnen"), icon: "area", group: G.work, run: () => areaAction("redraw", ref.id) },
+    del(() => areaAction("del", ref.id)),
   ]);
   registerActions("place", ref => [
-    { label: edit, run: () => inEditor("areas", () => areaAction("editp", ref.id)) },
-    { label: t("Verschieben"), run: () => areaAction("movep", ref.id) },
-    { label: del, danger: true, run: () => areaAction("delp", ref.id) },
+    edit(() => inEditor("areas", () => areaAction("editp", ref.id))),
+    { label: t("Verschieben"), icon: "move", group: G.work, run: () => areaAction("movep", ref.id) },
+    del(() => areaAction("delp", ref.id)),
   ]);
   registerActions("suggestion", ref => [
-    { label: t("Als Sperrgebiet übernehmen"), run: () => areaAction("acceptg", ref.id) },
-    { label: t("Verwerfen"), run: () => areaAction("dismissg", ref.id) },
+    { label: t("Als Sperrgebiet übernehmen"), short: t("Übernehmen"), icon: "check", group: G.main, run: () => areaAction("acceptg", ref.id) },
+    { label: t("Verwerfen"), icon: "close", group: G.work, run: () => areaAction("dismissg", ref.id) },
   ]);
-  const mission = ref => [{ label: t("Einsatz anzeigen"), run: () => showDetail(ref.node) }];
+  const mission = ref => [showMission(ref.node)];
   registerActions("waypoint", mission);
   registerActions("mission", mission);
   registerActions("map", ({ lat, lon }) => [
-    { label: t("Ziel hier anlegen"), run: () => inEditor("targets", () => {
+    { label: t("Ziel hier anlegen …"), icon: "target", group: G.main, run: () => inEditor("targets", () => {
       C.editTarget = { isNew: true, name: "", note: "", radius_m: null, lat, lon }; C.api.tempMarker(lat, lon); render();
       $("#coordBox [data-tf=name]")?.focus();
     }) },
-    { label: t("Ort hier anlegen"), run: () => inEditor("areas", () => {
+    { label: t("Ort hier anlegen …"), icon: "place", group: G.main, run: () => inEditor("areas", () => {
       C.editPlace = { isNew: true, name: "", text: "", radius_m: 100, lat, lon }; C.api.tempMarker(lat, lon); render();
       $("#coordBox [data-pf=name]")?.focus();
     }) },
@@ -390,8 +392,8 @@ function formHTML(d) {
       <input type="text" data-f="arrive_by" data-i="${i}" value="${esc(w.arrive_by || "")}" placeholder="${t("bis")}" title="${t("Ankunft bis (12:55 oder +15)")}" aria-label="${t("Ankunft bis")}" style="width:4.5em" ${w.kind === "via" ? "disabled" : ""}>
       <input type="text" data-f="hold_until" data-i="${i}" value="${esc(w.hold_until || "")}" placeholder="${t("warten")}" title="${t("Warten bis (13:05 oder +30)")}" aria-label="${t("Warten bis")}" style="width:4.5em" ${w.kind === "via" ? "disabled" : ""}>
       <button class="btn small" data-wp="up" data-i="${i}" title="${t("nach oben")}" ${i === 0 ? "disabled" : ""}>↑</button>
-      <button class="btn small" data-wp="move" data-i="${i}" title="${t("Verschieben: Klick in die Karte")}">⌖</button>
-      <button class="btn small" data-wp="del" data-i="${i}" title="${t("Entfernen")}">✕</button></div>`).join("");
+      ${iconButton("move", t("Verschieben: Klick in die Karte"), `data-wp="move" data-i="${i}"`)}
+      ${iconButton("close", t("Entfernen"), `data-wp="del" data-i="${i}"`)}</div>`).join("");
   const targets = Object.keys(d.targets || {}).map(n => `<option value="t:${esc(n)}">${esc(n)}</option>`).join("");
   const sites = (C.api.sites() || []).map(s => `<option value="s:${esc(s.name)}">${esc(s.name)} (${t("Standort")})</option>`).join("");
   const templates = Object.keys(d.paths || {}).map(n => `<option value="p:${esc(n)}">${esc(t("Vorlage laden: {name}", { name: n }))}</option>`).join("");
@@ -490,12 +492,12 @@ function targetsHTML(d) {
   const ed = C.editTarget;
   const rows = Object.entries(d.targets).map(([name, tg]) => ed && !ed.isNew && ed.orig === name ? targetFormHTML(ed)
     : `<div class="site"><div class="txt"><span class="nm">${esc(name)}</span><span class="sub">${esc(tg.note || "")}${tg.radius_m ? ` · ${tg.radius_m} m` : ""}${tg.by ? ` · ${esc(t("per Funk von {node}, {time}", { node: nodeName(tg.by), time: clock(tg.created) }))}` : ""}</span></div>
-      <button class="btn small" data-tg="edit" data-name="${esc(name)}" title="${t("Bearbeiten")}">✎</button>
-      <button class="btn small" data-tg="move" data-name="${esc(name)}" title="${t("Verschieben: Klick in die Karte")}">⌖</button>
-      <button class="btn small" data-tg="del" data-name="${esc(name)}" title="${t("Löschen")}">✕</button></div>`).join("");
+      ${iconButton("edit", t("{name} bearbeiten", { name }), `data-tg="edit" data-name="${esc(name)}"`)}
+      ${iconButton("move", t("{name} verschieben", { name }), `data-tg="move" data-name="${esc(name)}"`)}
+      ${iconButton("trash", t("{name} löschen", { name }), `data-tg="del" data-name="${esc(name)}"`, { danger: true })}</div>`).join("");
   const templates = Object.entries(d.paths || {}).map(([name, p]) => `<div class="site"><div class="txt"><span class="nm">${esc(name)}</span>
       <span class="sub">${esc(p.map(w => w.name).join(" › "))}</span></div>
-      <button class="btn small" data-tg="deltpl" data-name="${esc(name)}" title="${t("Löschen")}">✕</button></div>`).join("");
+      ${iconButton("trash", t("{name} löschen", { name }), `data-tg="deltpl" data-name="${esc(name)}"`, { danger: true })}</div>`).join("");
   return `<div class="sitemgr"><div class="hd2">${t("Ziele")}</div>
     <p class="note" style="margin:0">${t("Benannte Orte, die sich als Wegpunkte wiederverwenden lassen. Eigene Standorte gehen auch direkt.")}</p>
     <p class="note" style="margin:0">${esc(t("Ziele sind zugleich Markierungen für das Feld: „+D NAME Text“ setzt eines an der Position des Absenders, „?D NAME“ macht es zu dessen Einsatz, „?D“ das nächste (Einstellung „Markierungen per Funk“)."))}</p>
@@ -568,15 +570,15 @@ function areasHTML(d) {
   const areas = (d.areas || []).map(a => ea && !ea.isNew && ea.id === a.id ? areaFormHTML(ea)
     : `<div class="site"><div class="txt"><span class="nm">${a.kind === "nogo" ? "⛔ " : "ℹ "}${esc(a.name)}</span>
       <span class="sub">${esc(a.kind === "nogo" ? t("Sperrgebiet") : t("Hinweisgebiet"))} · ${t("{n} Eckpunkte", { n: a.polygon.length })}${a.text ? " · " + esc(a.text) : ""}</span></div>
-      <button class="btn small" data-ar="edit" data-id="${esc(a.id)}" title="${t("Bearbeiten")}">✎</button>
-      <button class="btn small" data-ar="redraw" data-id="${esc(a.id)}" title="${t("Neu zeichnen: Klicks in die Karte, dann Fertig")}">⌖</button>
-      <button class="btn small" data-ar="del" data-id="${esc(a.id)}" title="${t("Löschen")}">✕</button></div>`).join("");
+      ${iconButton("edit", t("{name} bearbeiten", { name: a.name }), `data-ar="edit" data-id="${esc(a.id)}"`)}
+      ${iconButton("area", t("Neu zeichnen: Klicks in die Karte, dann Fertig"), `data-ar="redraw" data-id="${esc(a.id)}"`)}
+      ${iconButton("trash", t("{name} löschen", { name: a.name }), `data-ar="del" data-id="${esc(a.id)}"`, { danger: true })}</div>`).join("");
   const places = (d.places || []).map(p => ep && !ep.isNew && ep.id === p.id ? placeFormHTML(ep)
     : `<div class="site"><div class="txt"><span class="nm">📍 ${esc(p.name)}</span>
       <span class="sub">${p.radius_m} m${p.text ? " · " + esc(p.text) : ""}</span></div>
-      <button class="btn small" data-ar="editp" data-id="${esc(p.id)}" title="${t("Bearbeiten")}">✎</button>
-      <button class="btn small" data-ar="movep" data-id="${esc(p.id)}" title="${t("Verschieben: Klick in die Karte")}">⌖</button>
-      <button class="btn small" data-ar="delp" data-id="${esc(p.id)}" title="${t("Löschen")}">✕</button></div>`).join("");
+      ${iconButton("edit", t("{name} bearbeiten", { name: p.name }), `data-ar="editp" data-id="${esc(p.id)}"`)}
+      ${iconButton("move", t("{name} verschieben", { name: p.name }), `data-ar="movep" data-id="${esc(p.id)}"`)}
+      ${iconButton("trash", t("{name} löschen", { name: p.name }), `data-ar="delp" data-id="${esc(p.id)}"`, { danger: true })}</div>`).join("");
   return `<div class="sitemgr"><div class="hd2">${t("Gebiete und Orte")}</div>
     <p class="note" style="margin:0">${t("Sperrgebiete meidet die Wegführung; der Knoten wird gewarnt, wenn er hinein läuft oder eines voraus liegt. Hinweisgebiete und Orte schicken ihren Text, wenn der Knoten hineinkommt.")}</p>
     <div class="sitelist">${areas || `<p class="note" style="margin:0">${t("Noch keine Gebiete.")}</p>`}</div>
@@ -591,9 +593,9 @@ function areasHTML(d) {
 function suggestionsHTML(list) {
   const rows = list.map(g => `<div class="site"><div class="txt"><span class="nm">${esc(g.name || t(g.reason))}</span>
       <span class="sub">${esc(t(g.reason))} · ${fmt(g.area_m2 / 1e4, 1)} ha</span></div>
-      <button class="btn small" data-ar="showg" data-id="${esc(g.id)}" title="${t("Auf der Karte zeigen")}">⌖</button>
-      <button class="btn small" data-ar="acceptg" data-id="${esc(g.id)}" title="${t("Als Sperrgebiet übernehmen")}">⛔</button>
-      <button class="btn small" data-ar="dismissg" data-id="${esc(g.id)}" title="${t("Verwerfen")}">✕</button></div>`).join("");
+      ${iconButton("pin", t("Auf der Karte zeigen"), `data-ar="showg" data-id="${esc(g.id)}"`)}
+      ${iconButton("check", t("Als Sperrgebiet übernehmen"), `data-ar="acceptg" data-id="${esc(g.id)}"`)}
+      ${iconButton("close", t("Verwerfen"), `data-ar="dismissg" data-id="${esc(g.id)}"`)}</div>`).join("");
   return `<div class="hd2">${t("Vorschläge aus OpenStreetMap")}</div>
     <p class="note" style="margin:0">${t("Militärische Flächen und Flächen ohne Zugang; gestrichelt auf der Karte. Erst übernommene meidet die Wegführung.")}</p>
     <div class="sitelist">${rows || `<p class="note" style="margin:0">${t("Keine offenen Vorschläge.")}</p>`}</div>

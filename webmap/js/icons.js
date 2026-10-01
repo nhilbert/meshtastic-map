@@ -30,11 +30,34 @@ const PATHS = {
   via: '<circle cx="8" cy="8" r="3.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/>',
   // crosshair with a centre dot: ask a node for its position
   locate: '<circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/>',
+  // actions (actions.js and the editors): one symbol per meaning everywhere
+  edit: '<path d="M2.5 13.5h3l7.5-7.5-3-3-7.5 7.5z"/><path d="m9 4.5 2.5 2.5"/>',
+  move: '<path d="M8 1.5v13M1.5 8h13M8 1.5 6.2 3.3M8 1.5l1.8 1.8M8 14.5l-1.8-1.8M8 14.5l1.8-1.8M1.5 8l1.8-1.8M1.5 8l1.8 1.8M14.5 8l-1.8-1.8M14.5 8l-1.8 1.8"/>',
+  trash: '<path d="M2.5 4.5h11M6.5 7v5M9.5 7v5M3.8 4.5l.7 9.5h7l.7-9.5M6 4.5V2.5h4v2"/>',
+  more: '<circle cx="3" cy="8" r=".6"/><circle cx="8" cy="8" r=".6"/><circle cx="13" cy="8" r=".6"/>',
+  list: '<path d="M6 4h8M6 8h8M6 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01"/>',
+  coverage: '<circle cx="8" cy="9" r="1.2"/><path d="M5.3 6.6a3.5 3.5 0 0 0 0 4.8M10.7 6.6a3.5 3.5 0 0 1 0 4.8M3.2 4.5a6.5 6.5 0 0 0 0 9M12.8 4.5a6.5 6.5 0 0 1 0 9"/>',
+  // sends on the mesh: the mark of every action that transmits
+  antenna: '<path d="M8 8v6.5M5.6 5.6a3.4 3.4 0 0 1 4.8 0M3.8 3.8a6 6 0 0 1 8.4 0"/><circle cx="8" cy="7.6" r=".8"/>',
+  check: '<path d="m3 8.5 3 3 7-7"/>',
+  copy: '<rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/>',
+  area: '<path d="M3 4.5 9 2l5 5-2.5 6.5L3.5 12z"/>',
+  place: '<circle cx="8" cy="8" r="5.5" stroke-dasharray="2 2"/><circle cx="8" cy="8" r="1.3"/>',
+  // the link tool's endpoints, like the A/B marks on the map
+  endA: '<rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M5.6 11.5 8 4.5l2.4 7M6.4 9.2h3.2"/>',
+  endB: '<rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M6 4.5v7h2.6a1.8 1.8 0 0 0 0-3.6H6h2.2a1.7 1.7 0 0 0 0-3.4z"/>',
 };
+PATHS.pin = PATHS.tracker;
+PATHS.scene = PATHS.cube;
 
 export function symbolSVG(name) {
   const p = PATHS[name] || PATHS.client;
   return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+}
+
+// An icon-only button of the editors: the label is its tooltip and accessible name.
+export function iconButton(icon, label, attrs = "", { danger = false } = {}) {
+  return `<button type="button" class="btn small icon${danger ? " danger" : ""}" ${attrs} aria-label="${esc(label)}" title="${esc(label)}">${symbolSVG(icon)}</button>`;
 }
 
 // Refreshing unread/task counts must preserve the header's icon and accessible text.

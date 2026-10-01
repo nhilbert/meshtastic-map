@@ -6,7 +6,7 @@
 import { locale, t } from "./i18n.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { symbolSVG } from "./icons.js";
-import { registerActions } from "./actions.js";
+import { G, actionsFor, bindToolbar, registerActions, toolbarHTML } from "./actions.js";
 
 const SORTS = {
   last: [() => t("zuletzt gehört"), (a, b) => (b.last || 0) - (a.last || 0)],
@@ -19,20 +19,25 @@ const L = { api: null, data: null, filter: "", sort: "last", built: false, req: 
 const POLL_MS = 1500;
 
 // api: { store, toast, focusNode(id), message(id), assign(id), connected(), refreshNodes(),
-//        showRoute(traceroute | null), openList() }
+//        showRoute(traceroute | null), openList(), panTo(id), feature(id) }
 export function initNodeList(api) {
   L.api = api;
   L.sort = api.store.get("nodes.sort", "last");
-  // on the map: the node's actions; a request's result shows under its row in the list
-  registerActions("node", ref => {
-    const list = { label: t("In der Knotenliste zeigen"), run: () => showInList(ref.id) };
-    if (ref.own) return [list];
+  // a node's actions (map popup and menu, the opened row here); a request's result shows under
+  // the node's row in the list
+  registerActions("node", (ref, _f, where) => {
+    const other = where === "list"
+      ? { label: t("Auf der Karte zeigen"), icon: "pin", group: G.view, quick: false, run: () => L.api.focusNode(ref.id),
+        disabled: ref.hasPos === false ? t("keine Position") : null }
+      : { label: t("In der Knotenliste zeigen"), icon: "list", group: G.view, quick: false, run: () => showInList(ref.id) };
+    if (ref.own) return [other];
     const off = L.api.connected() ? null : t("Gerät nicht verbunden");
+    const ask = kind => () => { request(ref.id, kind); if (where === "map") showInList(ref.id); };
     return [
-      { label: t("Direktnachricht"), run: () => L.api.message(ref.id) },
-      { label: t("Traceroute"), radio: true, disabled: off, run: () => { request(ref.id, "traceroute"); showInList(ref.id); } },
-      { label: t("Position anfragen"), radio: true, disabled: off, run: () => { request(ref.id, "position"); showInList(ref.id); } },
-      list,
+      { label: t("Direktnachricht"), short: t("Nachricht"), icon: "message", group: G.main, run: () => L.api.message(ref.id) },
+      { label: t("Traceroute"), icon: "route", group: G.radio, radio: true, disabled: off, run: ask("traceroute") },
+      { label: t("Position anfragen"), short: t("Position"), icon: "locate", group: G.radio, radio: true, disabled: off, run: ask("position") },
+      other,
     ];
   });
   poll();
@@ -42,6 +47,7 @@ export function initNodeList(api) {
 function showInList(id) {
   L.api.openList();
   if (L.filter) { L.filter = ""; const f = $("#nlFilter"); if (f) f.value = ""; fill(); }
+  L.open = id;
   L.flash = { id, until: Date.now() + 2000 };  // survives the redraws of the next polls
   fill();
   document.querySelector(`#t_nodes [data-focus="${CSS.escape(id)}"]`)?.closest("tr")
@@ -123,7 +129,7 @@ function build() {
         <label class="inline">${t("Sortieren")}<select id="nlSort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}">${l()}</option>`).join("")}</select></label></div>
       <p class="note nl-count" style="margin:6px 0 4px"></p>
       <div class="wrap nl-body"></div>
-      <p class="note">${t("Gleiche Quelle und Filter wie die Ebene „Meshtastic-Knoten“ (⚙ dort). Klick auf einen Knoten mit Position zeigt ihn auf der Karte, ✉ schreibt ihm direkt, ⚑ weist ihm ein Ziel zu.")}
+      <p class="note">${t("Gleiche Quelle und Filter wie die Ebene „Meshtastic-Knoten“ (⚙ dort). Klick auf einen Knoten zeigt seine Aktionen (dieselben wie im Popup auf der Karte) und rückt ihn auf der Karte ins Bild.")}
         ${t("Traceroute und Positionsanfrage gehen über das Funknetz, auf dem Kanal, auf dem der Knoten gehört wurde; das Ergebnis steht unter dem Knoten.")}</p></div>`;
   $("#nlFilter").value = L.filter;
   $("#nlSort").value = L.sort;
@@ -148,34 +154,42 @@ function fill() {
   const shown = nodes.filter(n => !q || [n.id, n.short, n.long, n.hw].some(v => (v || "").toLowerCase().includes(q)))
     .sort(SORTS[L.sort][1]);
   const withPos = nodes.filter(n => n.lat != null).length;
-  const off = L.api.connected() ? "" : `disabled title="${t("Gerät nicht verbunden")}"`;
   // the drawn route goes with its result: a new traceroute or ✕ takes it off the map
   if (L.shown && !shownTrace()) { L.shown = null; L.api.showRoute(null); }
   $("#t_nodes .nl-count").textContent = t("{n} Knoten, {m} mit Position", { n: nodes.length, m: withPos })
     + (q ? " · " + t("{n} passen zum Filter", { n: shown.length }) : "");
   body.innerHTML = shown.length ? `<table class="nodes"><tr><th>${t("Knoten")}</th><th>${t("Hops")}</th><th>SNR</th><th>${t("gehört")}</th></tr>
-    ${shown.map(n => `<tr class="${n.own ? "own" : ""}${L.flash && L.flash.id === n.id && Date.now() < L.flash.until ? " flash" : ""}">
-      <td><button class="lnk nodebtn" data-focus="${esc(n.id)}" ${n.lat == null ? `disabled title="${t("keine Position")}"` : `title="${t("auf der Karte zeigen")}"`}>
+    ${shown.map(n => `<tr class="${n.own ? "own" : ""}${L.open === n.id ? " open" : ""}${L.flash && L.flash.id === n.id && Date.now() < L.flash.until ? " flash" : ""}">
+      <td><button class="lnk nodebtn" data-focus="${esc(n.id)}" aria-expanded="${L.open === n.id}" title="${t("Aktionen zeigen")}">
         <span class="sn">${esc(n.short || n.id.slice(-4))}</span> ${esc(n.long || n.id)}</button>
-        <div class="sub">${esc(n.id)}${n.hw ? " · " + esc(n.hw) : ""}${n.battery != null ? " · " + t("Akku {n} %", { n: n.battery }) : ""}${n.own ? " · " + t("eigenes Gerät") : ""}</div>
-        ${n.own ? "" : `<div class="nl-acts"><button class="btn small quiet" data-msg="${esc(n.id)}" aria-label="${esc(t("{name} direkt schreiben", { name: n.long || n.id }))}" title="${t("Direktnachricht")}">${symbolSVG("message")}</button>
-        <button class="btn small quiet" data-assign="${esc(n.id)}" aria-label="${esc(t("{name} ein Ziel zuweisen", { name: n.long || n.id }))}" title="${t("Ziel zuweisen")}">${symbolSVG("target")}</button>
-        <button class="btn small quiet" data-trace="${esc(n.id)}" aria-label="${esc(t("Traceroute zu {name}", { name: n.long || n.id }))}" ${off || `title="${t("Traceroute")}"`}>${symbolSVG("route")}</button>
-        <button class="btn small quiet" data-locate="${esc(n.id)}" aria-label="${esc(t("Position von {name} anfragen", { name: n.long || n.id }))}" ${off || `title="${t("Position anfragen")}"`}>${symbolSVG("locate")}</button></div>`}</td>
+        <div class="sub">${esc(n.id)}${n.hw ? " · " + esc(n.hw) : ""}${n.battery != null ? " · " + t("Akku {n} %", { n: n.battery }) : ""}${n.own ? " · " + t("eigenes Gerät") : ""}</div></td>
       <td class="n">${n.hops ?? "–"}</td><td class="n">${n.snr != null ? fmt(n.snr, 1) : "–"}</td><td class="n">${age(n.last)}</td></tr>
+      ${L.open === n.id ? `<tr class="nl-tools"><td colspan="4" data-tools="${esc(n.id)}">${toolbarHTML(rowActions(n))}</td></tr>` : ""}
       ${resultRows(n)}`).join("")}
     </table>` : `<p class="note">${nodes.length ? t("Kein Knoten passt zum Filter.") : esc((L.data && L.data.note) || t("Keine Knoten."))}</p>`;
-  body.querySelectorAll("[data-focus]").forEach(b => b.addEventListener("click", () => L.api.focusNode(b.dataset.focus)));
-  body.querySelectorAll("[data-msg]").forEach(b => b.addEventListener("click", () => L.api.message(b.dataset.msg)));
-  body.querySelectorAll("[data-assign]").forEach(b => b.addEventListener("click", () => L.api.assign(b.dataset.assign)));
-  body.querySelectorAll("[data-trace]").forEach(b => b.addEventListener("click", () => request(b.dataset.trace, "traceroute")));
-  body.querySelectorAll("[data-locate]").forEach(b => b.addEventListener("click", () => request(b.dataset.locate, "position")));
+  // a click on the name opens the row's toolbar (one at a time) and brings the node into view
+  body.querySelectorAll("[data-focus]").forEach(b => b.addEventListener("click", () => {
+    const id = b.dataset.focus;
+    L.open = L.open === id ? null : id;
+    if (L.open) L.api.panTo(id);
+    fill();
+    body.querySelector(`[data-focus="${CSS.escape(id)}"]`)?.focus();
+  }));
+  body.querySelectorAll("[data-tools]").forEach(cell => {
+    const n = nodes.find(x => x.id === cell.dataset.tools);
+    if (n) bindToolbar(cell, rowActions(n), n.long || n.id);
+  });
   body.querySelectorAll("[data-hide]").forEach(b => b.addEventListener("click", () => { L.hidden.add(b.dataset.hide); fill(); }));
   body.querySelectorAll("[data-route]").forEach(b => b.addEventListener("click", () => {
     L.shown = L.shown === b.dataset.route ? null : b.dataset.route;
     L.api.showRoute(shownTrace());
     fill();
   }));
+}
+
+// The same actions as the node's popup on the map, in the list's variant.
+function rowActions(n) {
+  return actionsFor({ type: "node", id: n.id, own: !!n.own, hasPos: n.lat != null }, L.api.feature(n.id), "list");
 }
 
 // The traceroute of L.shown while its result is still there and not hidden, else null.

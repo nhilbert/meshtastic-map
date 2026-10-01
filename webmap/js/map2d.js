@@ -1,7 +1,7 @@
 // 2D view: Leaflet with OpenStreetMap. Draws layer payloads and the current link.
 import { t } from "./i18n.js";
 import { badgeHTML } from "./icons.js";
-import { actionsFor, actionsHTML, bindActions, openMenu } from "./actions.js";
+import { actionsFor, bindToolbar, openMenu, toolbarHTML } from "./actions.js";
 import { esc, featureHTML, fmt } from "./util.js";
 
 export class Map2D {
@@ -74,10 +74,10 @@ export class Map2D {
             const el = document.createElement("div");
             el.innerHTML = featureHTML(p);
             const acts = actionsFor(p._ref, f), box = el.querySelector(".acts");
-            box.innerHTML = actionsHTML(acts);
-            bindActions(box, acts, () => this.map.closePopup());
+            box.innerHTML = toolbarHTML(acts);
+            bindToolbar(box, acts, p._title || "", () => this.map.closePopup());
             return el.firstElementChild;
-          });
+          }, { minWidth: 280, maxWidth: 360 });
           lyr.on("contextmenu", e => {
             L.DomEvent.stop(e);
             this.featureMenuAt = Date.now();
@@ -109,6 +109,13 @@ export class Map2D {
     m.openPopup();
     return true;
   }
+  // A node selected in the list: into view, without its popup (the list shows its actions).
+  panToNode(id) {
+    const m = this.nodeMarkers[id];
+    if (m && this.map.hasLayer(m)) this.map.panTo(m.getLatLng());
+  }
+  // The node's feature, for actions that need more than its ID (link endpoint).
+  nodeFeature(id) { return this.nodeMarkers[id]?.feature || null; }
   // Marker for a position that is being placed (new site), null removes it.
   setTemp(lat, lon) {
     if (this.temp) { this.map.removeLayer(this.temp); this.temp = null; }

@@ -5,7 +5,8 @@
 // scene as a background task. Switching reloads the page: the 3D view is built for one scene.
 import { t } from "./i18n.js";
 import { esc, fmt, getJSON, postJSON } from "./util.js";
-import { registerActions } from "./actions.js";
+import { G, registerActions } from "./actions.js";
+import { iconButton } from "./icons.js";
 
 const E = { data: null, plan: null, form: null, msg: "", api: null, box: null, loaded: null };
 const SIZES = [1, 2, 3, 4, 5];
@@ -15,11 +16,11 @@ const SIZES = [1, 2, 3, 4, 5];
 export function initScenes(api) {
   E.api = api;
   registerActions("scene", ref => [
-    ref.active ? null : { label: t("Verwenden"), run: () => use(ref.id) },
-    { label: t("Löschen"), danger: true, run: () => inManager(() => remove(ref.id)) },
+    ref.active ? null : { label: t("Verwenden"), icon: "check", group: G.main, run: () => use(ref.id) },
+    { label: t("Löschen …"), icon: "trash", danger: true, run: () => inManager(() => remove(ref.id)) },
   ]);
   registerActions("map", ({ lat, lon }) => [
-    { label: t("Szene hier erstellen"), run: () => inManager(() => newAt(lat, lon)) },
+    { label: t("Szene hier erstellen …"), icon: "scene", group: G.main, run: () => inManager(() => newAt(lat, lon)) },
   ]);
 }
 
@@ -63,8 +64,8 @@ function rowHTML(s) {
   const n = esc(s.name);
   const sub = [`${fmt(s.size_km[0], 1)} × ${fmt(s.size_km[1], 1)} km`, gb(s.mb), (s.created || "").slice(0, 10)].filter(Boolean).join(" · ");
   return `<div class="site"><div class="txt"><span class="nm">${n}${s.active ? ` <span class="chip ok">${t("verwendet")}</span>` : ""}</span><span class="sub">${esc(sub)}</span></div>
-    ${s.active ? "" : `<button class="btn small" data-use="${n}" title="${t("Diese Szene verwenden (lädt die Seite neu)")}">${t("Verwenden")}</button>`}
-    <button class="btn small" data-del="${n}" aria-label="${esc(t("{name} löschen", { name: s.name }))}" title="${t("Löschen")}">✕</button></div>`;
+    ${s.active ? "" : iconButton("check", t("Diese Szene verwenden (lädt die Seite neu)"), `data-use="${n}"`)}
+    ${iconButton("trash", t("{name} löschen", { name: s.name }), `data-del="${n}"`, { danger: true })}</div>`;
 }
 
 function formHTML() {

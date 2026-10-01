@@ -42,15 +42,20 @@ pixel-exact representations of the available map data.
   map picking returns to the originating drawer form. The light/dark choice is remembered.
 - **Ebenen**: each layer has a checkbox and a ⚙ with its settings and legend. Settings are
   remembered per browser.
-- **Objects on the map** have their actions in the popup (click) and in a menu (right click,
-  long press on touch screens): nodes *Direktnachricht*, *Traceroute* and *Position anfragen*
-  (📡 = sends on the mesh, disabled without a device; the result shows under the node in the
-  node list), *Ziel zuweisen* or *Einsatz anzeigen*; sites *Bearbeiten*, *Verschieben*,
-  *Abdeckung simulieren*, *Löschen*; targets, areas, places and OSM suggestions what their
-  editors offer; scenes *Verwenden*, *Löschen*; anything usable as an endpoint *als A* / *als B*.
-  A right click on a free spot offers to create a site, target, place or scene there, to set A
-  or B, or to copy the coordinates. Editing opens the editor in the side panel. Only the 2D
-  map has the menu so far.
+- **Objects on the map** have their actions in one logic everywhere (`webmap/js/actions.js`):
+  the popup (click) ends in a toolbar with up to four actions (icon and short label) and
+  *Mehr*, which opens the full menu; a right click (long press on touch screens) opens the same
+  menu directly; a row of the node list opens the same toolbar. Actions keep a fixed group
+  order (main action · radio · further steps · other view · link A/B · copy · delete, with a
+  line between groups); one symbol per meaning (`icons.js`), also on the editors' buttons in the
+  side panel; actions that transmit carry the amber antenna (disabled without a device, the
+  reason in the tooltip); a label ending in "…" asks or opens a form; deleting is last, red,
+  never in the toolbar, and asks. Nodes: *Nachricht*, *Traceroute*, *Position*, *Ziel …* or
+  *Einsatz*, then node list, A/B; sites: *Bearbeiten*, *Verschieben*, *Abdeckung*, then A/B,
+  *Löschen*; targets, areas, places, OSM suggestions and scenes what their editors offer. A
+  right click on a free spot offers to create a site, target, place or scene there, to set A or
+  B, or to copy the coordinates. Editing opens the editor in the side panel. Only the 2D map
+  has the menu so far.
 - **Strecke A → B** (first layer) is the direct-link calculator. While it is on, a click in the
   map sets A or B ("Klick in die Karte setzt: A | B | aus", Esc ends it); while it is off, map
   clicks do nothing. Sites, nodes and walk points have "als A" / "als B" in their popup, which
@@ -82,8 +87,8 @@ pane's bar, or `--device`).
   with the firmware's reason. Received ones show sender, time, SNR and hops; the sender's name
   shows the node on the map.
 - **Direct messages** go to a node with channel 0 (the firmware encrypts them for the recipient
-  when it knows its key). Start one with **Direktnachricht** in a node's popup on the map or ✉ in the node
-  list. A new direct message pops up as a notice; unread counts are in the header, the pane's bar
+  when it knows its key). Start one with **Nachricht** in a node's popup on the map or in its row of the
+  node list. A new direct message pops up as a notice; unread counts are in the header, the pane's bar
   and the conversation list.
 - **Alle Pakete** lists the packets received since the map app started (time, sender, recipient,
   type, channel, SNR, hops): the traffic around your node.
@@ -92,10 +97,10 @@ pane's bar, or `--device`).
 The **Knoten** tab in the right panel lists the same nodes as the layer *Meshtastic-Knoten* (same
 source, live or export, and the same age filter), including those without a position: short and
 long name, ID, hardware, battery, hops, SNR, last heard. Filter by name or ID, sort by last heard,
-hops, SNR or name. A click on a node with a position centres it on the map and opens its popup;
-✉ opens a direct conversation.
+hops, SNR or name. A click on a node opens its row with the same toolbar as its popup on the map
+and brings it into view on the map.
 
-Two buttons per node send over the mesh (`mapapp/node_requests.py`), on the channel the device
+Two actions per node send over the mesh (`mapapp/node_requests.py`), on the channel the device
 heard the node on:
 
 - **Traceroute** with the device's hop limit (unlike the walk probes, which stay at hop limit 0).
@@ -171,7 +176,7 @@ simulated radio first.
   still be created. ⚙ has the settings (channel of the messages, their language, travel
   profile, arrival radius, minimum gap between unrequested messages, …), **Ziele** the editor
   for named targets.
-- **＋ Einsatz** (also *Ziel zuweisen* in a node's popup or ⚑ in the node list): pick the node
+- **＋ Einsatz** (also *Ziel …* in a node's popup or its row in the node list): pick the node
   (favourites first) and build the path: waypoints from the targets, the own sites or map
   clicks, each a *Halt* (announced, confirmed, may carry *Ankunft bis* and *Warten bis* as
   `12:55` or `+15`) or a *Durchgang* (via: with a road graph the route runs through it and
@@ -461,8 +466,10 @@ square around a point and the largest side of a box) and draws
 the result on both views. Feature conventions (`_style`, `_title`, `_fields`, `_label`, `_z`,
 `_icon`, `_endpoint`, `_ref`) and raster payloads are documented in `registry.py`. `_ref`
 (`{"type", "id", …}`) says what a feature is; the page's modules register their actions per type
-with `registerActions(type, provider)` (`webmap/js/actions.js`), and popup and right-click menu
-show them, so a new object type needs a `_ref` on the server and a provider on the page. `_icon` draws a badge
+with `registerActions(type, provider)` (`webmap/js/actions.js`; each action has a label, an
+icon from `icons.js`, a group, optionally a short label, `radio`, `danger`, `quick: false` or a
+`disabled` reason), and toolbar and menu show them, so a new object type needs a `_ref` on the
+server and a provider on the page. `_icon` draws a badge
 with a symbol (router, tracker, client, sensor, home) and a short text instead of a circle, in
 2D as a marker and in 3D as a label at fixed screen size; nodes use it with the short name,
 coloured by hops or SNR, faded when not heard for 2 h, your own node with a turquoise ring.

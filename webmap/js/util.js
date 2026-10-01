@@ -34,11 +34,12 @@ export function grade(p) {
 }
 
 // Popup / info HTML for a GeoJSON feature following the layer conventions.
-// The popup of a feature; its buttons (actions.js) go into .acts when it opens.
+// The popup of a feature: heading, the fields as label over value, then its toolbar
+// (actions.js, filled when it opens).
 export function featureHTML(props) {
-  const rows = Object.entries(props._fields || {})
-    .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
-  return `<div class="pop"><h3>${esc(props._title || "")}</h3><table>${rows}</table><div class="acts"></div></div>`;
+  const facts = Object.entries(props._fields || {})
+    .map(([k, v]) => `<div class="fact"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
+  return `<div class="pop"><h3>${esc(props._title || "")}</h3>${facts ? `<dl class="facts">${facts}</dl>` : ""}<div class="acts"></div></div>`;
 }
 
 export function legendHTML(lg) {
