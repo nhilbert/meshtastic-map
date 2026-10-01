@@ -165,7 +165,8 @@ class TileServer:
 def test_download_continues_a_part_file(tmp_path, monkeypatch):
     from meshplay.sim import lidar
 
-    data = bytes(range(256)) * 4000
+    # small: some Windows network filters (seen with Norton) drop the end of large loopback sends
+    data = bytes(range(256)) * 400
     server = TileServer({"t.laz": data})
     monkeypatch.setattr(lidar, "TILE_URL", server.url)
     try:
