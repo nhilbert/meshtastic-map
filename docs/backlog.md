@@ -4,6 +4,21 @@ Open work, roughly by value. Background for the elevation items: the research of
 which states publish what (summarised in [scenes.md](scenes.md), and in
 `src/meshplay/sim/sources/`).
 
+## Passive walks (Mesh-Empfang)
+
+- **Range test as denominator.** A sending node's range test packets (`seq N`) would show which
+  numbers were lost along a walk. Needs a real export with range test packets (transmitting needs
+  the owner's OK: module on, private channel, hop limit 0) to see how the app writes them in
+  `payload`; then also correct the note in `scripts/measure_logger.py` (the app's export works
+  with nRF52 receivers too).
+- **Debug-log import** (Android app, text export): adds RSSI, the packet ID and the role of nodes
+  (router, `CLIENT_MUTE`), a further criterion for relay candidates.
+- **Delete a walk** in *Rundgänge importieren* (today by hand in `data/heard/` and `data/tracks/`).
+- **Details tab "Mesh-Empfang"**: table of relay bytes (count, SNR median, grade, candidates);
+  a click sets the byte filter.
+- Lines to candidates on a click on a single packet; timeline; hexagon tiles over several walks;
+  traceroute walks and their GPX upload in the same section (then named *Rundgänge*).
+
 ## Elevation data and scenes
 
 - **Cache the OpenStreetMap footprints per scene.** The raster states (Lower Saxony,

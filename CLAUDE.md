@@ -49,6 +49,7 @@ src/meshplay/config.py      settings from .env; DEFAULT_PRESET; PROJECT_ROOT
 src/meshplay/device.py      connect()/find_port() for the serial device
 src/meshplay/packets.py     protobuf/packet dicts -> plain JSON
 src/meshplay/walk.py        walk data: load positions, probes, GPX; place probes on the track
+src/meshplay/applog.py      the Android app's CSV packet export (passive walks); relay candidates
 src/meshplay/probe.py       traceroute probes (shared by probe_walk.py and the map app task)
 src/meshplay/sim/           itu.py, p1812.py (verbatim ITU port), models.py, scene.py, link.py,
                             predictor.py, compare.py, walkcompare.py, sites.py, view3d.py,
@@ -59,12 +60,12 @@ src/meshplay/mapapp/        server.py (HTTP + API), registry.py (Layer, Setting,
                             tasks), sites_store.py (sites.json editing), device.py (live USB link,
                             sending texts, packet listeners), fake_device.py (--simulate),
                             messages.py (message store for the pane), airtime.py (airtime
-                            panel), i18n.py (translations),
+                            panel), i18n.py (translations), heard_store.py (passive walks),
                             tiles.py (map tile cache), scenes.py (scene manager + build
                             task), coord/ (coordination mode: missions.py
                             decisions + API, phrases.py radio texts, routing.py + osm.py road
                             graph, areas.py, paths.py, settings.py, store.py)
-webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, scenes.js, messages.js,
+webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, imports.js, scenes.js, messages.js,
                             nodelist.js, coord.js, panels.js, map2d.js (Leaflet), map3d.js
                             (three.js), util.js, icons.js, i18n.js, export.js (GPX/CSV)
 webmap/vendor/, i18n/       served libraries and fonts (offline use); translation catalogues
@@ -85,7 +86,8 @@ texts have their own catalogue in `coord/phrases.py` (per mission language, not 
 addresses, street names, node IDs, names of people or their nodes. Use placeholders
 (`!abcd1234`, sites `HOME`/`ROOF`, public places for example coordinates). Everything personal
 lives in `data/` and `.env`, which are git-ignored: packet and probe logs, GPX tracks,
-`data/sim/sites.json` (holds addresses), exports.
+`data/sim/sites.json` (holds addresses), exports, `data/heard/` (names and positions of other
+people's nodes; the wording of their text messages is never stored).
 
 **Radio.** Sending on the mesh reaches other people's devices. Never transmit (send_text,
 traceroutes, starting a probe task, changing device config) without the owner's explicit OK

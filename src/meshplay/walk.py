@@ -10,7 +10,7 @@ import statistics
 import webbrowser
 import xml.etree.ElementTree as ET
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -98,8 +98,16 @@ def typical_interval_s(points: list[dict]) -> float | None:
     return float(statistics.median(gaps)) if gaps else None
 
 
-def position_at(track: list[dict], t: datetime) -> tuple[float, float] | None:
-    """(lat, lon) on a time-sorted track at time t, interpolated; None outside the track."""
+# A GPX recording with a longer pause says nothing about where the walker was in between: no
+# position is interpolated across it.
+MAX_GAP_S = 900.0
+
+
+def position_at(
+    track: list[dict], t: datetime, max_gap_s: float | None = MAX_GAP_S
+) -> tuple[float, float] | None:
+    """(lat, lon) on a time-sorted track at time t, interpolated; None outside the track or
+    inside a gap longer than max_gap_s."""
     times = [p["time"] for p in track]
     i = bisect.bisect_left(times, t)
     if i == len(track) or (i == 0 and t < times[0]):
@@ -108,6 +116,8 @@ def position_at(track: list[dict], t: datetime) -> tuple[float, float] | None:
     if b["time"] == t or i == 0:
         return b["lat"], b["lon"]
     a = track[i - 1]
+    if max_gap_s is not None and (b["time"] - a["time"]).total_seconds() > max_gap_s:
+        return None
     f = (t - a["time"]) / (b["time"] - a["time"])
     return a["lat"] + f * (b["lat"] - a["lat"]), a["lon"] + f * (b["lon"] - a["lon"])
 
@@ -144,8 +154,15 @@ def probe_points(probes: list[dict], track: list[dict]) -> list[dict]:
 
 def load_gpx(path: Path) -> list[dict]:
     """Track points with a timestamp, from any GPX 1.0/1.1 file."""
+    return parse_gpx(ET.parse(path).getroot())
+
+
+def parse_gpx(root: ET.Element | str) -> list[dict]:
+    """Track points with a timestamp from a parsed GPX document or its text."""
+    if isinstance(root, str):
+        root = ET.fromstring(root)
     track = []
-    for el in ET.parse(path).getroot().iter():
+    for el in root.iter():
         if not el.tag.endswith("trkpt"):
             continue
         time_el = next((c for c in el if c.tag.endswith("time")), None)
@@ -160,6 +177,57 @@ def load_gpx(path: Path) -> list[dict]:
             }
         )
     return sorted(track, key=lambda p: p["time"])
+
+
+def load_heard(path: Path) -> tuple[dict, list[dict]]:
+    """(meta, records) of a passive walk (data/heard/<name>.jsonl, written by the map app)."""
+    meta, records = {}, []
+    for line in path.open(encoding="utf-8"):
+        if not line.strip():
+            continue
+        r = json.loads(line)
+        if "meta" in r:
+            meta = r["meta"]
+            continue
+        r["time"] = datetime.fromisoformat(r["time"])
+        records.append(r)
+    return meta, records
+
+
+def heard_points(records: list[dict], track: list[dict], receiver: int | None) -> list[dict]:
+    """Packets of other nodes placed on the track by time; packets in track gaps are left out."""
+    from meshplay.applog import hops
+
+    points = []
+    for r in records:
+        if r["from"] == receiver:
+            continue
+        pos = position_at(track, r["time"])
+        if pos is not None:
+            points.append({**r, "lat": pos[0], "lon": pos[1], "hops": hops(r)})
+    return points
+
+
+def heard_windows(
+    records: list[dict], receiver: int | None, t0: datetime, t1: datetime, window_s: float
+) -> list[tuple[datetime, datetime, str]]:
+    """The walk in windows of window_s: "rx" (another node heard), "quiet" (only the receiving
+    device's own packets: it was logging, nothing came in) or "none" (no data at all)."""
+    out = []
+    times_rx = sorted(r["time"] for r in records if r["from"] != receiver)
+    times_own = sorted(r["time"] for r in records if r["from"] == receiver)
+
+    def any_in(times: list[datetime], a: datetime, b: datetime) -> bool:
+        i = bisect.bisect_left(times, a)
+        return i < len(times) and times[i] < b
+
+    a, step = t0, timedelta(seconds=window_s)
+    while a < t1:
+        b = min(a + step, t1)
+        state = "rx" if any_in(times_rx, a, b) else "quiet" if any_in(times_own, a, b) else "none"
+        out.append((a, b, state))
+        a = b
+    return out
 
 
 def classify_track(track: list[dict], points: list[dict], window_s: float) -> None:

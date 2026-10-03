@@ -10,6 +10,7 @@ import { initNodeList, renderNodeList } from "./nodelist.js";
 import { LANGS, lang, loadCatalogue, locale, setLang, t, translateStatic } from "./i18n.js";
 import { renderLink, renderWalk } from "./panels.js";
 import { initScenes, openNewScene, renderScenes } from "./scenes.js";
+import { initImports, renderImports } from "./imports.js";
 import { initSites, renderSites } from "./sites.js";
 import { initTasks, openTaskForm, pollSoon, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
 import { $, css, esc, featureHTML, fmt, getJSON, grade, legendHTML, postJSON } from "./util.js";
@@ -450,6 +451,7 @@ const MANAGED = {
   scene: ["scenes", () => t("Szenen verwalten")],
   coord: ["coord", () => t("Einsätze in der Koordination")],
   coverage: ["coverage", () => t("Abdeckung simulieren")],
+  heard: ["imports", () => t("Rundgänge verwalten")],
 };
 function initLayers() {
   for (const st of Object.values(S.layers)) clearTimeout(st.timer);
@@ -571,9 +573,10 @@ async function reloadApp() {
   try { S.app = await getJSON("api/app"); initLayers(); renderSites($("#sitesBox")); } catch (e) { toast(e.message, { bad: true }); }
 }
 
-function showCoverage(file) {
-  const saved = store.get("layer.coverage", {}) || {};
-  store.set("layer.coverage", { ...saved, enabled: true, open: true, values: { ...(saved.values || {}), file } });
+// Switch a layer on with the given values (a finished task or import shows its result).
+function showLayer(id, values) {
+  const saved = store.get("layer." + id, {}) || {};
+  store.set("layer." + id, { ...saved, enabled: true, open: true, values: { ...(saved.values || {}), ...values } });
   reloadApp();
 }
 
@@ -593,12 +596,9 @@ function uploadGPX(job) {
         toast(t("{name}: die Spur liegt zeitlich nicht im Rundgang – falsche Datei?", { name: res.name }), { bad: true });
       const date = new Date(job.started * 1000);
       const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-      const saved = store.get("layer.walk", {}) || {};
-      store.set("layer.walk", { ...saved, enabled: true, open: true,
-        values: { ...(saved.values || {}), date: iso, tracker: "probe:" + job.params.to, gpx: res.name } });
       toast(t("{name}: {n} Punkte hochgeladen", { name: res.name, n: res.points }));
       status(t("bereit"));
-      reloadApp();
+      showLayer("walk", { date: iso, tracker: "probe:" + job.params.to, gpx: res.name });
     } catch (e) { toast(t("GPX-Upload: {error}", { error: e.message }), { bad: true }); status(e.message, true); }
   });
   inp.click();
@@ -606,7 +606,7 @@ function uploadGPX(job) {
 
 function taskActions(job) {
   if (job.kind === "coverage" && job.state === "fertig" && job.result && job.result.file)
-    return [[t("Anzeigen"), () => showCoverage(job.result.file)]];
+    return [[t("Anzeigen"), () => showLayer("coverage", { file: job.result.file })]];
   if (job.kind === "probe" && job.state === "fertig" && job.result && job.result.sent)
     return [[t("GPX-Spur hochladen …"), () => uploadGPX(job)]];
   // the 3D view is built for one scene: a new scene in use needs a fresh page
@@ -758,6 +758,11 @@ function bindUI() {
   }
   initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast, openPanel: () => showSection("sites") });
   renderSites($("#sitesBox"));
+  initImports({ toast, showLayer, changed: reloadApp, fit: box => {
+    if (document.body.classList.contains("is3d")) setView("2d");
+    map2d.fitBox(box);
+  } });
+  renderImports($("#importsBox"));
   // areas of task forms are picked on the 2D map: the rectangle and preview are drawn there
   setFormMap({
     pick: (label, count, cb) => {
