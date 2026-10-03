@@ -3,7 +3,9 @@
 A layer returns one of two payloads from data():
 
   vector  a GeoJSON FeatureCollection (WGS84). Per feature, optional properties drive display:
-            _style     {"color", "fillColor", "radius", "weight", "opacity", "dash"}
+            _style     {"color", "fillColor", "radius", "weight", "opacity", "dash"}; a point
+                       with "shape": "hex" is a hexagon of "size" px (default 18) with a ring in
+                       the theme's contrast colour (or "ring") and an optional "text" inside
             _title     popup/tooltip heading
             _fields    {label: value} shown in the popup
             _z         height above ground in the 3D view [m] (default 2)

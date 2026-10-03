@@ -9,13 +9,21 @@ from meshplay.applog import MAX_RELAY_KM, hops, node_id, relay_candidates, relay
 from meshplay.mapapp.heard_store import heard_dir, list_walks
 from meshplay.mapapp.i18n import N_, _
 from meshplay.mapapp.registry import Context, Layer, Setting, collection, feature, line
-from meshplay.mapapp.style import GREY, RED, SNR_BANDS, snr_color
-from meshplay.walk import heard_points, heard_windows, load_gpx, load_heard, position_at
+from meshplay.mapapp.style import GREY, RED, SNR_BANDS, hex_style, snr_color
+from meshplay.walk import (
+    distance_m,
+    heard_points,
+    heard_windows,
+    load_gpx,
+    load_heard,
+    position_at,
+)
 
+# the track stays in the background so the markers stand out
 TRACK_STYLE = {
-    "rx": {"color": "#1a9850", "weight": 4, "opacity": 0.7},
-    "quiet": {"color": RED, "weight": 4, "opacity": 0.7},
-    "none": {"color": GREY, "weight": 3, "opacity": 0.7, "dash": "6 8"},
+    "rx": {"color": "#1a9850", "weight": 3, "opacity": 0.55},
+    "quiet": {"color": RED, "weight": 3, "opacity": 0.55},
+    "none": {"color": GREY, "weight": 3, "opacity": 0.55, "dash": "4 6"},
 }
 TRACK_LABEL = {  # German source texts
     "rx": N_("Empfang"),
@@ -40,6 +48,7 @@ RELAY_COLORS = [
     "#17becf",
 ]
 CANDIDATE_COLOR = "#00b3b3"
+STACK_M = 15.0  # packets closer than this to each other are drawn as one marker with a count
 
 
 def relay_key(p: dict) -> str:
@@ -168,8 +177,13 @@ class HeardLayer(Layer):
         sel = values["relay"] or ""
         shown = [p for p in points if not sel or p["key"] == sel]
         by_relay = values["color"] == "relay"
-        for p in shown:
-            features.append(self._point(p, nodes, colors[p["key"]] if by_relay else None))
+        for group in stacks(shown):
+            main_key = Counter(p["key"] for p in group).most_common(1)[0][0]
+            color = colors[main_key] if by_relay else None
+            if len(group) == 1:
+                features.append(self._point(group[0], nodes, color))
+            else:
+                features.append(self._stack(group, color))
         if sel and sel != "direct":
             features += self._candidates(shown)
 
@@ -261,10 +275,44 @@ class HeardLayer(Layer):
             p["lat"],
             _title=_("Paket {time}", time=clock),
             _fields=fields,
-            _style={"color": "#333", "fillColor": color, "radius": 6, "weight": 1},
+            _style=hex_style(color),
             _z=1.5,
             _endpoint={
                 "name": _("Empfangsort {time}", time=clock),
+                "height_m": [1.0, 1.6],
+                "clutter_m": 12.0,
+                "device": "t1000e",
+            },
+        )
+
+    @staticmethod
+    def _stack(group: list[dict], relay_color: str | None) -> dict:
+        """Packets received at (nearly) the same spot, e.g. while standing: one marker with the
+        count, coloured by the best SNR (or the most frequent last hop)."""
+        first, last = group[0]["time"].astimezone(), group[-1]["time"].astimezone()
+        snrs = [p["rxSnr"] for p in group if p["rxSnr"] is not None]
+        hops_ = Counter(
+            _("direkt") if p["key"] == "direct" else "?" if p["key"] == "?" else f"0x{p['key']}"
+            for p in group
+        )
+        fields = {
+            _("Zeitraum"): f"{first:%H:%M:%S} – {last:%H:%M:%S}",
+            _("Absender"): len({p["from"] for p in group}),
+            "SNR": f"{max(snrs)} … {min(snrs)} dB" if snrs else "–",
+            _("Letzter Hop"): ", ".join(f"{k} ×{n}" for k, n in hops_.most_common()),
+        }
+        color = relay_color or snr_color(max(snrs) if snrs else None)
+        lat = sum(p["lat"] for p in group) / len(group)
+        lon = sum(p["lon"] for p in group) / len(group)
+        return feature(
+            lon,
+            lat,
+            _title=_("{n} Pakete am selben Ort", n=len(group)),
+            _fields=fields,
+            _style=hex_style(color, size=24, text=str(len(group))),
+            _z=1.5,
+            _endpoint={
+                "name": _("Empfangsort {time}", time=f"{first:%H:%M}"),
                 "height_m": [1.0, 1.6],
                 "clutter_m": 12.0,
                 "device": "t1000e",
@@ -360,6 +408,20 @@ def _receiver(meta: dict) -> int | None:
 
 def _nm(nodes: dict, num: int | None) -> str:
     return (nodes.get(node_id(num)) or {}).get("name", "") if num is not None else ""
+
+
+def stacks(points: list[dict], radius_m: float = STACK_M) -> list[list[dict]]:
+    """Packets grouped by place: each joins the first group whose first packet lies within
+    radius_m (GPS jitter while standing), in time order."""
+    groups: list[list[dict]] = []
+    for p in points:
+        for g in groups:
+            if distance_m((g[0]["lat"], g[0]["lon"]), (p["lat"], p["lon"])) <= radius_m:
+                g.append(p)
+                break
+        else:
+            groups.append([p])
+    return groups
 
 
 def _best(p: dict) -> str | None:

@@ -949,5 +949,7 @@
   "{n} Pakete von {s} Absendern, {d} direkt, {u} mit unbekannten Hops. Relay-Bytes: {b}, davon {c} einem Knoten zuzuordnen. SNR {best} … {worst} dB. Empfang in {p} % der Fenster.": "{n} packets from {s} senders, {d} direct, {u} with unknown hops. Relay bytes: {b}, {c} of them attributable to one node. SNR {best} … {worst} dB. Reception in {p} % of the windows.",
   "{walk}: {n} Pakete im Rundgang. Empfänger {node} (Vorschlag, in der Liste änderbar).": "{walk}: {n} packets in the walk. Receiver {node} (suggested, can be changed in the list).",
   "{walk}: {n} Pakete im Rundgang. Empfänger {node}.": "{walk}: {n} packets in the walk. Receiver {node}.",
-  "alle Pakete": "all packets"
+  "alle Pakete": "all packets",
+  "Zeitraum": "Period",
+  "{n} Pakete am selben Ort": "{n} packets at the same spot"
 }

@@ -503,7 +503,9 @@ a select can take its options from another setting via `depends_on` / `options_m
 and `bbox` are text fields with a button to pick them on the map, as `lat, lon` and
 `south, west, north, east`, previewed on the map, with `square_km_from` and `max` for the
 square around a point and the largest side of a box) and draws
-the result on both views. Feature conventions (`_style`, `_title`, `_fields`, `_label`, `_z`,
+the result on both views. Measurement points use `_style` with `"shape": "hex"` (`style.hex_style`:
+a hexagon of fixed screen size with a ring in the theme's contrast colour, optionally a count;
+in 3D a sphere as before). Feature conventions (`_style`, `_title`, `_fields`, `_label`, `_z`,
 `_icon`, `_endpoint`, `_ref`) and raster payloads are documented in `registry.py`. `_ref`
 (`{"type", "id", …}`) says what a feature is; the page's modules register their actions per type
 with `registerActions(type, provider)` (`webmap/js/actions.js`; each action has a label, an

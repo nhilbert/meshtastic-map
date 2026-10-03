@@ -12,12 +12,13 @@ import numpy as np
 
 from meshplay.mapapp.i18n import N_, _
 
-# SNR bands (LongFast decodes down to about -17.5 dB)
+# SNR bands (LongFast decodes down to about -17.5 dB); saturated so that small markers stand out
+# on the dark and the light map alike
 SNR_BANDS = [
-    (0, "#1a9850", "> 0 dB"),
-    (-7, "#91cf60", "0 … −7 dB"),
-    (-13, "#fc8d59", "−7 … −13 dB"),
-    (-math.inf, "#d73027", "< −13 dB"),
+    (0, "#00c853", "> 0 dB"),
+    (-7, "#aeea00", "0 … −7 dB"),
+    (-13, "#ffab00", "−7 … −13 dB"),
+    (-math.inf, "#ff1744", "< −13 dB"),
 ]
 GREY = "#999999"
 RED = "#d73027"
@@ -29,6 +30,17 @@ def snr_color(snr: float | None) -> str:
     if snr is None:
         return GREY
     return next(color for limit, color, _label in SNR_BANDS if snr > limit)
+
+
+def hex_style(fill: str, size: int = 18, text: str | None = None, ring: str | None = None) -> dict:
+    """_style of a measurement marker: a hexagon of fixed screen size [px] with a ring in the
+    theme's contrast colour (or ring), optionally a short text inside (a count)."""
+    style = {"shape": "hex", "fillColor": fill, "size": size}
+    if text:
+        style["text"] = text
+    if ring:
+        style["ring"] = ring
+    return style
 
 
 def snr_legend(title: str = N_("SNR (direkt empfangen)")) -> dict:

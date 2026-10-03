@@ -4,6 +4,19 @@ import { badgeHTML } from "./icons.js";
 import { actionsFor, bindToolbar, openMenu, toolbarHTML } from "./actions.js";
 import { esc, featureHTML, fmt } from "./util.js";
 
+// A measurement marker: hexagon with a ring in the theme's contrast colour (CSS --hex-ring), so
+// it reads on the dark and the light map; an optional count inside.
+function hexHTML(s, size) {
+  const r = size / 2, pts = [0, 1, 2, 3, 4, 5].map(i => {
+    const a = Math.PI / 3 * i - Math.PI / 2;
+    return `${(r + r * Math.cos(a)).toFixed(1)},${(r + r * Math.sin(a)).toFixed(1)}`;
+  }).join(" ");
+  const ring = s.ring ? esc(s.ring) : "var(--hex-ring)";
+  const text = s.text ? `<text x="${r}" y="${r}" dy=".35em" text-anchor="middle">${esc(s.text)}</text>` : "";
+  return `<svg width="${size}" height="${size}" viewBox="-2 -2 ${size + 4} ${size + 4}"><polygon points="${pts}"
+    fill="${esc(s.fillColor || "#9e9e9e")}" stroke="${ring}" stroke-width="2" stroke-linejoin="round"/>${text}</svg>`;
+}
+
 export class Map2D {
   constructor(el, center, handlers) {
     this.h = handlers;          // { onClick(lat, lon), onMove(lat, lon), onSelect(feature), featurePick(feature, latlng) }
@@ -56,6 +69,11 @@ export class Map2D {
             return m;
           }
           const s = f.properties._style || {};
+          if (s.shape === "hex") {
+            const size = s.size || 18;
+            return L.marker(ll, { icon: L.divIcon({ className: "hexmark", html: hexHTML(s, size), iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2] }), riseOnHover: true, bubblingMouseEvents: false });
+          }
           return L.circleMarker(ll, { radius: s.radius || 6, color: s.color || "#333", weight: s.weight ?? 1,
             fillColor: s.fillColor || s.color || "#3388ff", fillOpacity: s.fillOpacity ?? 0.9, bubblingMouseEvents: false });
         },
