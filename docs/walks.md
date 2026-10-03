@@ -1,6 +1,7 @@
 # Coverage walks
 
-Map where your home node can reach a node you carry. Two methods:
+Map where your home node can reach a node you carry. Two methods, plus a passive one that maps
+what the carried node hears from the whole mesh ([below](#mesh-reception-passive)):
 
 | | Traceroutes from home (recommended) | Position broadcasts |
 |---|---|---|
@@ -57,3 +58,36 @@ To compare a walk with the simulation:
 `python scripts/sim_compare_walk.py --tracker !abcd1234 --probes --gpx data/tracks/walk.gpx --home-indoor none`
 (see [simulation.md](simulation.md)), or colour the map app's walk layer by
 *Messung − Modell*.
+
+Positions are never interpolated across a pause of more than 15 min in the GPX recording
+(`walk.MAX_GAP_S`): probes and packets inside such a gap are left out. Scores of walks with long
+gaps made before this rule (2026-10-03) are not directly comparable with later ones.
+
+## Mesh reception (passive)
+
+The carried node only listens; nothing is sent. Every packet it hears is placed on the GPX track:
+which nodes reached you where, and how well. The SNR belongs to the **last hop** (the node that
+transmitted the packet last), and a relayed packet names that node only by the last byte of its
+ID, so several nodes can fit.
+
+1. **Carry** a node paired with the Meshtastic Android app (e.g. a Wio Tracker L1) and record a
+   GPX track on the phone.
+2. **Export** the app's packet log as CSV (`Meshtastic_datalog_<name>_<date>.csv`; menu path:
+   _to be filled in_). The export is a ring buffer of several days; the map app keeps only the
+   part that falls into the track.
+3. **Import** in the map app: *Aufgaben → Rundgänge importieren → Rundgang hochladen …*, select
+   the GPX and the CSV together. The import checks the receiving device (suggested: the sender
+   whose rows mostly carry SNR 0.0 and no relay; change it in the list) and whether the export's
+   times fit the track (CSV times are local time without zone; read in the computer's zone).
+4. **Show**: layer *Mesh-Empfang (passiv)* (group *Abdeckung*): points coloured by SNR or last
+   hop, the track in windows (reception · device active but nothing heard · no data). Pick one
+   relay byte to see its plausible candidate nodes and lines to them; the popup grades each
+   packet's last hop (unique, likely, ambiguous) and lists every candidate. Candidates further
+   than the range limit (default 15 km, an assumption) are not plausible; nodes without position
+   can't be ruled out. Neither the app's own guess nor the propagation models are used to pick a
+   candidate.
+
+Gaps prove nothing: without own test packets there is no denominator, only traffic that
+happened to pass by. The data in `data/heard/` holds names and positions of other people's
+nodes (never committed); the wording of text messages is not stored.
+

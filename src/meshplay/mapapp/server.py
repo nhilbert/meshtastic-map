@@ -16,6 +16,9 @@ POST /api/jobs                {"kind", "params"} starts a task; /api/jobs/<id>/c
 GET  /api/sites               own sites for the editor; /api/sites/suggest?lat=&lon= clutter
 POST /api/sites/<action>      add, update, rename, delete (data/sim/sites.json)
 POST /api/tracks?name=x.gpx   upload a GPX track (raw body) to data/tracks/
+GET  /api/heard               passive walks (GPX + the app's CSV export), newest first
+POST /api/heard               {"files": [{"name", "text"}, ...], "receiver"} imports a walk;
+                              /api/heard/<walk>/receiver {"receiver": "!id"} changes the device
 GET  /api/messages?rev=N      messages (and with traffic=1 recent packets) newer than revision N
 POST /api/messages            {"text", "to": "!id" or "^all", "channel"} sends a text
 GET  /api/nodes/requests      latest traceroute and position request per node
@@ -33,11 +36,11 @@ import webbrowser
 from contextlib import nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from meshplay.config import DEFAULT_PRESET
+from meshplay.mapapp import heard_store, sites_store
 from meshplay.mapapp import scenes as scenes_api
-from meshplay.mapapp import sites_store
 from meshplay.mapapp.coord.missions import Coordinator
 from meshplay.mapapp.device import DeviceLink, Simulation
 from meshplay.mapapp.i18n import _, set_lang
@@ -253,6 +256,8 @@ def make_handler(ctx: Context):
                 elif parts[:2] == ["api", "coord"]:
                     q = dict(parse_qsl(url.query))
                     self.send_json(ctx.coord.api("GET", parts[2:], q, {}))
+                elif parts == ["api", "heard"]:
+                    self.send_json({"walks": heard_store.list_walks(ctx)})
                 elif parts == ["api", "sites"]:
                     cfg = sites_store.load_raw(ctx.sites_path)
                     self.send_json({"sites": sites_store.site_list(cfg)})
@@ -306,7 +311,17 @@ def make_handler(ctx: Context):
                     name = dict(parse_qsl(urlparse(self.path).query)).get("name", "")
                     self.send_json(save_track(ctx, name, self.rfile.read(length)))
                     return
+                if parts[:2] == ["api", "heard"] and length > heard_store.MAX_BYTES + 2_000_000:
+                    raise ValueError(_("Dateien zu groß (zusammen max. 30 MB)"))
                 body = json.loads(self.rfile.read(length) or b"{}")
+                if parts == ["api", "heard"]:
+                    res = heard_store.save_walk(ctx, body.get("files") or [], body.get("receiver"))
+                    self.send_json(res, 201)
+                    return
+                if parts[:2] == ["api", "heard"] and len(parts) == 4 and parts[3] == "receiver":
+                    walk = unquote(parts[2])
+                    self.send_json(heard_store.set_receiver(ctx, walk, body.get("receiver")))
+                    return
                 if parts[:2] == ["api", "device"] and len(parts) == 3:
                     if parts[2] == "connect":
                         ctx.device.connect(body.get("port") or None)

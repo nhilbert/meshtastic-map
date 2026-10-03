@@ -220,4 +220,5 @@ export class Map2D {
   }
   colorLink(color) { if (this.line) this.line.setStyle({ color, dashArray: null, weight: 4 }); }
   fit(a, b) { this.map.fitBounds([[a.lat, a.lon], [b.lat, b.lon]], { padding: [40, 40], maxZoom: 17 }); }
+  fitBox(box) { this.map.fitBounds(box, { padding: [40, 40], maxZoom: 16 }); }
 }

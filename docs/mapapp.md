@@ -49,7 +49,8 @@ you want to know about, below what keeps coming in.
   *Simulation*: laser-scan scenes, the link tool *Strecke A → B*, starting a coverage
   simulation. *Koordination*: the mode switch and the sections *Einsätze*, *Archiv*,
   *Einstellungen*. *Aufgaben*:
-  start forms and the task list. *Gerät*: connection (the port list shows every serial port,
+  start forms and the task list; *Rundgänge importieren* (passive walks: GPX + the Meshtastic
+  app's CSV export, the receiving device per walk, see [walks.md](walks.md)). *Gerät*: connection (the port list shows every serial port,
   *Automatisch* names the one detection would take, ↻ searches again after plugging in) and
   *Funklast*. *Einstellungen*: language and light or dark.
 - **Status bar** (bottom): device, packets, channel use and airtime; a click opens *Gerät*.
@@ -408,6 +409,7 @@ Without a home position the map starts on Germany.
 | Eigene Standorte | `data/sim/sites.json` (editable, see above) | labels |
 | Meshtastic-Knoten | live from the connected device, or `data/exports/nodes-*.json` (`scripts/export_nodes.py`) | source, refresh interval, colour by hops/SNR, max. age, badge or dot |
 | Rundgang (Messung) | position packets `data/packets/<date>.jsonl` (`scripts/listen.py`) or traceroutes `data/probes/<date>.jsonl`, `data/tracks/*.gpx` | date, tracker (positions or traceroutes), GPX track, colour by SNR or measured − model, home site and placement, preset (from the log) |
+| Mesh-Empfang (passiv) | `data/heard/<name>.jsonl` + `data/tracks/<name>.gpx` (*Aufgaben → Rundgänge importieren*) | walk, window length, colour by SNR or last hop, one relay byte (candidates on the map), range limit for relay candidates |
 | Simulierte Abdeckung | `data/sim/maps/coverage-*.npz` (task or `scripts/sim_coverage_map.py`) | calculation (newest first), model, opacity |
 | Laserscan-Szene | `data/sim/scenes/` (outlines; unmeasured areas of the scene in use) | show unmeasured areas; scene manager (see below) |
 | Koordination | the coordination mode's missions, targets, areas and places (`data/coord/`) | refresh interval |
@@ -428,7 +430,7 @@ work on the scene and the models holds the server's model lock (`ctx.model_lock`
 src/meshplay/mapapp/
   server.py        HTTP server: page, /scene/* (3D data), /api/app, /api/layers/<id>,
                    /api/tools/<name>, /api/device, /api/jobs, /api/sites, /api/scenes,
-                   /api/tracks, /api/messages, /api/coord/*
+                   /api/tracks, /api/heard, /api/messages, /api/coord/*
   device.py        live USB connection: node list, packet logging, packet listeners
   fake_device.py   simulated radio (--simulate)
   coord/           coordination mode: missions.py (Coordinator, decisions, API), phrases.py
@@ -437,6 +439,7 @@ src/meshplay/mapapp/
   scenes.py        laser-scan scenes: list, switch, delete, 3D export per scene, the plan of an
                    area (source, tiles, links), the task that downloads and builds
   sites_store.py   editing data/sim/sites.json
+  heard_store.py   passive walks: import (GPX + app CSV, checked before writing), list, receiver
   messages.py      message store for the messaging pane (data/messages.jsonl, traffic list)
   i18n.py          translations: _(), N_(), L(), language per request
   registry.py      Layer base class, Setting, Context (paths, scene, sites), GeoJSON helpers
@@ -452,6 +455,7 @@ webmap/
   js/tasks.js      task forms, list, log view
   js/coord.js      coordination mode: section, mission form, cards, targets, inspector tab
   js/sites.js      sites editor
+  js/imports.js    passive walks: upload, list, receiving device (Aufgaben)
   js/scenes.js     scene manager (layer Laserscan-Szene)
   js/messages.js   messaging pane
   js/nodelist.js   node list (inspector tab Knoten)
