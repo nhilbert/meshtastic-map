@@ -334,6 +334,14 @@ def test_layer_stacks_packets_at_one_spot(ctx):
     assert stack["_style"]["fillColor"] == "#aeea00"  # the best SNR of the stack (-2.0 dB)
 
 
+def test_stacks_only_consecutive_packets():
+    from meshplay.mapapp.layers.heard import stacks
+
+    here, there = {"lat": MARKT[0], "lon": MARKT[1]}, {"lat": HBF[0], "lon": HBF[1]}
+    groups = stacks([{**here, "n": 1}, {**here, "n": 2}, {**there, "n": 3}, {**here, "n": 4}])
+    assert [[p["n"] for p in g] for g in groups] == [[1, 2], [3], [4]]  # back later: new group
+
+
 def test_layer_with_missing_gpx(ctx):
     from meshplay.mapapp.layers.heard import HeardLayer
 
