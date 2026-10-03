@@ -320,6 +320,20 @@ def test_layer_points_track_and_candidates(ctx):
                    for f in data["features"] if f["geometry"]["type"] == "LineString")  # fmt: skip
 
 
+def test_layer_stacks_packets_at_one_spot(ctx):
+    from meshplay.mapapp.layers.heard import HeardLayer
+
+    # two more packets near the one of 12:02, all within 15 m of the start
+    upload(ctx, walk_export([row("12:00:20", SENDER), row("12:00:40", SENDER, snr="-2.0")]))
+    layer = HeardLayer()
+    data = layer.data(ctx, layer.parse_values(ctx, {"walk": "walk"}))
+    marks = [f["properties"] for f in data["features"] if f["geometry"]["type"] == "Point"]
+    assert all(m["_style"]["shape"] == "hex" for m in marks)
+    (stack,) = [m for m in marks if m["_style"].get("text")]
+    assert stack["_style"]["text"] == "3" and stack["_title"] == "3 Pakete am selben Ort"
+    assert stack["_style"]["fillColor"] == "#aeea00"  # the best SNR of the stack (-2.0 dB)
+
+
 def test_layer_with_missing_gpx(ctx):
     from meshplay.mapapp.layers.heard import HeardLayer
 

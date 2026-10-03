@@ -949,5 +949,7 @@
   "{n} Pakete von {s} Absendern, {d} direkt, {u} mit unbekannten Hops. Relay-Bytes: {b}, davon {c} einem Knoten zuzuordnen. SNR {best} … {worst} dB. Empfang in {p} % der Fenster.": "{n} paquets de {s} émetteurs, {d} directs, {u} avec sauts inconnus. Octets de relais : {b}, dont {c} attribuables à un nœud. SNR {best} … {worst} dB. Réception dans {p} % des fenêtres.",
   "{walk}: {n} Pakete im Rundgang. Empfänger {node} (Vorschlag, in der Liste änderbar).": "{walk} : {n} paquets dans la tournée. Récepteur {node} (suggestion, modifiable dans la liste).",
   "{walk}: {n} Pakete im Rundgang. Empfänger {node}.": "{walk} : {n} paquets dans la tournée. Récepteur {node}.",
-  "alle Pakete": "tous les paquets"
+  "alle Pakete": "tous les paquets",
+  "Zeitraum": "Période",
+  "{n} Pakete am selben Ort": "{n} paquets au même endroit"
 }

@@ -79,8 +79,9 @@ ID, so several nodes can fit.
    the GPX and the CSV together. The import checks the receiving device (suggested: the sender
    whose rows mostly carry SNR 0.0 and no relay; change it in the list) and whether the export's
    times fit the track (CSV times are local time without zone; read in the computer's zone).
-4. **Show**: layer *Mesh-Empfang (passiv)* (group *Abdeckung*): points coloured by SNR or last
-   hop, the track in windows (reception · device active but nothing heard · no data). Pick one
+4. **Show**: layer *Mesh-Empfang (passiv)* (group *Abdeckung*): a hexagon per packet coloured by
+   SNR or last hop (packets within 15 m of each other, e.g. while standing, as one hexagon with
+   their count), the track in windows (reception · device active but nothing heard · no data). Pick one
    relay byte to see its plausible candidate nodes and lines to them; the popup grades each
    packet's last hop (unique, likely, ambiguous) and lists every candidate. Candidates further
    than the range limit (default 15 km, an assumption) are not plausible; nodes without position

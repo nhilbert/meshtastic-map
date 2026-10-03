@@ -16,6 +16,7 @@ from meshplay.mapapp.style import (
     GREY,
     RED,
     RESIDUAL_RAMP,
+    hex_style,
     ramp_color,
     snr_color,
     snr_legend,
@@ -199,8 +200,8 @@ class WalkLayer(Layer):
                             }[prev["status"]],
                             _style={
                                 "color": TRACK_COLORS[prev["status"]],
-                                "weight": 4,
-                                "opacity": 0.7,
+                                "weight": 3,
+                                "opacity": 0.55,
                                 "dash": "6 8" if prev["status"] == "none" else None,
                             },
                         )
@@ -266,7 +267,7 @@ class WalkLayer(Layer):
                     if probes
                     else _("Paket {time}", time=clock),
                     _fields=fields,
-                    _style={"color": "#333", "fillColor": color, "radius": 6, "weight": 1},
+                    _style=hex_style(color),
                     _z=1.5,
                     _endpoint={
                         "name": _("Rundgang {time}", time=clock),
@@ -291,7 +292,7 @@ class WalkLayer(Layer):
                     p["lat"],
                     _title=_("Traceroute {time}: keine Antwort", time=t),
                     _fields={_("Zeit"): t, _("Ergebnis"): p["result"]},
-                    _style={"color": RED, "fillColor": "#fff", "radius": 5, "weight": 3},
+                    _style=hex_style("#ffffff", size=14, ring=RED),
                     _z=1.5,
                 )
             )

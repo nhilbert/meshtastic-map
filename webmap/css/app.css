@@ -10,6 +10,7 @@
   --terr:#39483D; --bldg:#526573; --veg:#3C5945;
   --shadow:0 2px 5px #0003, 0 12px 28px #0004;
   --map-filter:invert(1) hue-rotate(180deg) saturate(.35) brightness(.8) contrast(.9);
+  --hex-ring:#FFFFFF;
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   --sans:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;
 }
@@ -24,6 +25,7 @@
   --terr:#B9BFAE; --bldg:#8E99A4; --veg:#7B9469;
   --shadow:0 2px 5px #172D3D0A, 0 12px 28px #172D3D10;
   --map-filter:none;
+  --hex-ring:#1B1F24;
 }
 *{box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
@@ -341,6 +343,9 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
 .lbl::before{display:none}
 /* badge markers (features with _icon) */
 .ndwrap{background:none;border:none}
+.hexmark{background:none;border:none}
+.hexmark svg{overflow:visible;display:block;filter:drop-shadow(0 1px 2px #000a)}
+.hexmark text{font:700 10px var(--sans);fill:#111}
 .nd{position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 7px));display:flex;align-items:center;gap:3px;
   padding:1px 6px 1px 4px;border-radius:10px;background:var(--c);color:var(--fg);border:1.5px solid #fff;
   font:600 11px/17px var(--mono);white-space:nowrap;box-shadow:0 1px 4px #0006;cursor:pointer}
