@@ -51,9 +51,22 @@ def _parse_receiver(value) -> int | None:
 
 
 def _write(path: Path, text: str) -> Path:
+    """Text to a temporary file next to path, as is (no newline translation: a GPX with CRLF
+    stays byte-identical on Windows)."""
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8", newline="")
     return tmp
+
+
+def _same_text(path: Path, text: str) -> bool:
+    """Whether a stored file holds this text, whatever its line endings or a BOM (a GPX stored
+    earlier by the plain track upload keeps the bytes of the phone's file)."""
+    stored = path.read_bytes().decode("utf-8", errors="replace")
+    return _norm(stored) == _norm(text)
+
+
+def _norm(text: str) -> str:
+    return text.lstrip("\ufeff").replace("\r\n", "\n")
 
 
 def save_walk(ctx: Context, files: list[dict], receiver=None, tz: tzinfo | None = None) -> dict:
@@ -108,7 +121,7 @@ def save_walk(ctx: Context, files: list[dict], receiver=None, tz: tzinfo | None 
     stem = re.sub(r"[^\w .()-]", "_", Path(str(gpx["name"])).stem).strip() or "walk"
     gpx_out = ctx.data_dir / "tracks" / f"{stem}.gpx"
     out = heard_dir(ctx) / f"{stem}.jsonl"
-    same_track = gpx_out.exists() and gpx_out.read_text(encoding="utf-8") == gpx_text
+    same_track = gpx_out.exists() and _same_text(gpx_out, gpx_text)
     if (gpx_out.exists() or out.exists()) and not same_track:
         raise ValueError(
             _(
