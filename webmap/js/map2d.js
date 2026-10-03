@@ -11,10 +11,11 @@ function hexHTML(s, size) {
     const a = Math.PI / 3 * i - Math.PI / 2;
     return `${(r + r * Math.cos(a)).toFixed(1)},${(r + r * Math.sin(a)).toFixed(1)}`;
   }).join(" ");
+  // in style, not as attribute: var() is only defined for CSS properties
   const ring = s.ring ? esc(s.ring) : "var(--hex-ring)";
   const text = s.text ? `<text x="${r}" y="${r}" dy=".35em" text-anchor="middle">${esc(s.text)}</text>` : "";
   return `<svg width="${size}" height="${size}" viewBox="-2 -2 ${size + 4} ${size + 4}"><polygon points="${pts}"
-    fill="${esc(s.fillColor || "#9e9e9e")}" stroke="${ring}" stroke-width="2" stroke-linejoin="round"/>${text}</svg>`;
+    style="fill:${esc(s.fillColor || "#9e9e9e")};stroke:${ring}" stroke-width="2" stroke-linejoin="round"/>${text}</svg>`;
 }
 
 export class Map2D {

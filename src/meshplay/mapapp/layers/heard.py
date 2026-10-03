@@ -411,14 +411,14 @@ def _nm(nodes: dict, num: int | None) -> str:
 
 
 def stacks(points: list[dict], radius_m: float = STACK_M) -> list[list[dict]]:
-    """Packets grouped by place: each joins the first group whose first packet lies within
-    radius_m (GPS jitter while standing), in time order."""
+    """Consecutive packets at the same spot (within radius_m of the group's first one: GPS
+    jitter while standing) as one group; coming back to a spot later starts a new group, so a
+    group's time span and counts belong to one stay."""
     groups: list[list[dict]] = []
     for p in points:
-        for g in groups:
-            if distance_m((g[0]["lat"], g[0]["lon"]), (p["lat"], p["lon"])) <= radius_m:
-                g.append(p)
-                break
+        g = groups[-1] if groups else None
+        if g and distance_m((g[0]["lat"], g[0]["lon"]), (p["lat"], p["lon"])) <= radius_m:
+            g.append(p)
         else:
             groups.append([p])
     return groups
