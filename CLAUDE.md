@@ -61,11 +61,12 @@ src/meshplay/mapapp/        server.py (HTTP + API), registry.py (Layer, Setting,
                             sending texts, packet listeners), fake_device.py (--simulate),
                             messages.py (message store for the pane), airtime.py (airtime
                             panel), i18n.py (translations), heard_store.py (passive walks),
+                            walks_store.py (walk lists of both kinds, deleting),
                             tiles.py (map tile cache), scenes.py (scene manager + build
                             task), coord/ (coordination mode: missions.py
                             decisions + API, phrases.py radio texts, routing.py + osm.py road
                             graph, areas.py, paths.py, settings.py, store.py)
-webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, imports.js, scenes.js, messages.js,
+webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, walks.js, scenes.js, messages.js,
                             nodelist.js, coord.js, panels.js, map2d.js (Leaflet), map3d.js
                             (three.js), util.js, icons.js, i18n.js, export.js (GPX/CSV)
 webmap/vendor/, i18n/       served libraries and fonts (offline use); translation catalogues

@@ -278,13 +278,44 @@ def test_list_walks_and_set_receiver(ctx):
         heard_store.set_receiver(ctx, "../walk", "!44440055")
 
 
+# ---------------------------------------------------------------- deleting
+def test_delete_removes_the_walk_and_its_track(ctx):
+    from meshplay.mapapp.walks_store import delete_passive, list_passive
+
+    upload(ctx, walk_export())
+    (walk,) = list_passive(ctx)
+    assert walk["gpxShared"] is False
+    with pytest.raises(ValueError, match="Rundgang"):
+        delete_passive(ctx, "../walk")
+    done = delete_passive(ctx, "walk")
+    assert done == {"deleted": ["heard/walk.jsonl", "tracks/walk.gpx"], "kept": []}
+    assert list_passive(ctx) == []
+
+
+def test_delete_keeps_a_track_another_walk_uses(ctx):
+    from meshplay.mapapp.walks_store import delete_active, delete_passive, list_active, list_passive
+
+    upload(ctx, walk_export())
+    day = parse_gpx(TRACK)[0]["time"].astimezone().date().isoformat()
+    probes = ctx.data_dir / "probes"
+    probes.mkdir()
+    (probes / f"{day}.jsonl").write_text(json.dumps({"to": "!abcd1234"}) + "\n", encoding="utf-8")
+    assert list_passive(ctx)[0]["gpxShared"] is True
+    assert list_active(ctx)[0]["tracks"][0]["shared"] is True
+    assert delete_passive(ctx, "walk") == {"deleted": ["heard/walk.jsonl"], "kept": ["walk.gpx"]}
+    # now the track is the active walk's alone and goes with it
+    assert list_active(ctx)[0]["tracks"][0]["shared"] is False
+    done = delete_active(ctx, day)
+    assert sorted(done["deleted"]) == [f"probes/{day}.jsonl", "tracks/walk.gpx"]
+
+
 # ---------------------------------------------------------------- layer
 def test_layer_without_data(ctx):
     from meshplay.mapapp.layers.heard import HeardLayer
 
     layer = HeardLayer()
     data = layer.data(ctx, layer.parse_values(ctx, {}))
-    assert data["features"] == [] and "Rundgänge importieren" in data["note"]
+    assert data["features"] == [] and "Passive Rundgänge" in data["note"]
 
 
 def test_layer_points_track_and_candidates(ctx):
@@ -329,6 +360,7 @@ def test_layer_stacks_packets_at_one_spot(ctx):
     data = layer.data(ctx, layer.parse_values(ctx, {"walk": "walk"}))
     marks = [f["properties"] for f in data["features"] if f["geometry"]["type"] == "Point"]
     assert all(m["_style"]["shape"] == "hex" for m in marks)
+    assert all(m["_panel"] for m in marks)  # details in the page's panel, no popup
     (stack,) = [m for m in marks if m["_style"].get("text")]
     assert stack["_style"]["text"] == "3" and stack["_title"] == "3 Pakete am selben Ort"
     assert stack["_style"]["fillColor"] == "#aeea00"  # the best SNR of the stack (-2.0 dB)

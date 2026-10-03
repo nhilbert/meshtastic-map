@@ -13,11 +13,9 @@ which states publish what (summarised in [scenes.md](scenes.md), and in
   with nRF52 receivers too).
 - **Debug-log import** (Android app, text export): adds RSSI, the packet ID and the role of nodes
   (router, `CLIENT_MUTE`), a further criterion for relay candidates.
-- **Delete a walk** in *Rundgänge importieren* (today by hand in `data/heard/` and `data/tracks/`).
 - **Details tab "Mesh-Empfang"**: table of relay bytes (count, SNR median, grade, candidates);
   a click sets the byte filter.
-- Lines to candidates on a click on a single packet; timeline; hexagon tiles over several walks;
-  traceroute walks and their GPX upload in the same section (then named *Rundgänge*).
+- Lines to candidates on a click on a single packet; timeline; hexagon tiles over several walks.
 
 ## Elevation data and scenes
 

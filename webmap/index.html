@@ -35,6 +35,7 @@
       <button class="ab" data-view="layers" aria-label="Ebenen" data-i18n-aria-label="Ebenen"></button>
       <button class="ab" data-view="places" aria-label="Orte" data-i18n-aria-label="Orte"></button>
       <button class="ab" data-view="sim" aria-label="Simulation" data-i18n-aria-label="Simulation"></button>
+      <button class="ab" data-view="walks" aria-label="Rundgänge" data-i18n-aria-label="Rundgänge"></button>
       <button class="ab" data-view="coord" aria-label="Koordination" data-i18n-aria-label="Koordination"></button>
       <button class="ab" data-view="tasks" aria-label="Aufgaben" data-i18n-aria-label="Aufgaben"></button>
       <button class="ab" data-view="device" aria-label="Gerät" data-i18n-aria-label="Gerät"></button>
@@ -98,6 +99,24 @@
       </details>
     </section>
 
+    <section class="view" data-view="walks" hidden>
+      <h2 class="vhd" data-i18n>Rundgänge</h2>
+      <details class="sec" data-sec="walks" open>
+        <summary><h2 data-i18n>Aktive Rundgänge</h2></summary>
+        <div class="sitemgr" id="walkHead"></div>
+        <div class="jobform" id="walkForm" hidden></div>
+        <div class="joblist" id="walkJobs" hidden></div>
+        <div class="walklist" id="walkList"></div>
+        <div class="sitemgr walkopts" id="walkOpts"></div>
+      </details>
+      <details class="sec" data-sec="imports" open>
+        <summary><h2 data-i18n>Passive Rundgänge</h2></summary>
+        <div class="sitemgr" id="heardHead"></div>
+        <div class="walklist" id="heardList"></div>
+        <div class="sitemgr walkopts" id="heardOpts"></div>
+      </details>
+    </section>
+
     <section class="view" data-view="coord" hidden>
       <h2 class="vhd" data-i18n>Koordination</h2>
       <div id="coordBox"></div>
@@ -110,10 +129,6 @@
         <div class="jobform" id="jobForm" hidden></div>
         <div class="joblist" id="jobList"></div>
       </div>
-      <details class="sec" data-sec="imports" open>
-        <summary><h2 data-i18n>Rundgänge importieren</h2></summary>
-        <div class="sitemgr" id="importsBox"></div>
-      </details>
     </section>
 
     <section class="view" data-view="device" hidden>

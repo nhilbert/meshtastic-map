@@ -1,11 +1,13 @@
 """Coverage walk: tracker positions or traceroute probes, phone GPX track, model scores."""
 
+import functools
 import hashlib
 import json
 import logging
 import threading
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
+from pathlib import Path
 
 import numpy as np
 
@@ -73,6 +75,63 @@ def probe_targets(path) -> Counter:
     return targets
 
 
+def walk_logs(ctx: Context) -> list[dict]:
+    """The days with a packet or probe log, newest first, each with its trackers as options.
+    Option values carry the source: "!id" for positions, "probe:!id" for traceroutes."""
+    packet_logs = {p.stem: p for p in (ctx.data_dir / "packets").glob("*.jsonl")}
+    probe_logs = {p.stem: p for p in (ctx.data_dir / "probes").glob("*.jsonl")}
+    out = []
+    for d in sorted(packet_logs.keys() | probe_logs.keys(), reverse=True):
+        targets = probe_targets(probe_logs[d]) if d in probe_logs else Counter()
+        senders = position_senders(packet_logs[d]) if d in packet_logs else Counter()
+        options = [
+            [f"probe:!{n:08x}", _("!{id} ({n} Traceroutes)", id=f"{n:08x}", n=c)]
+            for n, c in targets.most_common()
+        ] + [
+            [f"!{n:08x}", _("!{id} ({n} Positionen)", id=f"{n:08x}", n=c)]
+            for n, c in senders.most_common()
+            if n
+        ]
+        out.append(
+            {
+                "date": d,
+                "trackers": options,
+                "probes": sum(targets.values()),
+                "positions": sum(senders.values()),
+            }
+        )
+    return out
+
+
+@functools.lru_cache(maxsize=256)
+def _track_span(path: Path, mtime: float) -> tuple[tuple[str, ...], list | None]:
+    try:
+        track = load_gpx(path)
+    except Exception:
+        track = []
+    if not track:
+        return (), None
+    first, last = (track[i]["time"].astimezone().date() for i in (0, -1))
+    days = tuple((first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1))
+    lats, lons = [p["lat"] for p in track], [p["lon"] for p in track]
+    return days, [[min(lats), min(lons)], [max(lats), max(lons)]]
+
+
+def track_span(path: Path) -> tuple[tuple[str, ...], list | None]:
+    """The local days a GPX track covers and its bounding box [[south, west], [north, east]];
+    cached until the file changes. A file that is missing or can't be read covers no day."""
+    return _track_span(path, path.stat().st_mtime) if path.is_file() else ((), None)
+
+
+def tracks_by_day(ctx: Context) -> dict[str, list[str]]:
+    """The GPX tracks in data/tracks/ by the days they were recorded on."""
+    out: dict[str, list[str]] = {}
+    for path in sorted((ctx.data_dir / "tracks").glob("*.gpx")):
+        for d in track_span(path)[0]:
+            out.setdefault(d, []).append(path.name)
+    return out
+
+
 class WalkLayer(Layer):
     id = "walk"
     name = N_("Rundgang (Messung)")
@@ -85,29 +144,13 @@ class WalkLayer(Layer):
     enabled_by_default = True
 
     def settings(self, ctx: Context) -> list[Setting]:
-        packet_logs = {p.stem: p for p in (ctx.data_dir / "packets").glob("*.jsonl")}
-        probe_logs = {p.stem: p for p in (ctx.data_dir / "probes").glob("*.jsonl")}
-        dates = [[d, d] for d in sorted(packet_logs.keys() | probe_logs.keys(), reverse=True)]
-        # Option values carry the source: "!id" for positions, "probe:!id" for traceroutes.
-        trackers = {}
-        for d, _label in dates:
-            options = []
-            if d in probe_logs:
-                options += [
-                    [f"probe:!{n:08x}", _("!{id} ({n} Traceroutes)", id=f"{n:08x}", n=c)]
-                    for n, c in probe_targets(probe_logs[d]).most_common()
-                ]
-            if d in packet_logs:
-                options += [
-                    [f"!{n:08x}", _("!{id} ({n} Positionen)", id=f"{n:08x}", n=c)]
-                    for n, c in position_senders(packet_logs[d]).most_common()
-                    if n
-                ]
-            trackers[d] = options
+        logs = walk_logs(ctx)
+        dates = [[w["date"], w["date"]] for w in logs]
+        trackers = {w["date"]: w["trackers"] for w in logs}
         first = trackers.get(dates[0][0], [["", ""]])[0][0] if dates else ""
-        gpx = [["", "—"]] + [
-            [p.name, p.name] for p in sorted((ctx.data_dir / "tracks").glob("*.gpx"))
-        ]
+        # The tracks of the day first, so a day shows with its track unless "—" is chosen.
+        by_day = tracks_by_day(ctx)
+        gpx = {d: [[n, n] for n in by_day.get(d, [])] + [["", "—"]] for d, _label in dates}
         sites = [[n, n] for n, s in ctx.sites.items()]
         home = sites[0][0] if sites else ""
         if ctx.settings.home and ctx.sites:
@@ -119,7 +162,14 @@ class WalkLayer(Layer):
             Setting(
                 "tracker", _("Tracker"), "select", first, depends_on="date", options_map=trackers
             ),
-            Setting("gpx", _("GPX-Spur"), "select", "", options=gpx),
+            Setting(
+                "gpx",
+                _("GPX-Spur"),
+                "select",
+                gpx[dates[0][0]][0][0] if dates else "",
+                depends_on="date",
+                options_map=gpx,
+            ),
             Setting(
                 "color",
                 _("Punkte färben nach"),
@@ -268,6 +318,7 @@ class WalkLayer(Layer):
                     else _("Paket {time}", time=clock),
                     _fields=fields,
                     _style=hex_style(color),
+                    _panel=True,
                     _z=1.5,
                     _endpoint={
                         "name": _("Rundgang {time}", time=clock),
@@ -293,6 +344,7 @@ class WalkLayer(Layer):
                     _title=_("Traceroute {time}: keine Antwort", time=t),
                     _fields={_("Zeit"): t, _("Ergebnis"): p["result"]},
                     _style=hex_style("#ffffff", size=14, ring=RED),
+                    _panel=True,
                     _z=1.5,
                 )
             )

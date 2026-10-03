@@ -8,14 +8,15 @@ import { symbolSVG } from "./icons.js";
 import { $ } from "./util.js";
 
 const compact = matchMedia("(max-width: 700px)");
-const ICONS = { layers: "layers", places: "pin", sim: "coverage", coord: "target", tasks: "tasks", device: "client",
-  settings: "gear", msg: "message" };
-const TITLES = { layers: () => t("Ebenen"), places: () => t("Orte"), sim: () => t("Simulation"), coord: () => t("Koordination"),
-  tasks: () => t("Aufgaben"), device: () => t("Gerät"), settings: () => t("Einstellungen"), msg: () => t("Nachrichten") };
+const ICONS = { layers: "layers", places: "pin", sim: "coverage", walks: "walk", coord: "target", tasks: "tasks",
+  device: "client", settings: "gear", msg: "message" };
+const TITLES = { layers: () => t("Ebenen"), places: () => t("Orte"), sim: () => t("Simulation"), walks: () => t("Rundgänge"),
+  coord: () => t("Koordination"), tasks: () => t("Aufgaben"), device: () => t("Gerät"), settings: () => t("Einstellungen"),
+  msg: () => t("Nachrichten") };
 // the sections of the views (details[data-sec]) that other modules open
 const SECTION_VIEW = { layers: "layers", "3d": "layers", sites: "places", targets: "places", areas: "places",
-  roads: "places", scenes: "sim", link: "sim", coverage: "sim", coord: "coord", missions: "coord", archive: "coord",
-  coordset: "coord", jobs: "tasks", imports: "tasks", device: "device", airtime: "device" };
+  roads: "places", scenes: "sim", link: "sim", coverage: "sim", walks: "walks", imports: "walks", coord: "coord",
+  missions: "coord", archive: "coord", coordset: "coord", jobs: "tasks", device: "device", airtime: "device" };
 const WIDTH = { min: 240, max: 560, normal: 300 };
 const W = { view: "layers", closed: false, store: null, returnFocus: null };
 

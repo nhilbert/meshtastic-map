@@ -34,7 +34,7 @@ you want to know about, below what keeps coming in.
 - **Header**: the name, 2D / 3D view, and the button for the right panel (**Details**, greyed
   out while there is nothing to show).
 - **Activity bar** (left edge, like VS Code): one icon per view of the panel next to it:
-  *Ebenen*, *Orte*, *Simulation*, *Koordination*, *Aufgaben*, *Gerät*; at the bottom
+  *Ebenen*, *Orte*, *Simulation*, *Rundgänge*, *Koordination*, *Aufgaben*, *Gerät*; at the bottom
   *Nachrichten* (opens the messaging pane) and *Einstellungen*. A click on the active icon folds
   the panel away; its edge can be dragged to set the width (remembered, double click resets).
   Badges: a number (unread messages), a dot (state: green ok, yellow waits, red error; on
@@ -47,10 +47,16 @@ you want to know about, below what keeps coming in.
   (with path templates), areas, places and OpenStreetMap suggestions, each with its editor, and
   the road graph (*Straßennetz*).
   *Simulation*: laser-scan scenes, the link tool *Strecke A → B*, starting a coverage
-  simulation. *Koordination*: the mode switch and the sections *Einsätze*, *Archiv*,
-  *Einstellungen*. *Aufgaben*:
-  start forms and the task list; *Rundgänge importieren* (passive walks: GPX + the Meshtastic
-  app's CSV export, the receiving device per walk, see [walks.md](walks.md)). *Gerät*: connection (the port list shows every serial port,
+  simulation. *Rundgänge*: everything about coverage walks (see [walks.md](walks.md)).
+  *Aktive Rundgänge*: start a traceroute walk (form and the running task right there), upload
+  the phone's GPX track, and the days with a probe or packet log, each with its tracker and
+  its GPX track. *Passive Rundgänge*: upload GPX + the Meshtastic app's CSV export, and the
+  walks with their receiving device. Both lists work the same: every walk has *Anzeigen* and
+  a red bin that deletes it after asking (an active walk: both logs of the day; a passive one:
+  its imported packets; the GPX track goes too unless a walk of the other kind uses it; today's
+  logs can't be deleted while the device logs or a traceroute walk runs). *Koordination*: the mode switch and
+  the sections *Einsätze*, *Archiv*, *Einstellungen*. *Aufgaben*: start forms and the task
+  list. *Gerät*: connection (the port list shows every serial port,
   *Automatisch* names the one detection would take, ↻ searches again after plugging in) and
   *Funklast*. *Einstellungen*: language and light or dark.
 - **Status bar** (bottom): device, packets, channel use and airtime; a click opens *Gerät*.
@@ -69,17 +75,21 @@ you want to know about, below what keeps coming in.
   right click on a free spot offers to create a site, target, place or scene there, to set A or
   B, or to copy the coordinates. Editing opens the editor in the side panel. The 3D view has
   the same menu on a right click without dragging (dragging with the right button pans).
+  Measurement points of the walk layers (the hexagons) only inform, so they have no popup: a
+  click marks the point with a ring and shows its fields and toolbar in the right panel
+  (*Auswahl*).
 - **Strecke A → B** (view *Simulation*) is the direct-link calculator. While it is on, a click in the
   map sets A or B ("Klick in die Karte setzt: A | B | aus", Esc ends it); while it is off, map
-  clicks do nothing. Sites, nodes and walk points have "als A" / "als B" in their popup, which
-  also switches the layer on. Each endpoint has antenna height (range), placement (outside, open
+  clicks do nothing. Sites and nodes have "als A" / "als B" in their popup, walk points in the
+  right panel (*Auswahl*); either also switches the layer on. Each endpoint has antenna height (range), placement (outside, open
   window, closed window with old or low-E glazing), device (whip or T1000-E) and the building/tree
   height around it; the link is recomputed on every change. Preset default: ShortSlow.
 - **Right panel (Details)** shows only tabs with content: *Strecke* and *Modelle* after a link
   (verdict, levels, height profile with Fresnel zone, all model families, methodology folded at
   the bottom), *Rundgang* when the walk layer compares with the models, *Knoten* (the node list,
   see below) while the node layer is on, *Auswahl* with the object last clicked on the map
-  (its fields and the toolbar of its popup, kept after the popup closes), *Aufgabe* for the log
+  (its fields and the toolbar of its popup, kept after the popup closes; a measurement point
+  opens it instead of a popup), *Aufgabe* for the log
   of a background task, *Einsatz* for a mission. ✕ closes it, **Details** brings it back.
   Tabs support Left/Right, Home and End keys. On phones, details appear over the lower map;
   opening messages dismisses that overlay so the conversation is accessible.
@@ -135,9 +145,10 @@ Results are kept in memory until the server restarts.
 ## Background tasks (Aufgaben)
 
 Long jobs run in the server, not in the page: closing or reloading the page doesn't stop them.
-**＋ Traceroute-Rundgang**, **＋ Abdeckung simulieren**, **＋ Laserscan-Szene erstellen** and
+**＋ Abdeckung simulieren**, **＋ Laserscan-Szene erstellen** and
 **＋ Straßennetz laden** (the road graph of the coordination mode, see there) open a form (defaults and last used values);
-**Starten** checks the input and starts the task. The list shows state (wartet, läuft,
+**Starten** checks the input and starts the task. **＋ Traceroute-Rundgang …** is under
+*Rundgänge* only, with its form; the running walk shows there and in this list. The list shows state (wartet, läuft,
 fertig, Fehler, abgebrochen), progress, what the task is doing and how long it runs, with
 *Stoppen/Abbrechen*, *Protokoll* (live log in the right panel), *Entfernen* for finished tasks and
 follow-ups (*Anzeigen* for a coverage grid, *GPX-Spur hochladen …* after a walk). A notice pops up
@@ -149,8 +160,8 @@ when a task ends or fails.
 - **Traceroute-Rundgang** is `scripts/probe_walk.py` inside the server: it uses the map app's USB
   connection (connecting if needed), so the node layer and packet logging keep working. Stopping
   it is its normal end. The device can't be disconnected while it runs. Afterwards upload the
-  phone's GPX track (*GPX-Spur hochladen …*, stored in `data/tracks/`): the walk layer then shows
-  the probes on the track.
+  phone's GPX track (*GPX-Spur hochladen …* on the finished task or under *Rundgänge*, stored in
+  `data/tracks/`): the walk layer then shows the probes on the track.
 - **Abdeckung simulieren** runs `scripts/sim_coverage_map.py` as a separate process (progress
   from its row counter, *Abbrechen* ends the process) on the chosen scene (default: the one in
   use; the site must lie inside it). The grid is named after its setup,
@@ -409,7 +420,7 @@ Without a home position the map starts on Germany.
 | Eigene Standorte | `data/sim/sites.json` (editable, see above) | labels |
 | Meshtastic-Knoten | live from the connected device, or `data/exports/nodes-*.json` (`scripts/export_nodes.py`) | source, refresh interval, colour by hops/SNR, max. age, badge or dot |
 | Rundgang (Messung) | position packets `data/packets/<date>.jsonl` (`scripts/listen.py`) or traceroutes `data/probes/<date>.jsonl`, `data/tracks/*.gpx` | date, tracker (positions or traceroutes), GPX track, colour by SNR or measured − model, home site and placement, preset (from the log) |
-| Mesh-Empfang (passiv) | `data/heard/<name>.jsonl` + `data/tracks/<name>.gpx` (*Aufgaben → Rundgänge importieren*) | walk, window length, colour by SNR or last hop, one relay byte (candidates on the map), range limit for relay candidates |
+| Mesh-Empfang (passiv) | `data/heard/<name>.jsonl` + `data/tracks/<name>.gpx` (*Rundgänge → Passive Rundgänge*) | walk, window length, colour by SNR or last hop, one relay byte (candidates on the map), range limit for relay candidates |
 | Simulierte Abdeckung | `data/sim/maps/coverage-*.npz` (task or `scripts/sim_coverage_map.py`) | calculation (newest first), model, opacity |
 | Laserscan-Szene | `data/sim/scenes/` (outlines; unmeasured areas of the scene in use) | show unmeasured areas; scene manager (see below) |
 | Koordination | the coordination mode's missions, targets, areas and places (`data/coord/`) | refresh interval |
@@ -430,7 +441,7 @@ work on the scene and the models holds the server's model lock (`ctx.model_lock`
 src/meshplay/mapapp/
   server.py        HTTP server: page, /scene/* (3D data), /api/app, /api/layers/<id>,
                    /api/tools/<name>, /api/device, /api/jobs, /api/sites, /api/scenes,
-                   /api/tracks, /api/heard, /api/messages, /api/coord/*
+                   /api/tracks, /api/walks, /api/heard, /api/messages, /api/coord/*
   device.py        live USB connection: node list, packet logging, packet listeners
   fake_device.py   simulated radio (--simulate)
   coord/           coordination mode: missions.py (Coordinator, decisions, API), phrases.py
@@ -440,6 +451,7 @@ src/meshplay/mapapp/
                    area (source, tiles, links), the task that downloads and builds
   sites_store.py   editing data/sim/sites.json
   heard_store.py   passive walks: import (GPX + app CSV, checked before writing), list, receiver
+  walks_store.py   the lists of the view Rundgänge (active days, passive walks) and deleting
   messages.py      message store for the messaging pane (data/messages.jsonl, traffic list)
   i18n.py          translations: _(), N_(), L(), language per request
   registry.py      Layer base class, Setting, Context (paths, scene, sites), GeoJSON helpers
@@ -455,7 +467,7 @@ webmap/
   js/tasks.js      task forms, list, log view
   js/coord.js      coordination mode: section, mission form, cards, targets, inspector tab
   js/sites.js      sites editor
-  js/imports.js    passive walks: upload, list, receiving device (Aufgaben)
+  js/walks.js      the view Rundgänge: active and passive walks (start, uploads, lists, delete)
   js/scenes.js     scene manager (layer Laserscan-Szene)
   js/messages.js   messaging pane
   js/nodelist.js   node list (inspector tab Knoten)
@@ -554,4 +566,7 @@ Subclass `JobKind` (in `jobs.py`, or in your own module like `coord/osm.py`) and
 `None`), `job.detail` (one line), `job.result` (e.g. a file name) and call `job.add_log()`; check
 `job.check_stop()` in loops. For a script, `run_process(job, ["scripts/x.py", ...], on_line)`
 streams its output and handles cancelling and exit codes. The page picks the kind up
-automatically; follow-up buttons per kind live in `taskActions()` in `main.js`.
+automatically; follow-up buttons per kind live in `taskActions()` in `main.js`. A kind whose
+start button belongs to another view names it in `start_view` (the traceroute walk: `"walks"`);
+that view opens the form with `openTaskForm(kind, preset, box)` and can show its tasks with
+`watchJobs(box, filter)` (`tasks.js`).

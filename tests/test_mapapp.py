@@ -133,7 +133,95 @@ def test_walk_comparison_falls_back_without_scene(bare_ctx):
     data = layer.data(bare_ctx, values)
     assert "Laserscan-Szene" in data["note"]
     assert data["legend"]["title"].startswith("SNR")
-    assert any(f["geometry"]["type"] == "Point" for f in data["features"])
+    points = [f["properties"] for f in data["features"] if f["geometry"]["type"] == "Point"]
+    assert points and all(p["_panel"] for p in points)  # details in the panel, no popup
+
+
+def test_active_walks_list_days_trackers_and_tracks(bare_ctx):
+    """The page's list of active walks: a day per log that has a tracker, with the trackers of
+    the walk layer's setting and the GPX tracks recorded on that day."""
+    import json
+
+    from meshplay.mapapp.layers.walk import WalkLayer
+    from meshplay.mapapp.walks_store import delete_active, list_active
+
+    assert list_active(bare_ctx) == []  # no data folder yet
+    for folder in ("probes", "packets", "tracks"):
+        (bare_ctx.data_dir / folder).mkdir()
+    probe = {"sentAt": "2026-09-29T12:00:00", "to": "!abcd1234", "result": "ok"}
+    (bare_ctx.data_dir / "probes" / "2026-09-29.jsonl").write_text(
+        json.dumps(probe) + "\n" + json.dumps(probe) + "\n", encoding="utf-8"
+    )
+    position = {
+        "from": 0x11223344,
+        "decoded": {"portnum": "POSITION_APP", "position": {"latitude": 50.7, "longitude": 7.1}},
+    }
+    packets = bare_ctx.data_dir / "packets"
+    (packets / "2026-09-29.jsonl").write_text(json.dumps(position) + "\n", encoding="utf-8")
+    telemetry = {"from": 0x11223344, "decoded": {"portnum": "TELEMETRY_APP"}}
+    (packets / "2026-09-28.jsonl").write_text(json.dumps(telemetry) + "\n", encoding="utf-8")
+    tracks = bare_ctx.data_dir / "tracks"
+    gpx = (
+        '<gpx><trk><trkseg><trkpt lat="50.7" lon="7.1"><time>{day}T10:00:00Z</time></trkpt>'
+        '<trkpt lat="50.71" lon="7.12"><time>{day}T10:30:00Z</time></trkpt></trkseg></trk></gpx>'
+    )
+    (tracks / "walk.gpx").write_text(gpx.format(day="2026-09-29"), encoding="utf-8")
+    (tracks / "earlier.gpx").write_text(gpx.format(day="2026-09-20"), encoding="utf-8")
+    (tracks / "broken.gpx").write_text("<gpx", encoding="utf-8")
+
+    (walk,) = list_active(bare_ctx)  # the day without a position packet is no walk
+    assert walk["date"] == "2026-09-29" and (walk["probes"], walk["positions"]) == (2, 1)
+    assert [v for v, _label in walk["trackers"]] == ["probe:!abcd1234", "!11223344"]
+    track = {"name": "walk.gpx", "bbox": [[50.7, 7.1], [50.71, 7.12]], "shared": False}
+    assert walk["tracks"] == [track]
+    # the layer's settings offer the same days and trackers, the day without a tracker too
+    settings = {s.name: s for s in WalkLayer().settings(bare_ctx)}
+    assert [d for d, _label in settings["date"].options] == ["2026-09-29", "2026-09-28"]
+    assert settings["tracker"].options_map["2026-09-29"] == walk["trackers"]
+    assert settings["tracker"].default == "probe:!abcd1234"
+    # a day comes with its own track, so it shows without choosing one
+    assert settings["gpx"].default == "walk.gpx"
+    assert settings["gpx"].options_map["2026-09-29"] == [["walk.gpx", "walk.gpx"], ["", "—"]]
+    assert settings["gpx"].options_map["2026-09-28"] == [["", "—"]]
+
+    # deleting the walk removes both logs of the day and its track, nothing else
+    with pytest.raises(ValueError, match="Unbekannter Rundgang"):
+        delete_active(bare_ctx, "2026-09-28")  # not a walk: its packet log stays
+    with pytest.raises(ValueError, match="Unbekannter Rundgang"):
+        delete_active(bare_ctx, "../tracks/earlier")
+    done = delete_active(bare_ctx, "2026-09-29")
+    assert sorted(done["deleted"]) == [
+        "packets/2026-09-29.jsonl",
+        "probes/2026-09-29.jsonl",
+        "tracks/walk.gpx",
+    ]
+    assert list_active(bare_ctx) == []
+    left = sorted(p.name for p in bare_ctx.data_dir.rglob("*") if p.is_file())
+    assert left == ["2026-09-28.jsonl", "broken.gpx", "earlier.gpx"]
+
+
+def test_todays_walk_is_not_deleted_while_its_logs_are_written(bare_ctx):
+    import json
+    from datetime import date
+    from types import SimpleNamespace
+
+    from meshplay.mapapp.walks_store import delete_active
+
+    today = date.today().isoformat()
+    probes = bare_ctx.data_dir / "probes"
+    probes.mkdir()
+    log = probes / f"{today}.jsonl"
+    log.write_text(json.dumps({"to": "!abcd1234"}) + "\n", encoding="utf-8")
+    bare_ctx.device = SimpleNamespace(state="verbunden", log_packets=True)
+    with pytest.raises(ValueError, match="erst trennen"):
+        delete_active(bare_ctx, today)
+    bare_ctx.device.state = "getrennt"
+    bare_ctx.jobs = SimpleNamespace(running=lambda kind: [object()])
+    with pytest.raises(ValueError, match="erst stoppen"):
+        delete_active(bare_ctx, today)
+    assert log.is_file()
+    bare_ctx.jobs = SimpleNamespace(running=lambda kind: [])
+    assert delete_active(bare_ctx, today)["deleted"] == [f"probes/{today}.jsonl"]
 
 
 def test_coverage_task_refused_without_scene(bare_ctx):

@@ -4,15 +4,15 @@ import { Map2D } from "./map2d.js";
 import { G, actionsFor, bindToolbar, openMenu, registerActions, toolbarHTML } from "./actions.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
 import { assignTo, hasMissionDetail, initCoord, renderMissionDetail } from "./coord.js";
-import { bindInputs, initialValues, inputsHTML, setFormMap } from "./forms.js";
+import { bindInputs, initialValues, inputsHTML, optionsFor, setFormMap } from "./forms.js";
 import { initMessages, openConversation } from "./messages.js";
 import { initNodeList, renderNodeList } from "./nodelist.js";
 import { LANGS, lang, loadCatalogue, locale, setLang, t, translateStatic } from "./i18n.js";
 import { renderLink, renderWalk } from "./panels.js";
 import { initScenes, openNewScene, renderScenes } from "./scenes.js";
-import { initImports, renderImports } from "./imports.js";
 import { initSites, renderSites } from "./sites.js";
-import { initTasks, openTaskForm, pollSoon, renderDetailIfShown, selectedJob, showDetail } from "./tasks.js";
+import { initTasks, isActive, openTaskForm, pollSoon, renderDetailIfShown, selectedJob, showDetail, watchJobs } from "./tasks.js";
+import { drawWalks, initWalks, renderWalks, uploadTrack } from "./walks.js";
 import { $, css, esc, featureHTML, fmt, getJSON, grade, legendHTML, postJSON } from "./util.js";
 import { initWorkspace, setBadge, setRail, showSection } from "./workspace.js";
 import { buttonLabel, symbolSVG } from "./icons.js";
@@ -93,7 +93,7 @@ function renderLinkLayer() {
       </div>
       <div class="row2"><button class="btn" id="btnSwap">A ⇄ B</button><button class="btn" id="btnClearB">${t("B entfernen")}</button></div>
       <div class="msg" id="linkMsg"></div>
-      <p class="note" style="margin:0">${t("Punkte des Rundgangs, Standorte und Knoten haben im Popup „als A“ / „als B“. Esc beendet das Setzen.")}</p>
+      <p class="note" style="margin:0">${t("Standorte und Knoten haben „als A“ / „als B“ im Popup, Messpunkte eines Rundgangs rechts unter „Auswahl“. Esc beendet das Setzen.")}</p>
     </div>`;
   // own key (was "preset"), so a LongFast saved by the old page doesn't override the default
   $("#preset").value = store.get("link.preset", S.app.default_preset || "ShortSlow");
@@ -136,7 +136,7 @@ function setLinkOn(on) {
 function linkState() {
   $("#btn3dLink").hidden = !S.res;
   if (!S.link.on) linkMsg("");
-  else if (!S.a || !S.b) linkMsg(t("Setze {p}: Klick in die Karte oder „als {p}“ im Popup.", { p: !S.a ? "A" : "B" }));
+  else if (!S.a || !S.b) linkMsg(t("Setze {p}: Klick in die Karte oder „als {p}“ bei einem Objekt der Karte.", { p: !S.a ? "A" : "B" }));
 }
 function renderEndpoints() {
   const box = $("#endpoints"); if (!box) return;
@@ -269,7 +269,8 @@ function toggleInspector(open) {
 
 // ---------------------------------------------------------------- selection
 // The last object clicked on the map, in the details: its fields and the same toolbar as its
-// popup; it stays when the popup closes.
+// popup; it stays when the popup closes. A measurement point has no popup: this is where its
+// details show, and a ring marks it on the map.
 function renderSelection() {
   const f = S.sel, box = $("#t_sel");
   if (!f) { box.innerHTML = ""; return; }
@@ -279,26 +280,44 @@ function renderSelection() {
   const tb = box.querySelector(".acts");
   tb.innerHTML = toolbarHTML(acts);
   bindToolbar(tb, acts, p._title || "", null);
-  box.querySelector("[data-unsel]").addEventListener("click", () => { S.sel = null; renderSelection(); updateInspector(); });
+  box.querySelector("[data-unsel]").addEventListener("click", () => {
+    S.sel = null; map2d.mark(null); renderSelection(); updateInspector();
+  });
 }
 
 // ---------------------------------------------------------------- layers
 function renderLayer(desc) {
   const st = S.layers[desc.id];
   const el = document.getElementById("lyr_" + desc.id);
+  const walks = WALK_LAYERS.includes(desc.id);
   el.innerHTML = `<div class="hd"><input type="checkbox" data-on ${st.enabled ? "checked" : ""} aria-label="${esc(desc.name)}">
       <span class="nm">${esc(desc.name)}</span>
       <button class="btn small quiet" data-open aria-label="${esc(t("Einstellungen für {name}", { name: desc.name }))}" aria-expanded="${st.open}" title="${t("Einstellungen")}">${symbolSVG("settings")}</button></div>
     <div class="bd" ${st.open ? "" : "hidden"}><div class="note" style="margin:0">${esc(desc.description)}</div>
-      ${inputsHTML(desc.settings, st.values, desc.id)}
+      ${walks ? `<div class="eyes" data-eyes></div>` : inputsHTML(desc.settings, st.values, desc.id)}
       <div class="msg"></div><div class="lg"></div><div class="summary"></div>
       ${MANAGED[desc.id] ? `<button class="lnk manage" data-manage>${esc(MANAGED[desc.id][1]())} ›</button>` : ""}</div>`;
   el.querySelector("[data-on]").addEventListener("change", e => { st.enabled = e.target.checked; persist(desc.id); refresh(desc, false, true); });
   el.querySelector("[data-open]").addEventListener("click", () => {
     st.open = !st.open; persist(desc.id); renderLayer(desc); showExtras(desc); el.querySelector("[data-open]").focus();
   });
-  bindInputs(el, desc.settings, st.values, () => { persist(desc.id); renderLayer(desc); refresh(desc, false, true); });
+  if (walks) drawWalks();
+  else bindInputs(el, desc.settings, st.values, () => { persist(desc.id); renderLayer(desc); refresh(desc, false, true); });
   el.querySelector("[data-manage]")?.addEventListener("click", () => showSection(MANAGED[desc.id][0]));
+}
+// Give a layer other values and switch it on or off (enabled null: as it is), then redraw it:
+// the eyes and the options of the walk layers, which are not in the layer's own card.
+function setLayer(id, values = {}, enabled = null) {
+  const desc = S.app.layers.find(l => l.id === id), st = S.layers[id];
+  if (!desc || !st) return;
+  Object.assign(st.values, values);
+  for (const s of desc.settings) {  // a select whose options depend on a changed value
+    if (!s.depends_on) continue;
+    const opts = optionsFor(s, st.values);
+    if (!opts.some(([o]) => String(o) === String(st.values[s.name]))) st.values[s.name] = opts.length ? opts[0][0] : "";
+  }
+  if (enabled !== null) st.enabled = enabled;
+  persist(id); renderLayer(desc); refresh(desc, false, true);
 }
 // The inspector's "Rundgang" tab shows the model comparison of the layer that has one.
 function setWalk(id, data, user = false) {
@@ -328,6 +347,7 @@ function summaryHTML(d) {
 async function refresh(desc, auto = false, user = false) {
   const st = S.layers[desc.id];
   clearTimeout(st.timer);
+  if (!auto && WALK_LAYERS.includes(desc.id)) drawWalks();  // its eyes and options follow
   if (!st.enabled) {
     map2d.clear(desc.id); in3d(() => map3d.clear(desc.id)); showExtras(desc); setWalk(desc.id, null);
     if (desc.id === "nodes") nodesChanged();
@@ -445,13 +465,17 @@ async function deviceStatus(action) {
   }
   S.devState = d.state;
 }
+// The walk layers have no settings in their card: an eye per walk there, their options under
+// Rundgänge with the walks (walks.js).
+const WALK_LAYERS = ["walk", "heard"];
 // Ebenen only show things; managing them is in the view named here (link under the settings).
 const MANAGED = {
   sites: ["sites", () => t("Standorte verwalten")],
   scene: ["scenes", () => t("Szenen verwalten")],
   coord: ["coord", () => t("Einsätze in der Koordination")],
   coverage: ["coverage", () => t("Abdeckung simulieren")],
-  heard: ["imports", () => t("Rundgänge verwalten")],
+  walk: ["walks", () => t("Optionen und Rundgänge verwalten")],
+  heard: ["imports", () => t("Optionen und Rundgänge verwalten")],
 };
 function initLayers() {
   for (const st of Object.values(S.layers)) clearTimeout(st.timer);
@@ -568,9 +592,11 @@ function toast(msg, { bad = false, action = null } = {}) {
   if (!bad) setTimeout(close, action ? 15000 : 6000);
 }
 
-// New files (grids, tracks, probe logs) and edited sites change the layers' options.
+// New or deleted files (grids, tracks, logs, walks) and edited sites change the layers' options.
 async function reloadApp() {
-  try { S.app = await getJSON("api/app"); initLayers(); renderSites($("#sitesBox")); } catch (e) { toast(e.message, { bad: true }); }
+  try {
+    S.app = await getJSON("api/app"); initLayers(); renderSites($("#sitesBox")); renderWalks();
+  } catch (e) { toast(e.message, { bad: true }); }
 }
 
 // Switch a layer on with the given values (a finished task or import shows its result).
@@ -580,35 +606,11 @@ function showLayer(id, values) {
   reloadApp();
 }
 
-// After a walk: upload the phone's GPX track and show the walk with the probes on the map.
-function uploadGPX(job) {
-  const inp = document.createElement("input");
-  inp.type = "file"; inp.accept = ".gpx,application/gpx+xml";
-  inp.addEventListener("change", async () => {
-    const f = inp.files[0]; if (!f) return;
-    status(t("lade {name} hoch …", { name: f.name }));
-    try {
-      const r = await fetch(`api/tracks?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
-      const res = await r.json();
-      if (!r.ok) throw new Error(res.error || `HTTP ${r.status}`);
-      const t0 = Date.parse(res.start) / 1000, t1 = Date.parse(res.end) / 1000;
-      if (job.started && (t1 < job.started || t0 > (job.ended || Date.now() / 1000)))
-        toast(t("{name}: die Spur liegt zeitlich nicht im Rundgang – falsche Datei?", { name: res.name }), { bad: true });
-      const date = new Date(job.started * 1000);
-      const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-      toast(t("{name}: {n} Punkte hochgeladen", { name: res.name, n: res.points }));
-      status(t("bereit"));
-      showLayer("walk", { date: iso, tracker: "probe:" + job.params.to, gpx: res.name });
-    } catch (e) { toast(t("GPX-Upload: {error}", { error: e.message }), { bad: true }); status(e.message, true); }
-  });
-  inp.click();
-}
-
 function taskActions(job) {
   if (job.kind === "coverage" && job.state === "fertig" && job.result && job.result.file)
     return [[t("Anzeigen"), () => showLayer("coverage", { file: job.result.file })]];
   if (job.kind === "probe" && job.state === "fertig" && job.result && job.result.sent)
-    return [[t("GPX-Spur hochladen …"), () => uploadGPX(job)]];
+    return [[t("GPX-Spur hochladen …"), () => uploadTrack(job)]];
   // the 3D view is built for one scene: a new scene in use needs a fresh page
   if (job.kind === "scene" && job.state === "fertig" && job.result && job.result.active)
     return [[t("Neu laden"), () => location.reload()]];
@@ -732,7 +734,7 @@ function bindUI() {
     onClick: (lat, lon) => mapClick(lat, lon),
     featurePick: (f, ll) => featurePick(f, ll),
     onMove: (lat, lon) => mapMove(lat, lon),
-    onSelect: f => { S.sel = f; renderSelection(); updateInspector(); },
+    onSelect: (f, open) => { S.sel = f; renderSelection(); if (open) openInspector("sel"); else updateInspector(); },
   });
   map3d = new Map3D($("#c"), {
     onPick: (lat, lon) => mapClick(lat, lon),
@@ -758,11 +760,16 @@ function bindUI() {
   }
   initSites({ pickOnMap, tempMarker: E_tempMarker, changed: reloadApp, toast, openPanel: () => showSection("sites") });
   renderSites($("#sitesBox"));
-  initImports({ toast, showLayer, changed: reloadApp, fit: box => {
-    if (document.body.classList.contains("is3d")) setView("2d");
-    map2d.fitBox(box);
-  } });
-  renderImports($("#importsBox"));
+  initWalks({ toast, status, showLayer, setLayer, changed: reloadApp,
+    layer: id => {
+      const desc = S.app.layers.find(l => l.id === id), st = S.layers[id];
+      return desc && st ? { name: desc.name, settings: desc.settings, values: st.values, enabled: st.enabled } : null;
+    }, startProbe: () => openTaskForm("probe", null, $("#walkForm")),
+    fit: box => {
+      if (document.body.classList.contains("is3d")) setView("2d");
+      map2d.fitBox(box);
+    } });
+  renderWalks();
   // areas of task forms are picked on the 2D map: the rectangle and preview are drawn there
   setFormMap({
     pick: (label, count, cb) => {
@@ -795,6 +802,7 @@ function bindUI() {
   });
   initTasks({ store, toast, openInspector, updateInspector, onTransition: taskTransition, actions: taskActions,
     guided: { scene: openNewScene } });
+  watchJobs($("#walkJobs"), job => job.kind === "probe" && isActive(job));
   registerLinkActions();
   initLayers();
   S.devState = null;

@@ -279,6 +279,17 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
 /* sites editor */
 .sitemgr{display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--line-soft);padding-top:6px;margin-top:2px}
 .sitelist{display:flex;flex-direction:column;gap:3px}
+.walklist{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+.walklist .sitelist{gap:12px}
+.walkopts{margin-top:12px}
+.walkopts:empty{display:none}
+/* the walks of a walk layer in its card (Ebenen): an eye each, open for the one on the map */
+.eyes{display:flex;flex-direction:column;gap:1px}
+.eye{display:flex;align-items:center;gap:8px;font:inherit;font-size:12px;color:var(--ink3);background:none;border:0;border-radius:4px;padding:4px 6px;cursor:pointer;text-align:left}
+.eye svg{width:16px;height:16px;flex:none}
+.eye:hover{background:var(--accent-soft);color:var(--ink)}
+.eye[aria-pressed="true"]{color:var(--ink);font-weight:600}
+.eye[aria-pressed="true"] svg{color:var(--accent)}
 .site{display:flex;align-items:center;gap:4px}
 .site .txt{flex:1;min-width:0;display:flex;flex-direction:column}
 .site .nm{font-size:12px;font-weight:600}
@@ -346,6 +357,7 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
 .hexmark{background:none;border:none}
 .hexmark svg{overflow:visible;display:block;filter:drop-shadow(0 1px 2px #000a)}
 .hexmark text{font:700 10px var(--sans);fill:#111}
+.selring{box-sizing:border-box;border:2.5px solid var(--accent);border-radius:50%;box-shadow:0 0 0 1.5px #000a,inset 0 0 0 1.5px #000a;pointer-events:none}
 .nd{position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 7px));display:flex;align-items:center;gap:3px;
   padding:1px 6px 1px 4px;border-radius:10px;background:var(--c);color:var(--fg);border:1.5px solid #fff;
   font:600 11px/17px var(--mono);white-space:nowrap;box-shadow:0 1px 4px #0006;cursor:pointer}

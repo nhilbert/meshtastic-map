@@ -77,7 +77,7 @@ class HeardLayer(Layer):
     group = N_("Abdeckung")
     description = N_(
         "Was das mitgeführte Gerät unterwegs empfangen hat, aus dem CSV-Export der "
-        "Meshtastic-App und der GPX-Spur (Aufgaben → Rundgänge importieren)."
+        "Meshtastic-App und der GPX-Spur (Rundgänge → Passive Rundgänge)."
     )
 
     def settings(self, ctx: Context) -> list[Setting]:
@@ -140,8 +140,7 @@ class HeardLayer(Layer):
             return collection(
                 [],
                 note=_(
-                    "Noch kein Rundgang: unter Aufgaben → Rundgänge importieren GPX und CSV "
-                    "hochladen."
+                    "Noch kein Rundgang: unter Rundgänge → Passive Rundgänge GPX und CSV hochladen."
                 ),
             )
         meta, records = load_heard(path)
@@ -211,7 +210,7 @@ class HeardLayer(Layer):
             )
         if recv is None:
             note += " " + _(
-                "Kein Empfänger festgelegt: unter Aufgaben → Rundgänge importieren wählen."
+                "Kein Empfänger festgelegt: unter Rundgänge → Passive Rundgänge wählen."
             )
         return collection(
             features,
@@ -276,6 +275,7 @@ class HeardLayer(Layer):
             _title=_("Paket {time}", time=clock),
             _fields=fields,
             _style=hex_style(color),
+            _panel=True,
             _z=1.5,
             _endpoint={
                 "name": _("Empfangsort {time}", time=clock),
@@ -310,6 +310,7 @@ class HeardLayer(Layer):
             _title=_("{n} Pakete am selben Ort", n=len(group)),
             _fields=fields,
             _style=hex_style(color, size=24, text=str(len(group))),
+            _panel=True,
             _z=1.5,
             _endpoint={
                 "name": _("Empfangsort {time}", time=f"{first:%H:%M}"),
@@ -322,7 +323,7 @@ class HeardLayer(Layer):
     @staticmethod
     def _candidates(points: list[dict]) -> list[dict]:
         """For one relay byte: its plausible candidate nodes with a position and lines from each
-        packet to them; the others are listed in the packet's popup only (a node 100 km away
+        packet to them; the others are listed in the packet's details only (a node 100 km away
         would only pull the map apart)."""
         out, seen = [], {}
         for p in points:

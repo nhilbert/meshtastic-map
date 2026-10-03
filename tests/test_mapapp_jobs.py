@@ -257,6 +257,11 @@ def test_probe_walk_task_logs_probes(ctx):
     assert ctx.device.sent.summary("ShortSlow")["kinds"]["traceroute"]["packets"] == 2
 
 
+def test_probe_walk_is_started_from_the_walks_view(ctx):
+    kinds = {k["id"]: k for k in JobManager(ctx).describe_kinds()}
+    assert kinds["probe"]["start_view"] == "walks" and kinds["coverage"]["start_view"] is None
+
+
 def test_probe_walk_needs_a_device_and_valid_ids(ctx):
     from meshplay.mapapp.jobs import ProbeWalk
 

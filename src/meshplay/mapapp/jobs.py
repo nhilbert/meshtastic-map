@@ -106,6 +106,7 @@ class JobKind:
     stop_label = N_("Abbrechen")
     stop_is_success = False  # e.g. a walk: stopping it is the normal end
     guided = None  # name of a page form that starts this kind instead of the generic one
+    start_view = None  # view of the page that has the start button, instead of Aufgaben
 
     def settings(self, ctx: Context) -> list[Setting]:
         return []
@@ -127,6 +128,7 @@ class JobKind:
             stop_label=_(self.stop_label),
             stop_is_success=self.stop_is_success,
             guided=self.guided,
+            start_view=self.start_view,
             settings=[s.to_json() for s in self.settings(ctx)],
         )
 
@@ -180,6 +182,7 @@ class ProbeWalk(JobKind):
     )
     stop_label = N_("Stoppen")
     stop_is_success = True
+    start_view = "walks"
 
     def settings(self, ctx: Context) -> list[Setting]:
         known: dict[str, str] = {}

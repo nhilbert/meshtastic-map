@@ -20,7 +20,9 @@ function hexHTML(s, size) {
 
 export class Map2D {
   constructor(el, center, handlers) {
-    this.h = handlers;          // { onClick(lat, lon), onMove(lat, lon), onSelect(feature), featurePick(feature, latlng) }
+    // { onClick(lat, lon), onMove(lat, lon), onSelect(feature, open: show it in the details),
+    //   featurePick(feature, latlng) }
+    this.h = handlers;
     this.map = L.map(el, { zoomControl: true });
     // without a home position: Germany, to find the own area
     if (center) this.map.setView([center.lat, center.lon], 15); else this.map.setView([51.2, 10.4], 6);
@@ -51,10 +53,22 @@ export class Map2D {
 
   clear(id) {
     if (this.layers[id]) { this.map.removeLayer(this.layers[id]); delete this.layers[id]; }
+    if (this.marked && this.marked.id === id) this.mark(null);
+  }
+
+  // The ring around the measurement point shown in the details (id: its layer); null removes it.
+  mark(id, f = null) {
+    if (this.marked) { this.map.removeLayer(this.marked.ring); this.marked = null; }
+    if (!f) return;
+    const [lon, lat] = f.geometry.coordinates, size = ((f.properties._style || {}).size || 18) + 16;
+    const ring = L.marker([lat, lon], { interactive: false, keyboard: false, zIndexOffset: 1000,
+      icon: L.divIcon({ className: "selring", iconSize: [size, size] }) }).addTo(this.map);
+    this.marked = { id, f, ring };
   }
 
   // payload: GeoJSON FeatureCollection (optionally with .raster) or {type:"raster", image, bounds}
   show(id, payload) {
+    const marked = this.marked && this.marked.id === id ? this.marked.f : null;
     this.clear(id);
     const group = L.layerGroup();
     const raster = payload.type === "raster" ? payload : payload.raster;
@@ -92,14 +106,22 @@ export class Map2D {
           // while another tool waits for a map click, a click on an object goes to that tool
           // (registered before the popup's own click handler, which then shows nothing)
           lyr.on("click", e => { if (this.h.featurePick?.(f, e.latlng)) this.pickedAt = Date.now(); });
+          // a measurement point only informs: its details go to the panel on the right
+          if (p._panel) lyr.on("click", () => {
+            if (Date.now() - (this.pickedAt || 0) < 300) return;
+            this.map.closePopup();
+            this.mark(id, f);
+            this.h.onSelect?.(f, true);
+          });
           // built on every opening: the actions depend on the moment (device connected, mission)
-          if (p._title || p._fields) lyr.bindPopup(() => {
+          else if (p._title || p._fields) lyr.bindPopup(() => {
             if (Date.now() - (this.pickedAt || 0) < 300) { setTimeout(() => this.map.closePopup()); return document.createElement("div"); }
             const el = document.createElement("div");
             el.innerHTML = featureHTML(p);
             const acts = actionsFor(p._ref, f), box = el.querySelector(".acts");
             box.innerHTML = toolbarHTML(acts);
             bindToolbar(box, acts, p._title || "", () => this.map.closePopup());
+            this.mark(null);
             this.h.onSelect?.(f);
             return el.firstElementChild;
           }, { minWidth: 280, maxWidth: 360 });
@@ -113,6 +135,10 @@ export class Map2D {
     }
     group.addTo(this.map);
     this.layers[id] = group;
+    // a redrawn layer (live refresh, other settings) keeps the ring while the point is still there
+    const same = marked && (payload.features || []).find(f => f.properties._panel
+      && f.properties._title === marked.properties._title && String(f.geometry.coordinates) === String(marked.geometry.coordinates));
+    if (same) this.mark(id, same);
   }
 
   // Link line coloured by the ensemble delivery probability, plus A/B markers.

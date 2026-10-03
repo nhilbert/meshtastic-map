@@ -10,7 +10,8 @@ const ACTIVE = ["läuft", "wartet"];
 const STATE_CLASS = { "läuft": "run", wartet: "wait", fertig: "ok", Fehler: "bad", abgebrochen: "off" };
 // States are stored as German codes and translated for display:
 // t("läuft") t("wartet") t("fertig") t("Fehler") t("abgebrochen")
-const T = { jobs: [], kinds: [], form: null, sel: null, timer: null, api: null, prev: null, detail: null };
+const T = { jobs: [], kinds: [], form: null, formBox: null, watch: [], sel: null, timer: null, api: null, prev: null,
+  detail: null };
 
 // api: { store, toast(msg, opts), openInspector(tab), updateInspector(), onTransition(job, prev),
 //        actions(job) -> [[label, fn], ...] extra buttons per task,
@@ -22,47 +23,56 @@ export function initTasks(api) {
 }
 export const selectedJob = () => (T.sel && T.jobs.find(j => j.id === T.sel)) || null;
 export function pollSoon() { clearTimeout(T.timer); T.timer = setTimeout(poll, 300); }
+export const isActive = job => ACTIVE.includes(job.state);
+// A view shows the tasks of its own kind as well (the running walk under Rundgänge): the same
+// cards as in the task list, for the tasks that pass the filter.
+export function watchJobs(box, filter) { T.watch.push({ box, filter }); }
 
 async function loadKinds() { T.kinds = (await getJSON("api/jobs/kinds")).kinds; return T.kinds; }
 
+// Kinds with a start_view have their start button there, not here.
 function renderStart() {
-  $("#jobStart").innerHTML = T.kinds.map(k =>
+  $("#jobStart").innerHTML = T.kinds.filter(k => !k.start_view).map(k =>
     `<button class="btn" data-kind="${k.id}" title="${esc(k.description)}">＋ ${esc(k.name)}</button>`).join("");
   $("#jobStart").querySelectorAll("[data-kind]").forEach(b => b.addEventListener("click", () => openForm(b.dataset.kind)));
 }
 
 // ---------------------------------------------------------------- start form
 // Other parts of the page start a task kind through its form (the coordination mode's road
-// graph download, a site's coverage from the map); preset fills some of its values.
-export function openTaskForm(kindId, preset = null) {
-  showSection("jobs");
-  openForm(kindId, preset);
+// graph download, a site's coverage from the map); preset fills some of its values. With box
+// the form opens there (a view that starts its own kind) instead of under Aufgaben.
+export function openTaskForm(kindId, preset = null, box = null) {
+  if (!box) showSection("jobs");
+  openForm(kindId, preset, box || $("#jobForm"));
 }
-async function openForm(kindId, preset = null) {
+async function openForm(kindId, preset = null, box = $("#jobForm")) {
   try { await loadKinds(); } catch (e) { T.api.toast(e.message, { bad: true }); return; }  // fresh nodes, sites
   const kind = T.kinds.find(k => k.id === kindId);
   if (kind.guided && T.api.guided && T.api.guided[kind.guided]) { T.api.guided[kind.guided](); return; }
-  T.form = { kind, values: initialValues(kind.settings, { ...T.api.store.get("job." + kindId, null), ...preset }) };
+  T.form = { kind, box, values: initialValues(kind.settings, { ...T.api.store.get("job." + kindId, null), ...preset }) };
   renderForm();
-  $("#jobForm").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
+// One form at a time: closing it or opening it in another box empties the box that showed it.
 function renderForm() {
-  const box = $("#jobForm");
-  if (!T.form) { box.innerHTML = ""; box.hidden = true; clearFormPreview(); return; }
-  const { kind, values } = T.form;
+  const shown = T.formBox;
+  T.formBox = T.form ? T.form.box : null;
+  if (shown && shown !== T.formBox) { shown.innerHTML = ""; shown.hidden = true; }
+  if (!T.form) { clearFormPreview(); return; }
+  const { kind, values, box } = T.form;
   box.hidden = false;
   box.innerHTML = `<div class="hd">${esc(kind.name)}</div>
     <p class="note" style="margin:0">${esc(kind.description)}</p>
     ${inputsHTML(kind.settings, values, "job")}
-    <div class="msg" id="jobMsg" role="alert"></div>
+    <div class="msg" data-msg role="alert"></div>
     <div class="row2"><button class="btn" data-cancel>${t("Abbrechen")}</button><button class="btn on" data-start>${t("Starten")}</button></div>`;
   bindInputs(box, kind.settings, values, (_, rerender) => { if (rerender) renderForm(); });
   box.querySelector("[data-cancel]").addEventListener("click", () => { T.form = null; renderForm(); });
   box.querySelector("[data-start]").addEventListener("click", start);
 }
 async function start() {
-  const { kind, values } = T.form, btn = $("#jobForm [data-start]");
-  btn.disabled = true; $("#jobMsg").textContent = "";
+  const { kind, values, box } = T.form, btn = box.querySelector("[data-start]"), msg = box.querySelector("[data-msg]");
+  btn.disabled = true; msg.textContent = "";
   try {
     const job = await postJSON("api/jobs", { kind: kind.id, params: values });
     T.api.store.set("job." + kind.id, values);
@@ -71,7 +81,7 @@ async function start() {
     T.api.toast(t("Gestartet: {title}", { title: job.title }) + (job.state === "wartet" ? " " + t("(wartet auf die laufende Aufgabe)") : ""));
     pollSoon();
   } catch (e) {
-    $("#jobMsg").textContent = e.message; btn.disabled = false;
+    msg.textContent = e.message; btn.disabled = false;
   }
 }
 
@@ -124,10 +134,18 @@ function bindActions(el, j) {
   el.querySelectorAll("[data-x]").forEach(b => b.addEventListener("click", () => extra[+b.dataset.x][1]()));
 }
 function renderList() {
+  for (const w of T.watch) {
+    const jobs = T.jobs.filter(w.filter);
+    w.box.hidden = !jobs.length;
+    renderCards(w.box, jobs);
+  }
   const box = $("#jobList");
   if (!T.jobs.length) { box.innerHTML = `<p class="note" style="margin:0">${t("Noch keine Aufgaben.")}</p>`; return; }
+  renderCards(box, T.jobs);
+}
+function renderCards(box, jobs) {
   const today = new Date().toDateString();
-  box.innerHTML = T.jobs.map(j => {
+  box.innerHTML = jobs.map(j => {
     const when = new Date(j.created * 1000).toDateString() === today ? clock(j.created) : `${day(j.created)} ${clock(j.created)}`;
     return `<div class="job ${T.sel === j.id ? "sel" : ""}" data-id="${j.id}">
       <div class="hd"><span class="chip ${STATE_CLASS[j.state] || ""}">${esc(t(j.state))}</span><span class="nm" title="${esc(j.title)}">${esc(j.title)}</span></div>

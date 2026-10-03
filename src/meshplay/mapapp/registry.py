@@ -8,6 +8,8 @@ A layer returns one of two payloads from data():
                        the theme's contrast colour (or "ring") and an optional "text" inside
             _title     popup/tooltip heading
             _fields    {label: value} shown in the popup
+            _panel     True: a click shows title and fields in the page's detail panel (tab
+                       Auswahl) instead of a popup; for measurement points, which only inform
             _z         height above ground in the 3D view [m] (default 2)
             _icon      badge marker instead of a circle: {"text", "symbol" (router, tracker,
                        client, sensor, home, target, via), "color", "own", "faded", "hint"}

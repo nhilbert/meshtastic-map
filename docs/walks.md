@@ -18,7 +18,7 @@ walk, so no other node relays your test traffic. Set it back afterwards (default
 
 1. **Tracker** (Meshtastic app): add your private channel (same name and key as on the home
    node, e.g. as channel 1) and set LoRa → hop limit **0**. Position sharing can stay off.
-2. **At home:** in the map app open *Aufgaben → ＋ Traceroute-Rundgang*, enter the tracker's
+2. **At home:** in the map app open *Rundgänge → ＋ Traceroute-Rundgang …*, enter the tracker's
    node ID and the private channel, *Starten*. Or on the command line:
 
    ```powershell
@@ -28,9 +28,11 @@ walk, so no other node relays your test traffic. Set it back afterwards (default
    Wait for the first answers before you leave (tracker next to the home node). Keep the laptop
    awake and plugged in.
 3. **Walk** with the tracker in your pocket and a GPX recording on your phone.
-4. **Back home:** stop the task (or Ctrl+C), then choose *GPX-Spur hochladen …* on the finished
-   task in the map app: the walk layer shows the route coloured by reachability and every probe
-   with both SNR values. Or save the GPX file to `data/tracks/` and run
+4. **Back home:** stop the task (or Ctrl+C), then choose *GPX-Spur hochladen …* under
+   *Rundgänge* (or on the finished task): the walk layer shows the route coloured by
+   reachability and every probe with both SNR values; a click on a probe shows its values in
+   the right panel. The day stays in the list under *Rundgänge → Aktive Rundgänge* (tracker,
+   GPX track, *Anzeigen*, and a bin that deletes the day's logs and its track). Or save the GPX file to `data/tracks/` and run
 
    ```powershell
    python scripts/coverage_map.py --tracker !abcd1234 --probes --gpx data/tracks/walk.gpx --open
@@ -45,7 +47,8 @@ walk, so no other node relays your test traffic. Set it back afterwards (default
    Wait for the tracker's first position before you leave.
 3. **Walk** with a GPX recording on your phone; afterwards save the file to `data/tracks/`.
 4. **Map:** `python scripts/coverage_map.py --tracker !abcd1234 --gpx data/tracks/walk.gpx --open`,
-   or choose the tracker and the track in the map app's walk layer.
+   or in the map app *Rundgänge → Aktive Rundgänge*: the day of the walk, its tracker and
+   track, *Anzeigen* (the same choices as in the walk layer's settings).
 
 ## Results
 
@@ -75,16 +78,17 @@ ID, so several nodes can fit.
 2. **Export** the app's packet log as CSV (`Meshtastic_datalog_<name>_<date>.csv`; menu path:
    _to be filled in_). The export is a ring buffer of several days; the map app keeps only the
    part that falls into the track.
-3. **Import** in the map app: *Aufgaben → Rundgänge importieren → Rundgang hochladen …*, select
+3. **Import** in the map app: *Rundgänge → Passive Rundgänge → Rundgang hochladen …*, select
    the GPX and the CSV together. The import checks the receiving device (suggested: the sender
    whose rows mostly carry SNR 0.0 and no relay; change it in the list) and whether the export's
    times fit the track (CSV times are local time without zone; read in the computer's zone).
+   The bin in a walk's row deletes it (the track too, unless an active walk of that day uses it).
 4. **Show**: layer *Mesh-Empfang (passiv)* (group *Abdeckung*): a hexagon per packet coloured by
    SNR or last hop (packets within 15 m of each other, e.g. while standing, as one hexagon with
    their count), the track in windows (reception · device active but nothing heard · no data). Pick one
-   relay byte to see its plausible candidate nodes and lines to them; the popup grades each
-   packet's last hop (unique, likely, ambiguous) and lists every candidate. Candidates further
-   than the range limit (default 15 km, an assumption) are not plausible; nodes without position
+   relay byte to see its plausible candidate nodes and lines to them; a click on a packet
+   shows its details in the right panel, which grade the last hop (unique, likely, ambiguous)
+   and list every candidate. Candidates further than the range limit (default 15 km, an assumption) are not plausible; nodes without position
    can't be ruled out. Neither the app's own guess nor the propagation models are used to pick a
    candidate.
 

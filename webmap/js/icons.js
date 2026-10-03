@@ -53,6 +53,11 @@ PATHS.gear = '<circle cx="8" cy="8" r="2"/><path d="M6.9 1.5h2.2l.4 1.8 1.5.9 1.
 PATHS.clock = '<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/>';
 PATHS.ruler = '<path d="M2 11 11 2l3 3-9 9z"/><path d="m5 8 1.5 1.5M7 6l1 1M9 4l1.5 1.5"/>';
 PATHS.hourglass = '<path d="M4.5 2h7M4.5 14h7M5 2c0 3 6 3.5 6 6s-6 3-6 6M11 2c0 3-6 3.5-6 6s6 3 6 6"/>';
+// a dashed track from its start to a pin: the walks
+PATHS.walk = '<circle cx="2.8" cy="13" r="1.3"/><path d="M5 13c3.5 0 1.5-3.6 4.5-3.6 1.6 0 2.4-.6 3-1.4" stroke-dasharray="1.8 2.2"/><path d="M12.5 8s-2.5-2.6-2.5-4.4a2.5 2.5 0 0 1 5 0C15 5.4 12.5 8 12.5 8z"/>';
+// a walk's layer shows it, or doesn't
+PATHS.eye = '<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>';
+PATHS.eyeOff = '<path d="M6.3 3.7A6.6 6.6 0 0 1 8 3.5c4.1 0 6.5 4.5 6.5 4.5a11 11 0 0 1-1.7 2.2M10.9 11.7A6 6 0 0 1 8 12.5C3.9 12.5 1.5 8 1.5 8a10.6 10.6 0 0 1 2.7-3.1M6.6 6.6a2 2 0 0 0 2.8 2.8M2.5 2.5l11 11"/>';
 PATHS.plus = '<path d="M8 3v10M3 8h10"/>';
 PATHS.pin = PATHS.tracker;
 PATHS.scene = PATHS.cube;
