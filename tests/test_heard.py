@@ -251,6 +251,16 @@ def test_save_walk_name_conflict_and_reupload(ctx):
     assert upload(ctx, walk_export(), name="probe.gpx")["walk"] == "probe"
 
 
+def test_reupload_with_crlf_track(ctx):
+    crlf = TRACK.replace("><", ">\r\n<")
+    upload(ctx, walk_export(), gpx_text=crlf)
+    assert (ctx.data_dir / "tracks" / "walk.gpx").read_bytes() == crlf.encode()  # kept as is
+    assert upload(ctx, walk_export(), gpx_text=crlf)["walk"] == "walk"
+    # the same track stored earlier by the plain GPX upload (raw bytes, BOM)
+    (ctx.data_dir / "tracks" / "other.gpx").write_bytes(b"\xef\xbb\xbf" + crlf.encode())
+    assert upload(ctx, walk_export(), gpx_text=crlf, name="other.gpx")["walk"] == "other"
+
+
 def test_list_walks_and_set_receiver(ctx):
     upload(ctx, walk_export())
     (w,) = heard_store.list_walks(ctx)

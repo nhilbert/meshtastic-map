@@ -311,7 +311,8 @@ def make_handler(ctx: Context):
                     name = dict(parse_qsl(urlparse(self.path).query)).get("name", "")
                     self.send_json(save_track(ctx, name, self.rfile.read(length)))
                     return
-                if parts[:2] == ["api", "heard"] and length > heard_store.MAX_BYTES + 2_000_000:
+                # JSON escapes every quote and newline of the files; save_walk checks the texts
+                if parts[:2] == ["api", "heard"] and length > 2 * heard_store.MAX_BYTES:
                     raise ValueError(_("Dateien zu groß (zusammen max. 30 MB)"))
                 body = json.loads(self.rfile.read(length) or b"{}")
                 if parts == ["api", "heard"]:
