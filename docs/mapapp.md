@@ -43,7 +43,10 @@ you want to know about, below what keeps coming in.
   the bottom and a view opens as a drawer.
 - **Views**: *Ebenen* only shows things: the layers in folding groups, each with a checkbox and
   a ⚙ with display settings and legend (remembered per browser); where the layer's objects are
-  managed elsewhere, a link leads there (*Standorte verwalten ›*). *Orte*: own sites, targets
+  managed elsewhere, a link leads there (*Standorte verwalten ›*). The two walk layers
+  (*Rundgang (Messung)*, *Mesh-Empfang (passiv)*) have an eye per walk instead of settings: a
+  layer shows one walk at a time, the open eye is the walk on the map, a click on it hides it
+  again; their options are under *Rundgänge*. *Orte*: own sites, targets
   (with path templates), areas, places and OpenStreetMap suggestions, each with its editor, and
   the road graph (*Straßennetz*).
   *Simulation*: laser-scan scenes, the link tool *Strecke A → B*, starting a coverage
@@ -51,11 +54,14 @@ you want to know about, below what keeps coming in.
   *Aktive Rundgänge*: start a traceroute walk (form and the running task right there), upload
   the phone's GPX track, and the days with a probe or packet log, each with its tracker and
   its GPX track. *Passive Rundgänge*: upload GPX + the Meshtastic app's CSV export, and the
-  walks with their receiving device. Both lists work the same: every walk has *Anzeigen* and
-  a red bin that deletes it after asking (an active walk: both logs of the day; a passive one:
-  its imported packets; the GPX track goes too unless a walk of the other kind uses it; today's
-  logs can't be deleted while the device logs or a traceroute walk runs). *Koordination*: the mode switch and
-  the sections *Einsätze*, *Archiv*, *Einstellungen*. *Aufgaben*: start forms and the task
+  walks with their receiving device. Both sections work the same: every walk has its choices
+  and a red bin that deletes it after asking (an active walk: both logs of the day; a passive
+  one: its imported packets; the GPX track goes too unless a walk of the other kind uses it;
+  today's logs can't be deleted while the device logs or a traceroute walk runs). Below the
+  list, *Darstellung und Auswertung* has the options of the kind's layer (colours, home node
+  and preset of the comparison; window length, last hop, range limit); they apply to the walk
+  the layer shows. An upload shows its walk at once; otherwise the eyes under *Ebenen* choose
+  it. *Koordination*: the mode switch and the sections *Einsätze*, *Archiv*, *Einstellungen*. *Aufgaben*: start forms and the task
   list. *Gerät*: connection (the port list shows every serial port,
   *Automatisch* names the one detection would take, ↻ searches again after plugging in) and
   *Funklast*. *Einstellungen*: language and light or dark.
@@ -419,8 +425,8 @@ Without a home position the map starts on Germany.
 | Strecke A → B | computed on demand (`/api/tools/link`) | pick A/B, endpoints, preset, trees |
 | Eigene Standorte | `data/sim/sites.json` (editable, see above) | labels |
 | Meshtastic-Knoten | live from the connected device, or `data/exports/nodes-*.json` (`scripts/export_nodes.py`) | source, refresh interval, colour by hops/SNR, max. age, badge or dot |
-| Rundgang (Messung) | position packets `data/packets/<date>.jsonl` (`scripts/listen.py`) or traceroutes `data/probes/<date>.jsonl`, `data/tracks/*.gpx` | date, tracker (positions or traceroutes), GPX track, colour by SNR or measured − model, home site and placement, preset (from the log) |
-| Mesh-Empfang (passiv) | `data/heard/<name>.jsonl` + `data/tracks/<name>.gpx` (*Rundgänge → Passive Rundgänge*) | walk, window length, colour by SNR or last hop, one relay byte (candidates on the map), range limit for relay candidates |
+| Rundgang (Messung) | position packets `data/packets/<date>.jsonl` (`scripts/listen.py`) or traceroutes `data/probes/<date>.jsonl`, `data/tracks/*.gpx` | date, tracker (positions or traceroutes), GPX track of that day (set by the eye and the walk's row under *Rundgänge*); colour by SNR or measured − model, home site and placement, preset (from the log) (options under *Rundgänge*) |
+| Mesh-Empfang (passiv) | `data/heard/<name>.jsonl` + `data/tracks/<name>.gpx` (*Rundgänge → Passive Rundgänge*) | walk (set by the eye); window length, colour by SNR or last hop, one relay byte (candidates on the map), range limit for relay candidates (options under *Rundgänge*) |
 | Simulierte Abdeckung | `data/sim/maps/coverage-*.npz` (task or `scripts/sim_coverage_map.py`) | calculation (newest first), model, opacity |
 | Laserscan-Szene | `data/sim/scenes/` (outlines; unmeasured areas of the scene in use) | show unmeasured areas; scene manager (see below) |
 | Koordination | the coordination mode's missions, targets, areas and places (`data/coord/`) | refresh interval |

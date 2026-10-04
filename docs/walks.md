@@ -32,7 +32,9 @@ walk, so no other node relays your test traffic. Set it back afterwards (default
    *Rundgänge* (or on the finished task): the walk layer shows the route coloured by
    reachability and every probe with both SNR values; a click on a probe shows its values in
    the right panel. The day stays in the list under *Rundgänge → Aktive Rundgänge* (tracker,
-   GPX track, *Anzeigen*, and a bin that deletes the day's logs and its track). Or save the GPX file to `data/tracks/` and run
+   GPX track, and a bin that deletes the day's logs and its track); under *Ebenen* the layer
+   *Rundgang (Messung)* has an eye per day that shows or hides it. Or save the GPX file to
+   `data/tracks/` and run
 
    ```powershell
    python scripts/coverage_map.py --tracker !abcd1234 --probes --gpx data/tracks/walk.gpx --open
@@ -47,8 +49,9 @@ walk, so no other node relays your test traffic. Set it back afterwards (default
    Wait for the tracker's first position before you leave.
 3. **Walk** with a GPX recording on your phone; afterwards save the file to `data/tracks/`.
 4. **Map:** `python scripts/coverage_map.py --tracker !abcd1234 --gpx data/tracks/walk.gpx --open`,
-   or in the map app *Rundgänge → Aktive Rundgänge*: the day of the walk, its tracker and
-   track, *Anzeigen* (the same choices as in the walk layer's settings).
+   or in the map app: under *Ebenen* open the layer *Rundgang (Messung)* and click the eye of
+   the day; its tracker and track are chosen in the day's row under *Rundgänge → Aktive
+   Rundgänge* (default: the first tracker and the track recorded that day).
 
 ## Results
 
@@ -83,9 +86,12 @@ ID, so several nodes can fit.
    whose rows mostly carry SNR 0.0 and no relay; change it in the list) and whether the export's
    times fit the track (CSV times are local time without zone; read in the computer's zone).
    The bin in a walk's row deletes it (the track too, unless an active walk of that day uses it).
-4. **Show**: layer *Mesh-Empfang (passiv)* (group *Abdeckung*): a hexagon per packet coloured by
-   SNR or last hop (packets within 15 m of each other, e.g. while standing, as one hexagon with
-   their count), the track in windows (reception · device active but nothing heard · no data). Pick one
+4. **Show**: the import shows the walk at once; later, the eye of the walk in the layer
+   *Mesh-Empfang (passiv)* (*Ebenen*, group *Abdeckung*) shows or hides it, and its options
+   (window length, colours, relay byte, range limit) are under *Rundgänge*. A hexagon per
+   packet coloured by SNR or last hop (packets within 15 m of each other, e.g. while standing,
+   as one hexagon with their count), the track in windows (reception · device active but
+   nothing heard · no data). Pick one
    relay byte to see its plausible candidate nodes and lines to them; a click on a packet
    shows its details in the right panel, which grade the last hop (unique, likely, ambiguous)
    and list every candidate. Candidates further than the range limit (default 15 km, an assumption) are not plausible; nodes without position
