@@ -4,6 +4,8 @@ import { badgeHTML } from "./icons.js";
 import { actionsFor, bindToolbar, openMenu, toolbarHTML } from "./actions.js";
 import { esc, featureHTML, fmt } from "./util.js";
 
+const RIPPLE_MS = 1700;  // a little longer than the ring's animation (app.css)
+
 // A measurement marker: hexagon with a ring in the theme's contrast colour (CSS --hex-ring), so
 // it reads on the dark and the light map; an optional count inside.
 function hexHTML(s, size) {
@@ -164,6 +166,18 @@ export class Map2D {
   panToNode(id) {
     const m = this.nodeMarkers[id];
     if (m && this.map.hasLayer(m)) this.map.panTo(m.getLatLng());
+  }
+  // A ring that spreads from the node's marker and fades: a packet from it was just heard.
+  // It is a marker of its own, so it lasts through a redraw of the node layer; delay_ms sets
+  // several rings of one node apart.
+  ripple(id, delay_ms = 0) {
+    const m = this.nodeMarkers[id];
+    if (!m || !this.map.hasLayer(m)) return;
+    const badge = m instanceof L.Marker;  // the badge sits above its point, a dot on it
+    const ring = L.marker(m.getLatLng(), { interactive: false, keyboard: false, zIndexOffset: -1000,
+      icon: L.divIcon({ className: `ripple${badge ? " onbadge" : ""}`, iconSize: [0, 0],
+        html: `<i style="animation-delay:${delay_ms}ms"></i>` }) }).addTo(this.map);
+    setTimeout(() => this.map.removeLayer(ring), RIPPLE_MS + delay_ms);
   }
   // The node's feature, for actions that need more than its ID (link endpoint).
   nodeFeature(id) { return this.nodeMarkers[id]?.feature || null; }

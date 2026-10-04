@@ -24,6 +24,8 @@ const KINDS = [
   ["other", []],
 ];
 const LOCAL = "local";  // not a type: what the own node gives only to the app (any type)
+const RINGS_MAX = 3, RING_GAP_MS = 350;  // rings on the map for one node's packets of one poll
+const POLL_LATE_MS = 15000;  // a poll this late (tab in the background) brings old packets
 const kindOf = p => (KINDS.find(([, ports]) => ports.includes(p.port)) || KINDS.at(-1))[0];
 const kindLabels = () => ({
   text: t("Text"), position: t("Position"), nodeinfo: t("Knoteninfo"), telemetry: t("Telemetrie"),
@@ -31,12 +33,12 @@ const kindLabels = () => ({
   other: t("Sonstige"), [LOCAL]: t("nur App"),
 });
 const M = {
-  api: null, open: false, conv: null, rev: 0, session: null, timer: null,
+  api: null, open: false, conv: null, rev: 0, session: null, timer: null, polled: 0,
   msgs: new Map(), traffic: [], channels: [], me: null, state: "getrennt", names: {},
   seen: {}, extraDm: new Set(), sending: false, hide: new Set(), favs: new Set(),
 };
 
-// api: { store, toast(msg, opts), connect(), focusNode(id) }
+// api: { store, toast(msg, opts), connect(), focusNode(id), heard(id, delay_ms) }
 export function initMessages(api) {
   M.api = api;
   M.open = api.store.get("msg.open", false);
@@ -106,7 +108,16 @@ async function poll() {
       $("#msgList").dataset.mode = "";
       return poll();
     }
-    M.session = d.session;
+    // a ring on the map for every node a packet was heard from since the last poll: not for
+    // what was there before the page, not for our own node's packets
+    const live = M.session !== null && performance.now() - M.polled < POLL_LATE_MS;
+    M.session = d.session; M.polled = performance.now();
+    const rings = {};
+    if (live) for (const p of d.traffic) {
+      if (p.local || (d.me && p.from === d.me.id)) continue;
+      rings[p.from] = (rings[p.from] || 0) + 1;
+      if (rings[p.from] <= RINGS_MAX) M.api.heard(p.from, (rings[p.from] - 1) * RING_GAP_MS);
+    }
     const fresh = [];
     for (const m of d.messages) {
       const key = `${m.dir}:${m.id}:${m.time}`;

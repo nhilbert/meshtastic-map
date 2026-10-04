@@ -133,6 +133,10 @@ pane's bar, or `--device`).
   device metrics every minute and its statistics every 15 minutes (the firmware sends them to a
   connected app even with telemetry switched off, addressed like a broadcast), and the
   acknowledgements for packets the app sent. The switch *nur App* hides them.
+- **On the 2D map** a ring spreads from a node's marker and fades when a packet from that node
+  was heard (the original sender, not the relay; not your own node), up to three rings for
+  several packets at once. It follows the pane's poll, so a few seconds after the packet; with
+  the system's *reduce motion* setting the ring only fades.
 - Messages are kept in `data/messages.jsonl`; the traffic list only in memory.
 
 The **Knoten** tab in the right panel lists the same nodes as the layer *Meshtastic-Knoten* (same

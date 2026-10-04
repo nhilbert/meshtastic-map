@@ -870,6 +870,7 @@ function bindUI() {
       .map(f => ({ name: f.properties._title, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] })),
   });
   initMessages({ store, toast, connect: () => deviceStatus("connect"), focusNode,
+    heard: (id, delay_ms) => { if (!document.body.classList.contains("is3d")) map2d.ripple(id, delay_ms); },
     onOpen: () => { if (matchMedia("(max-width: 700px)").matches && !$("#right").hidden) toggleInspector(false); },
   });
   initDevConfig({ toast, refreshStatus: () => deviceStatus() });

@@ -404,6 +404,13 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
 .hexmark svg{overflow:visible;display:block;filter:drop-shadow(0 1px 2px #000a)}
 .hexmark text{font:700 10px var(--sans);fill:#111}
 .selring{box-sizing:border-box;border:2.5px solid var(--accent);border-radius:50%;box-shadow:0 0 0 1.5px #000a,inset 0 0 0 1.5px #000a;pointer-events:none}
+.ripple{background:none;border:none;pointer-events:none}
+.ripple i{position:absolute;left:0;top:0;width:14px;height:14px;box-sizing:border-box;transform:translate(-50%,-50%);border-radius:50%;
+  border:2.5px solid var(--accent);box-shadow:0 0 0 1px #0008,inset 0 0 0 1px #0008;opacity:0;animation:ripple 1.6s ease-out both}
+.ripple.onbadge i{top:-18px}
+@keyframes ripple{0%{width:14px;height:14px;opacity:.95}70%{opacity:.5}100%{width:84px;height:84px;opacity:0}}
+@keyframes ripplestill{0%{opacity:.95}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.ripple i{width:44px;height:44px;animation-name:ripplestill}}
 .nd{position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 7px));display:flex;align-items:center;gap:3px;
   padding:1px 6px 1px 4px;border-radius:10px;background:var(--c);color:var(--fg);border:1.5px solid #fff;
   font:600 11px/17px var(--mono);white-space:nowrap;box-shadow:0 1px 4px #0006;cursor:pointer}
