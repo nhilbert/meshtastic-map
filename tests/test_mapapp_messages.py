@@ -105,6 +105,20 @@ def test_received_text_and_traffic(dev):
     assert dev.names({"!abcd1234"}) == {"!abcd1234": {"short": "TRK", "long": "Tracker"}}
 
 
+def test_app_only_packets_are_marked(dev):
+    """The own node's device metrics go to the app only (no hop start, no relay byte); what it
+    transmitted, and other nodes' packets, are not marked."""
+    dev.iface.myInfo = SimpleNamespace(my_node_num=0x11112222)
+    own = {"from": 0x11112222, "to": 0xFFFFFFFF, "hopLimit": 5}
+    dev._on_receive({**own, "decoded": {"portnum": "TELEMETRY_APP"}}, dev.iface)
+    sent = {**own, "channel": 1, "hopStart": 5, "relayNode": 0x22}
+    dev._on_receive({**sent, "decoded": {"portnum": "POSITION_APP"}}, dev.iface)
+    # hop limit 0: the API leaves hopStart out, the relay byte still shows the transmission
+    dev._on_receive({"from": 0x11112222, "relayNode": 0x22, "decoded": {}}, dev.iface)
+    dev._on_receive(packet(port="TELEMETRY_APP"), dev.iface)
+    assert [p["local"] for p in dev.messages.traffic_since(0)] == [True, False, False, False]
+
+
 def test_send_direct_and_delivery(dev):
     msg = dev.send_text("  hi  ", "!abcd1234", 0)
     sent = dev.iface.sent[-1]

@@ -9,10 +9,31 @@ import { setBadge, setRail } from "./workspace.js";
 
 const MAX_BYTES = 200;  // same limit as the server (meshplay.mapapp.messages.MAX_TEXT_BYTES)
 const TRAFFIC = "traffic";
+const KEEP_TRAFFIC = 1000;  // as the server (meshplay.mapapp.messages.KEEP_TRAFFIC)
+// Packet types for the filter of "Alle Pakete": the protocol's ports, grouped as they occur on
+// a mesh. Every other port (admin, range test, store & forward, sensors, ATAK, private apps)
+// is "other"; "ENCRYPTED" stands for a packet the node has no key for.
+const KINDS = [
+  ["text", ["TEXT_MESSAGE_APP", "TEXT_MESSAGE_COMPRESSED_APP", "ALERT_APP"]],
+  ["position", ["POSITION_APP", "WAYPOINT_APP"]],
+  ["nodeinfo", ["NODEINFO_APP", "NODE_STATUS_APP"]],
+  ["telemetry", ["TELEMETRY_APP"]],
+  ["routing", ["ROUTING_APP", "NEIGHBORINFO_APP"]],
+  ["traceroute", ["TRACEROUTE_APP"]],
+  ["encrypted", ["ENCRYPTED"]],
+  ["other", []],
+];
+const LOCAL = "local";  // not a type: what the own node gives only to the app (any type)
+const kindOf = p => (KINDS.find(([, ports]) => ports.includes(p.port)) || KINDS.at(-1))[0];
+const kindLabels = () => ({
+  text: t("Text"), position: t("Position"), nodeinfo: t("Knoteninfo"), telemetry: t("Telemetrie"),
+  routing: t("Routing"), traceroute: t("Traceroute"), encrypted: t("verschlüsselt"),
+  other: t("Sonstige"), [LOCAL]: t("nur App"),
+});
 const M = {
   api: null, open: false, conv: null, rev: 0, timer: null,
   msgs: new Map(), traffic: [], channels: [], me: null, state: "getrennt", names: {},
-  seen: {}, extraDm: new Set(), sending: false,
+  seen: {}, extraDm: new Set(), sending: false, hide: new Set(),
 };
 
 // api: { store, toast(msg, opts), connect(), focusNode(id) }
@@ -22,6 +43,7 @@ export function initMessages(api) {
   M.conv = api.store.get("msg.conv", null);
   M.seen = api.store.get("msg.seen", {}) || {};
   for (const id of api.store.get("msg.dms", []) || []) M.extraDm.add(id);
+  for (const id of api.store.get("msg.hide", []) || []) M.hide.add(id);
   $("#btnMsg").addEventListener("click", () => setOpen(!M.open));
   $("#msgHead").addEventListener("click", e => { if (!e.target.closest("button, input, label")) setOpen(!M.open); });
   $("#msgFold").addEventListener("click", () => setOpen(!M.open));
@@ -35,6 +57,13 @@ export function initMessages(api) {
     if (node) { api.focusNode(node.dataset.node); return; }
     const head = e.target.closest(".pkthd");
     if (head) togglePacket(head.parentElement);
+  });
+  $("#msgFilter").addEventListener("click", e => {
+    const chip = e.target.closest("[data-kind]");
+    if (!chip) return;
+    if (!M.hide.delete(chip.dataset.kind)) M.hide.add(chip.dataset.kind);
+    api.store.set("msg.hide", [...M.hide]);
+    render();
   });
   setOpen(M.open);
   poll();
@@ -77,7 +106,7 @@ async function poll() {
       if (!M.msgs.has(key) && m.dir === "in" && M.rev) fresh.push(m);
       M.msgs.set(key, m);
     }
-    M.traffic = M.traffic.concat(d.traffic).slice(-200);
+    M.traffic = M.traffic.concat(d.traffic).slice(-KEEP_TRAFFIC);
     Object.assign(M.names, d.names);
     M.rev = d.rev; M.channels = d.channels; M.me = d.me; M.state = d.state;
     if (M.open) markSeen();
@@ -150,6 +179,7 @@ function render() {
     <div class="grp">${t("Verkehr")}</div>${`<button class="conv ${M.conv === TRAFFIC ? "sel" : ""}" data-conv="${TRAFFIC}"><span class="nm">${t("Alle Pakete")}</span></button>`}`;
   $("#msgConvs").querySelectorAll("[data-conv]").forEach(b => b.addEventListener("click", () => select(b.dataset.conv)));
   const list = $("#msgList"), stick = list.scrollTop + list.clientHeight >= list.scrollHeight - 30;
+  renderFilter();
   if (M.conv === TRAFFIC) {
     $("#msgTo").textContent = t("Alle empfangenen Pakete (neueste unten; nur solange die Karten-App läuft). Klick auf ein Paket zeigt seine Felder.");
     renderTraffic(list);
@@ -195,27 +225,58 @@ function msgHTML(m) {
     : `${dayClock(m.time)} · <span class="st ${m.status === "zugestellt" || m.status === "im Netz" ? "ok" : m.status.startsWith("nicht") ? "bad" : ""}">${esc(statusText(m.status))}</span>`;
   return `<div class="bubble ${m.dir}"><div class="t">${esc(m.text)}</div><div class="meta">${meta}</div></div>`;
 }
+// The type filter above the packet list: a switch per type with the number of its packets,
+// then one for the packets the own node gives only to the app.
+function renderFilter() {
+  const bar = $("#msgFilter");
+  bar.hidden = M.conv !== TRAFFIC;
+  if (bar.hidden) return;
+  if (!bar.children.length) {
+    const labels = kindLabels(), why = esc(t("Vom eigenen Knoten nur an die App gegeben, nicht gefunkt"));
+    bar.innerHTML = [...KINDS.map(([id]) => id), LOCAL].map(id =>
+      `<button class="fchip${id === LOCAL ? ` loc" title="${why}` : ""}" data-kind="${id}">${esc(labels[id])} <span class="n"></span></button>`).join("");
+  }
+  const count = {};
+  for (const p of M.traffic) {
+    count[kindOf(p)] = (count[kindOf(p)] || 0) + 1;
+    if (p.local) count[LOCAL] = (count[LOCAL] || 0) + 1;
+  }
+  for (const chip of bar.children) {
+    chip.setAttribute("aria-pressed", String(!M.hide.has(chip.dataset.kind)));
+    chip.querySelector(".n").textContent = count[chip.dataset.kind] || 0;
+  }
+}
 // The packet list is updated row by row (new ones appended, dropped ones removed), so that an
-// opened packet keeps its place and its text selection while more packets arrive.
+// opened packet keeps its place and its text selection while more packets arrive; the filter
+// only hides rows.
 function renderTraffic(list) {
   if (list.dataset.mode !== TRAFFIC) { list.innerHTML = ""; list.dataset.mode = TRAFFIC; }
   const revs = new Set(M.traffic.map(p => p.rev));
-  let last = 0;
-  for (const row of [...list.children]) {
+  let last = 0, shown = 0;
+  for (const row of list.querySelectorAll(".pkt")) {
     const rev = +row.dataset.pkt;
     if (revs.has(rev)) last = Math.max(last, rev); else row.remove();
   }
   for (const p of M.traffic) if (p.rev > last) list.insertAdjacentHTML("beforeend", trafficHTML(p));
-  if (!M.traffic.length) list.innerHTML = `<p class="note">${t("Noch keine Pakete empfangen.")}</p>`;
+  for (const row of list.querySelectorAll(".pkt")) {
+    row.hidden = M.hide.has(row.dataset.kind) || (row.classList.contains(LOCAL) && M.hide.has(LOCAL));
+    if (!row.hidden) shown++;
+  }
+  const note = !M.traffic.length ? t("Noch keine Pakete empfangen.") : shown ? "" : t("Kein Paket passt zum Filter.");
+  const old = list.querySelector(".note");
+  if ((old ? old.textContent : "") === note) return;
+  old?.remove();
+  if (note) list.insertAdjacentHTML("beforeend", `<p class="note">${esc(note)}</p>`);
 }
 function trafficHTML(p, open = false) {
   const to = p.to === "^all" ? t("alle") : nodeName(p.to);
   const port = p.port === "ENCRYPTED" ? t("verschlüsselt") : p.port.replace(/_APP$/, "").toLowerCase();
-  return `<div class="pkt${open ? " open" : ""}" data-pkt="${p.rev}"><div class="pkthd">
+  const local = p.local ? ` <span class="loc" title="${esc(t("Vom eigenen Knoten nur an die App gegeben, nicht gefunkt"))}">${esc(t("nur App"))}</span>` : "";
+  return `<div class="pkt${open ? " open" : ""}${p.local ? " " + LOCAL : ""}" data-pkt="${p.rev}" data-kind="${kindOf(p)}"><div class="pkthd">
     <button class="lnk fold" aria-expanded="${open}" aria-label="${esc(t("Felder des Pakets"))}" title="${esc(t("Felder des Pakets"))}"${p.packet ? "" : " disabled"}>${open ? "▾" : "▸"}</button>
     <span class="tm">${clock(p.time)}</span>
     <button class="lnk" data-node="${esc(p.from)}">${esc(nodeName(p.from))}</button> → ${esc(to)}
-    <span class="port">${esc(port)}</span> ${t("Kanal {n}", { n: p.channel })}${p.snr != null ? ` · SNR ${p.snr} dB` : ""}${p.hops != null ? ` · ${hops(p.hops)}` : ""}
+    <span class="port">${esc(port)}</span>${local} ${t("Kanal {n}", { n: p.channel })}${p.snr != null ? ` · SNR ${p.snr} dB` : ""}${p.hops != null ? ` · ${hops(p.hops)}` : ""}
     ${p.text ? `<span class="txt">${esc(t("„{text}“", { text: p.text }))}</span>` : ""}</div>${open ? packetHTML(p.packet) : ""}</div>`;
 }
 function togglePacket(row) {

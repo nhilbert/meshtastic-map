@@ -250,6 +250,12 @@ pre.log{font-family:var(--mono);font-size:11px;line-height:1.45;background:var(-
 .badge{background:var(--accent);color:var(--accent-ink);border-radius:9px;font-size:10px;font-weight:600;padding:0 6px;line-height:16px}
 #msgpane .chat{flex:1;min-width:0;display:flex;flex-direction:column}
 #msgpane .to{font-size:11.5px;color:var(--ink2);padding:5px 10px;border-bottom:1px solid var(--line-soft)}
+.pktfilter{display:flex;flex-wrap:wrap;gap:4px;padding:4px 10px;border-bottom:1px solid var(--line-soft)}
+.pktfilter[hidden]{display:none}
+.fchip{font:inherit;font-size:11px;padding:1px 8px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink3);cursor:pointer}
+.fchip[aria-pressed="true"]{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
+.fchip .n{opacity:.7}
+.fchip.loc{margin-left:8px}
 #msgpane .list{flex:1;overflow-y:auto;padding:6px 10px;display:flex;flex-direction:column;gap:5px}
 .bubble{max-width:75%;padding:5px 9px;border-radius:8px;background:var(--bg2);border:1px solid var(--line-soft);align-self:flex-start}
 .bubble.out{align-self:flex-end;background:var(--accent-soft);border-color:transparent}
@@ -258,6 +264,7 @@ pre.log{font-family:var(--mono);font-size:11px;line-height:1.45;background:var(-
 .bubble .st.ok{color:var(--ok)} .bubble .st.bad{color:var(--bad)}
 .pkt{font-size:11px;color:var(--ink2);font-family:var(--mono);overflow-wrap:anywhere}
 .pkt .tm{color:var(--ink3)} .pkt .port{color:var(--accent)} .pkt .txt{color:var(--ink)}
+.pkt .loc{font-size:10px;color:var(--ink3);border:1px solid var(--line);border-radius:3px;padding:0 3px}
 .pkthd{cursor:pointer;border-radius:3px}
 .pkthd:hover,.pkt.open .pkthd{background:var(--bg2)}
 .pkt .fold{color:var(--ink3);margin-right:2px}
@@ -427,7 +434,7 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
   #toasts{right:8px;bottom:8px;max-width:calc(100vw - 16px)}
 }
 @media (pointer:coarse){
-  .btn,.btn.small,.tab,.conv,details.sec>summary{min-height:44px}
+  .btn,.btn.small,.tab,.conv,.fchip,details.sec>summary{min-height:44px}
   .btn.small{min-width:44px}
   select,input[type=number],input[type=text],input[type=search],input[type=time],input[type=datetime-local],#msgpane textarea{font-size:16px;min-height:44px}
   .tog{min-height:40px}

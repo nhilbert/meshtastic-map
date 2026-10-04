@@ -124,7 +124,15 @@ pane's bar, or `--device`).
 - **Alle Pakete** lists the packets received since the map app started (time, sender, recipient,
   type, channel, SNR, hops): the traffic around your node. A click on a packet unfolds all its
   fields under it (packet header, then the decoded content, with the protocol's field names);
-  it stays open while new packets arrive.
+  it stays open while new packets arrive. The switches above the list filter by type, each with
+  the number of its packets among the last 1000: *Text*, *Position* (with waypoints),
+  *Knoteninfo*, *Telemetrie*, *Routing* (acknowledgements, neighbour info), *Traceroute*,
+  *verschlüsselt* (no key for the channel) and *Sonstige* (every other port: admin, range test,
+  store & forward, sensors, ATAK, …). The choice is remembered.
+- **nur App** marks packets your own node gives only to the app and does not transmit: its
+  device metrics every minute and its statistics every 15 minutes (the firmware sends them to a
+  connected app even with telemetry switched off, addressed like a broadcast), and the
+  acknowledgements for packets the app sent. The switch *nur App* hides them.
 - Messages are kept in `data/messages.jsonl`; the traffic list only in memory.
 
 The **Knoten** tab in the right panel lists the same nodes as the layer *Meshtastic-Knoten* (same

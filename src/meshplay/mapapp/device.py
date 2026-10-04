@@ -226,12 +226,11 @@ class DeviceLink:
         self.packets += 1
         self.last_packet = time.time()
         plain = to_plain(packet)
-        if plain.get("decoded", {}).get("portnum") == "TELEMETRY_APP" and plain.get(
-            "from"
-        ) == getattr(getattr(interface, "myInfo", None), "my_node_num", None):
+        own = getattr(getattr(interface, "myInfo", None), "my_node_num", None)
+        if plain.get("decoded", {}).get("portnum") == "TELEMETRY_APP" and plain.get("from") == own:
             self._telemetry_at = self.last_packet
         try:
-            self._record(plain)
+            self._record(plain, own)
         except Exception as e:  # a malformed packet must not stop the logging below
             log.warning("Could not record packet for the messaging pane: %s", e)
         for listener in list(self.listeners):
@@ -251,9 +250,15 @@ class DeviceLink:
             log.warning("Could not log packet: %s", e)
 
     # ------------------------------------------------------------ messages
-    def _record(self, p: dict) -> None:
+    def _record(self, p: dict, own: int | None = None) -> None:
         """Traffic line for every packet, with the whole packet for its details; received
-        texts also go to the conversation."""
+        texts also go to the conversation.
+
+        local marks what our own node (number own) gave only to the app: its device metrics
+        every minute, its statistics, acknowledgements for the app's packets. The firmware
+        addresses them like a broadcast, but a packet it transmitted comes with the hop start
+        and relay byte its router set.
+        """
         decoded = p.get("decoded", {})
         sender = p.get("fromId") or f"!{p.get('from', 0):08x}"
         dest = p.get("to", BROADCAST)
@@ -268,7 +273,11 @@ class DeviceLink:
             "hops": hop_start - hop_limit if hop_start is not None else None,
         }
         port = decoded.get("portnum", "ENCRYPTED")  # no key for it: shown as "verschlüsselt"
-        self.messages.add_traffic({**base, "port": port, "text": decoded.get("text"), "packet": p})
+        on_air = "hopStart" in p or "relayNode" in p
+        local = own is not None and p.get("from") == own and not on_air
+        self.messages.add_traffic(
+            {**base, "port": port, "local": local, "text": decoded.get("text"), "packet": p}
+        )
         if port == "TEXT_MESSAGE_APP" and decoded.get("text"):
             self.messages.add({**base, "id": p.get("id"), "dir": "in", "text": decoded["text"]})
 
