@@ -122,7 +122,9 @@ pane's bar, or `--device`).
   node list. A new direct message pops up as a notice; unread counts are on the activity bar, the pane's bar
   and the conversation list.
 - **Alle Pakete** lists the packets received since the map app started (time, sender, recipient,
-  type, channel, SNR, hops): the traffic around your node.
+  type, channel, SNR, hops): the traffic around your node. A click on a packet unfolds all its
+  fields under it (packet header, then the decoded content, with the protocol's field names);
+  it stays open while new packets arrive.
 - Messages are kept in `data/messages.jsonl`; the traffic list only in memory.
 
 The **Knoten** tab in the right panel lists the same nodes as the layer *Meshtastic-Knoten* (same

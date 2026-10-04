@@ -98,10 +98,10 @@ def test_received_text_and_traffic(dev):
         "hallo",
         1,
     )
-    assert [p["port"] for p in dev.messages.traffic_since(0)] == [
-        "TEXT_MESSAGE_APP",
-        "POSITION_APP",
-    ]
+    traffic = dev.messages.traffic_since(0)
+    assert [p["port"] for p in traffic] == ["TEXT_MESSAGE_APP", "POSITION_APP"]
+    # the whole packet comes along for the details
+    assert traffic[1]["packet"]["decoded"]["portnum"] == "POSITION_APP"
     assert dev.names({"!abcd1234"}) == {"!abcd1234": {"short": "TRK", "long": "Tracker"}}
 
 

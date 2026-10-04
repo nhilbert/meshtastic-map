@@ -252,7 +252,8 @@ class DeviceLink:
 
     # ------------------------------------------------------------ messages
     def _record(self, p: dict) -> None:
-        """Traffic line for every packet; received texts also go to the conversation."""
+        """Traffic line for every packet, with the whole packet for its details; received
+        texts also go to the conversation."""
         decoded = p.get("decoded", {})
         sender = p.get("fromId") or f"!{p.get('from', 0):08x}"
         dest = p.get("to", BROADCAST)
@@ -267,7 +268,7 @@ class DeviceLink:
             "hops": hop_start - hop_limit if hop_start is not None else None,
         }
         port = decoded.get("portnum", "ENCRYPTED")  # no key for it: shown as "verschlüsselt"
-        self.messages.add_traffic({**base, "port": port, "text": decoded.get("text")})
+        self.messages.add_traffic({**base, "port": port, "text": decoded.get("text"), "packet": p})
         if port == "TEXT_MESSAGE_APP" and decoded.get("text"):
             self.messages.add({**base, "id": p.get("id"), "dir": "in", "text": decoded["text"]})
 

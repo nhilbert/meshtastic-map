@@ -30,6 +30,12 @@ export function initMessages(api) {
   txt.addEventListener("input", updateCount);
   txt.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
   $("#msgSend").addEventListener("click", send);
+  $("#msgList").addEventListener("click", e => {
+    const node = e.target.closest("[data-node]");
+    if (node) { api.focusNode(node.dataset.node); return; }
+    const head = e.target.closest(".pkthd");
+    if (head) togglePacket(head.parentElement);
+  });
   setOpen(M.open);
   poll();
 }
@@ -145,16 +151,16 @@ function render() {
   $("#msgConvs").querySelectorAll("[data-conv]").forEach(b => b.addEventListener("click", () => select(b.dataset.conv)));
   const list = $("#msgList"), stick = list.scrollTop + list.clientHeight >= list.scrollHeight - 30;
   if (M.conv === TRAFFIC) {
-    $("#msgTo").textContent = t("Alle empfangenen Pakete (neueste unten; nur solange die Karten-App läuft)");
-    list.innerHTML = M.traffic.map(trafficHTML).join("") || `<p class="note">${t("Noch keine Pakete empfangen.")}</p>`;
+    $("#msgTo").textContent = t("Alle empfangenen Pakete (neueste unten; nur solange die Karten-App läuft). Klick auf ein Paket zeigt seine Felder.");
+    renderTraffic(list);
   } else {
     const direct = M.conv.startsWith("dm:");
     $("#msgTo").innerHTML = direct
       ? t("An {name} · direkt, über Kanal 0", { name: `<button class="lnk" data-node="${esc(M.conv.slice(3))}">${esc(convLabel(M.conv))}</button>` })
       : t("An alle auf Kanal {name}", { name: `<strong>${esc(convLabel(M.conv))}</strong>` });
+    list.dataset.mode = "";
     list.innerHTML = messagesOf(M.conv).map(msgHTML).join("") || `<p class="note">${t("Noch keine Nachrichten.")}</p>`;
   }
-  list.querySelectorAll("[data-node]").forEach(b => b.addEventListener("click", () => M.api.focusNode(b.dataset.node)));
   $("#msgTo").querySelectorAll("[data-node]").forEach(b => b.addEventListener("click", () => M.api.focusNode(b.dataset.node)));
   if (stick) list.scrollTop = list.scrollHeight;
   const can = M.state === "verbunden" && M.conv !== TRAFFIC;
@@ -189,13 +195,55 @@ function msgHTML(m) {
     : `${dayClock(m.time)} · <span class="st ${m.status === "zugestellt" || m.status === "im Netz" ? "ok" : m.status.startsWith("nicht") ? "bad" : ""}">${esc(statusText(m.status))}</span>`;
   return `<div class="bubble ${m.dir}"><div class="t">${esc(m.text)}</div><div class="meta">${meta}</div></div>`;
 }
-function trafficHTML(p) {
+// The packet list is updated row by row (new ones appended, dropped ones removed), so that an
+// opened packet keeps its place and its text selection while more packets arrive.
+function renderTraffic(list) {
+  if (list.dataset.mode !== TRAFFIC) { list.innerHTML = ""; list.dataset.mode = TRAFFIC; }
+  const revs = new Set(M.traffic.map(p => p.rev));
+  let last = 0;
+  for (const row of [...list.children]) {
+    const rev = +row.dataset.pkt;
+    if (revs.has(rev)) last = Math.max(last, rev); else row.remove();
+  }
+  for (const p of M.traffic) if (p.rev > last) list.insertAdjacentHTML("beforeend", trafficHTML(p));
+  if (!M.traffic.length) list.innerHTML = `<p class="note">${t("Noch keine Pakete empfangen.")}</p>`;
+}
+function trafficHTML(p, open = false) {
   const to = p.to === "^all" ? t("alle") : nodeName(p.to);
   const port = p.port === "ENCRYPTED" ? t("verschlüsselt") : p.port.replace(/_APP$/, "").toLowerCase();
-  return `<div class="pkt"><span class="tm">${clock(p.time)}</span>
+  return `<div class="pkt${open ? " open" : ""}" data-pkt="${p.rev}"><div class="pkthd">
+    <button class="lnk fold" aria-expanded="${open}" aria-label="${esc(t("Felder des Pakets"))}" title="${esc(t("Felder des Pakets"))}"${p.packet ? "" : " disabled"}>${open ? "▾" : "▸"}</button>
+    <span class="tm">${clock(p.time)}</span>
     <button class="lnk" data-node="${esc(p.from)}">${esc(nodeName(p.from))}</button> → ${esc(to)}
     <span class="port">${esc(port)}</span> ${t("Kanal {n}", { n: p.channel })}${p.snr != null ? ` · SNR ${p.snr} dB` : ""}${p.hops != null ? ` · ${hops(p.hops)}` : ""}
-    ${p.text ? `<span class="txt">${esc(t("„{text}“", { text: p.text }))}</span>` : ""}</div>`;
+    ${p.text ? `<span class="txt">${esc(t("„{text}“", { text: p.text }))}</span>` : ""}</div>${open ? packetHTML(p.packet) : ""}</div>`;
+}
+function togglePacket(row) {
+  const p = M.traffic.find(x => x.rev === +row.dataset.pkt);
+  if (!p || !p.packet) return;
+  row.insertAdjacentHTML("afterend", trafficHTML(p, !row.classList.contains("open")));
+  const fresh = row.nextElementSibling;
+  row.remove();
+  fresh.querySelector(".fold").focus();
+  fresh.scrollIntoView({ block: "nearest" });
+}
+// Every field of a packet, the packet's own ones before the decoded content. The names are
+// the protocol's; the payload bytes are left out where the fields say the same.
+const DECODED_META = ["portnum", "payload", "bitfield", "wantResponse", "requestId", "replyId", "dest", "source"];
+function packetFields(value, prefix = "") {
+  if (value === null || typeof value !== "object") return [[prefix.slice(0, -1), value]];
+  if (Array.isArray(value) && value.every(v => v === null || typeof v !== "object")) return [[prefix.slice(0, -1), value.join(", ")]];
+  return Object.entries(value).flatMap(([k, v]) => packetFields(v, prefix + k + "."));
+}
+function packetHTML(packet) {
+  const decoded = packet.decoded || {};
+  const told = Object.keys(decoded).some(k => !DECODED_META.includes(k));
+  const all = packetFields(packet).filter(([k]) => !(told && k === "decoded.payload"));
+  const own = all.filter(([k]) => !k.startsWith("decoded."));
+  const value = (k, v) => /time(stamp)?$/i.test(k) && typeof v === "number" && v > 1e9
+    ? `${v} · ${new Date(v * 1000).toLocaleString(locale)}` : String(v);
+  return `<dl class="pktdl">${own.concat(all.filter(f => !own.includes(f)))
+    .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(value(k, v))}</dd>`).join("")}</dl>`;
 }
 function updateCount() {
   const n = new TextEncoder().encode($("#msgText").value.trim()).length;

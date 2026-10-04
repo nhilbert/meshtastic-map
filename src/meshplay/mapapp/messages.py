@@ -81,6 +81,8 @@ class MessageStore:
             return [m for m in self.messages if m["rev"] > rev]
 
     def add_traffic(self, summary: dict) -> None:
+        """summary: time, from, to, channel, snr, rssi, hops, port, text and packet (the
+        whole packet as a plain dict, for the details)."""
         with self._lock:
             self.rev += 1
             summary["rev"] = self.rev
