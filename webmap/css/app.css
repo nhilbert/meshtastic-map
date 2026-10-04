@@ -63,6 +63,7 @@ body.panel-closed main{grid-template-columns:48px minmax(0,1fr) 380px}
 body.panel-closed main.noinsp{grid-template-columns:48px minmax(0,1fr)}
 body.panel-closed aside#rail{display:none}
 body.resizing{cursor:col-resize;user-select:none}
+body.resizing-v{cursor:row-resize;user-select:none}
 #actbar{display:flex;flex-direction:column;justify-content:space-between;padding:4px 0;background:var(--bg);border-right:1px solid var(--line-soft);min-height:0}
 #actbar .ab-group{display:flex;flex-direction:column}
 .ab{position:relative;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:0;background:none;color:var(--ink3);cursor:pointer}
@@ -259,8 +260,11 @@ pre.log{font-family:var(--mono);font-size:11px;line-height:1.45;background:var(-
 .banner.lost{background:var(--bad);color:#fff}
 .banner .btn{background:var(--panel-solid);color:var(--ink)}
 /* messaging pane (under the map) */
-#msgpane{flex:none;display:flex;flex-direction:column;border-top:1px solid var(--line);background:var(--panel-solid);height:40px}
-#msgpane.open{height:clamp(220px,34vh,360px)}
+#msgpane{position:relative;flex:none;display:flex;flex-direction:column;border-top:1px solid var(--line);background:var(--panel-solid);height:40px}
+#msgpane.open{height:var(--msg-h,clamp(220px,34vh,360px));max-height:calc(100% - 120px)}
+.pane-resize{display:none;position:absolute;left:0;right:0;top:0;height:5px;cursor:row-resize;z-index:5}
+#msgpane.open .pane-resize{display:block}
+.pane-resize:hover,.pane-resize:focus-visible,body.resizing-v .pane-resize{background:var(--accent);opacity:.6;outline:none}
 #msgpane .mhd{display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;border-bottom:1px solid var(--line-soft);flex:none}
 #msgpane .mhd strong{font-size:12px}
 #msgpane .mhd .state{font-size:11px;color:var(--ok)}
@@ -455,7 +459,8 @@ table.nodes tr.nl-req .bad{color:var(--bad)}
   body.rail-open #rail{visibility:visible;transform:none}
   #railBackdrop{position:absolute;inset:0;z-index:1200;background:#0006;border:0;padding:0}
   #right{position:absolute;inset:auto 0 49px;height:55%;z-index:1150;border-top:1px solid var(--line);box-shadow:var(--shadow)}
-  #msgpane.open{height:min(52%,380px);min-height:0}
+  #msgpane.open{height:min(52%,380px);min-height:0;max-height:none}
+  #msgpane.open .pane-resize{display:none}
   #msgpane .mbody{flex-direction:column}
   #msgpane .convs{display:flex;gap:4px;width:100%;max-height:80px;min-height:44px;overflow:auto;flex:none;
     border-right:0;border-bottom:1px solid var(--line-soft)}

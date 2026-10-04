@@ -24,6 +24,7 @@ const KINDS = [
   ["other", []],
 ];
 const LOCAL = "local";  // not a type: what the own node gives only to the app (any type)
+const HEIGHT = { min: 140, map: 120, step: 20 };  // px: the open pane at least, the map above it
 const RINGS_MAX = 3, RING_GAP_MS = 350;  // rings on the map for one node's packets of one poll
 const POLL_LATE_MS = 15000;  // a poll this late (tab in the background) brings old packets
 const kindOf = p => (KINDS.find(([, ports]) => ports.includes(p.port)) || KINDS.at(-1))[0];
@@ -67,8 +68,45 @@ export function initMessages(api) {
     api.store.set("msg.hide", [...M.hide]);
     render();
   });
+  bindResize();
   setOpen(M.open);
   poll();
+}
+
+// The open pane's height: its upper edge is dragged, or moved with the arrow keys; a double
+// click returns to the style sheet's height. The map above keeps HEIGHT.map: a drag stops
+// there, and the style sheet holds a stored height to it when the window is smaller.
+function setHeight(px, clamp = true) {
+  const pane = $("#msgpane"), handle = $("#msgResize");
+  if (px == null) { pane.style.removeProperty("--msg-h"); handle.removeAttribute("aria-valuenow"); return null; }
+  const room = pane.parentElement.getBoundingClientRect().height - HEIGHT.map;
+  const h = Math.round(clamp ? Math.max(HEIGHT.min, Math.min(room, px)) : px);
+  pane.style.setProperty("--msg-h", h + "px");
+  handle.setAttribute("aria-valuenow", String(h));
+  return h;
+}
+function bindResize() {
+  const handle = $("#msgResize"), pane = $("#msgpane");
+  const keep = h => M.api.store.set("msg.height", h);
+  setHeight(M.api.store.get("msg.height", null), false);
+  handle.addEventListener("pointerdown", e => {
+    const y0 = e.clientY, h0 = pane.getBoundingClientRect().height;
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing-v");
+    const move = ev => setHeight(h0 + y0 - ev.clientY);
+    const up = ev => {
+      handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", up);
+      document.body.classList.remove("resizing-v");
+      keep(setHeight(h0 + y0 - ev.clientY));
+    };
+    handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", up);
+  });
+  handle.addEventListener("dblclick", () => keep(setHeight(null)));
+  handle.addEventListener("keydown", e => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    keep(setHeight(pane.getBoundingClientRect().height + (e.key === "ArrowUp" ? HEIGHT.step : -HEIGHT.step)));
+    e.preventDefault();
+  });
 }
 
 // Open the pane on a conversation: "ch:<index>" for a channel, "dm:!abcd1234" for a node.

@@ -112,7 +112,8 @@ pane's bar, or `--device`).
 - **Messaging pane** under the map (**Nachrichten** in the activity bar, or click its bar). Left the
   conversations: the device's channels (`0 · Primär`, `1 · Privat`, …), direct conversations with
   nodes, and *Alle Pakete*. Right the messages of the selected one and the input: **Enter** sends,
-  Shift+Enter starts a new line; the counter shows the bytes (at most 200).
+  Shift+Enter starts a new line; the counter shows the bytes (at most 200). The pane's upper
+  edge can be dragged to set its height (remembered, double click resets; not on phones).
 - **Sent messages** show their state: *gesendet*, then *zugestellt* (a direct message the recipient
   confirmed), *im Netz* (a channel message another node was heard relaying) or *nicht zugestellt*
   with the firmware's reason. Received ones show sender, time, SNR and hops; the sender's name
