@@ -378,11 +378,18 @@ reconnects on its own, by automatic detection if the chosen port is gone. **Tren
 1. Pair the node with the computer once, in the system's Bluetooth settings (Windows:
    *Bluetooth & devices → Add device*; the PIN is on the node's display, or the fixed one from
    its Bluetooth settings).
-2. Under *Gerät*, press the Bluetooth button: the search takes 10 s and adds the Meshtastic
-   nodes it finds to the port list (*Bluetooth · name*). A single one is selected at once.
-3. **Verbinden**. This takes longer than on USB, because the Bluetooth library searches for
-   another 10 s before it connects. The choice is remembered by the browser; on the command line it is
-   `--device ble:<name or address>`, in `.env` `MESHTASTIC_PORT=ble:<name or address>`.
+2. Under *Gerät*, press **Suchen** (the Bluetooth button): the search takes 10 s and adds the
+   Meshtastic nodes it finds to the port list (*Bluetooth · name*). What it is doing and what
+   it found stands under the buttons; a single node is selected at once.
+3. **Verbinden**. This takes longer than on USB (up to half a minute), because the Bluetooth
+   library searches for another 10 s before it connects. The choice is remembered by the
+   browser; on the command line it is `--device ble:<name or address>`, in `.env`
+   `MESHTASTIC_PORT=ble:<name or address>`.
+
+If the node is not paired yet, the attempt ends with *Das Gerät ist noch nicht mit diesem
+Rechner gekoppelt*, the panel says how to pair (on Windows with a link to the Bluetooth
+settings), and the server stops trying instead of retrying every 5 s: pairing is your step,
+and attempts meanwhile could disturb it. Pair, then press **Verbinden** again.
 
 A node talks to one Bluetooth client at a time and stops advertising while it is connected:
 if the phone app holds it, the search doesn't find it (disconnect in the app or switch the

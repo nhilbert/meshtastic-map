@@ -434,25 +434,46 @@ function choosePort(port) {
   store.set("device.port", sel.value);
   store.set("device.name", sel.selectedOptions[0]?.dataset.name || "");
 }
+// What the Bluetooth search is doing and what it found, under the buttons that started it; it
+// stays until the next step (connecting, another choice). ready: that step is Verbinden.
+function devHint(msg, { bad = false, ready = false } = {}) {
+  const el = $("#devHint");
+  el.hidden = !msg;
+  el.textContent = msg;
+  el.classList.toggle("bad", bad);
+  $("#devBtn").classList.toggle("on", ready);
+}
 async function scanBluetooth() {
   const btn = $("#devBle");
   S.bleScan = btn.disabled = true;
-  toast(t("Suche Bluetooth-Geräte (10 s) …"));
-  try {
-    const d = await postJSON("api/device/scan", {});
-    renderPorts(d);
-    const found = d.ports.filter(p => p.kind === "ble");
-    if (found.length === 1) {
-      choosePort(found[0].device);
-      toast(t("Bluetooth-Gerät {name} gefunden und ausgewählt.", { name: found[0].description }));
-    } else if (found.length) toast(t("{n} Bluetooth-Geräte gefunden: in der Liste auswählen.", { n: found.length }));
-    else toast(t("Kein Meshtastic-Gerät über Bluetooth gefunden: eingeschaltet, in Reichweite und nicht mit dem Handy verbunden?"), { bad: true });
-  } catch (e) { toast(e.message, { bad: true }); }
+  const end = Date.now() + 10000;
+  const tick = () => {
+    const n = Math.ceil((end - Date.now()) / 1000);
+    if (n > 0) devHint(t("Suche Bluetooth-Geräte … noch {n} s", { n }));
+    else devHint(t("Suche Bluetooth-Geräte …"));
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+  let d = null, error = "";
+  try { d = await postJSON("api/device/scan", {}); } catch (e) { error = e.message; }
+  clearInterval(timer);
   S.bleScan = false;
   btn.disabled = S.simulated || S.devState === "verbunden" || S.devState === "verbinde";
+  if (!d) { devHint(error, { bad: true }); return; }
+  renderPorts(d);
+  const found = d.ports.filter(p => p.kind === "ble");
+  if (found.length === 1) {
+    choosePort(found[0].device);
+    devHint(t("„{name}“ gefunden und ausgewählt. Jetzt verbinden.", { name: found[0].description }), { ready: true });
+    $("#devBtn").focus();
+  } else if (found.length) {
+    devHint(t("{n} Bluetooth-Geräte gefunden: oben das eigene auswählen, dann verbinden.", { n: found.length }));
+    $("#devPort").focus();
+  } else devHint(t("Kein Meshtastic-Gerät über Bluetooth gefunden. Ist es eingeschaltet und in Reichweite? Solange die Handy-App mit ihm verbunden ist, ist es nicht sichtbar."), { bad: true });
 }
 async function deviceStatus(action) {
   let d;
+  if (action) devHint("");
   try {
     d = action ? await postJSON(`api/device/${action}`, { port: $("#devPort").value })
       : await getJSON("api/device");
@@ -477,12 +498,16 @@ async function deviceStatus(action) {
   // Device states are German codes: t("getrennt") t("verbinde") t("verbunden") t("Fehler")
   $("#devText").textContent = d.state === "verbunden"
     ? t("{name} auf {port} · {n} Pakete", { name: d.me ? d.me.name : t("verbunden"), port: d.port === "sim" ? t("Simulation") : isBle(d.port) ? t("Bluetooth") : d.port, n: d.packets }) + since + (d.logging ? " · " + t("Log an") : "")
-    : d.state === "Fehler" ? t("Fehler: {error}", { error: d.error }) : t(d.state);
+    : d.state === "Fehler" ? t("Fehler: {error}", { error: d.error })
+    : d.state === "verbinde" && isBle(d.trying) ? t("verbinde über Bluetooth (kann eine halbe Minute dauern) …")
+    : t(d.state);
   const connected = d.state === "verbunden" || d.state === "verbinde";
   $("#devBtn").textContent = connected || d.retrying ? t("Trennen") : t("Verbinden");
   $("#devBtn").dataset.action = connected || d.retrying ? "disconnect" : "connect";
   $("#devPort").disabled = connected || S.simulated;
-  $("#devBle").disabled = connected || S.simulated || S.bleScan;
+  $("#devBle").disabled = connected || d.retrying || S.simulated || S.bleScan;
+  // Not paired: only the owner can do that, so the server stopped trying; say how.
+  $("#devPair").hidden = !(d.state === "Fehler" && d.error_kind === "unpaired");
   // A connection that dropped is retried by the server; say so over the map until it is back.
   const lost = d.lost_at && d.retrying;
   $("#devBanner").hidden = !lost;
@@ -724,10 +749,11 @@ function bindUI() {
   $("#devBtn").addEventListener("click", () => deviceStatus($("#devBtn").dataset.action || "connect"));
   $("#devScan").innerHTML = symbolSVG("refresh");
   $("#devScan").addEventListener("click", loadPorts);
-  $("#devBle").innerHTML = symbolSVG("bluetooth");
+  buttonLabel($("#devBle"), "bluetooth", t("Suchen"));
   $("#devBle").addEventListener("click", scanBluetooth);
+  $("#devPairLink").hidden = !/Windows/.test(navigator.userAgent);  // the link opens Windows' settings
   $("#devBannerStop").addEventListener("click", () => deviceStatus("disconnect"));
-  $("#devPort").addEventListener("change", () => choosePort($("#devPort").value));
+  $("#devPort").addEventListener("change", () => { choosePort($("#devPort").value); devHint(""); });
   $("#view2d").addEventListener("click", () => setView("2d"));
   $("#view3d").addEventListener("click", () => setView("3d"));
   $("#btnInsp").addEventListener("click", () => toggleInspector($("#right").hidden));

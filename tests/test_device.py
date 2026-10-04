@@ -87,7 +87,8 @@ class FakeSerial:
 
 
 class FakeBle:
-    """Stands in for ble.Interface: only the device named Meshtastic_1234 is in range."""
+    """Stands in for ble.Interface: only the devices named Meshtastic_1234 and Meshtastic_5678
+    are in range, and the second one is not paired with this computer."""
 
     opened: list = []
 
@@ -95,6 +96,8 @@ class FakeBle:
         from meshtastic.ble_interface import BLEInterface
 
         FakeBle.opened.append(address)
+        if address == "Meshtastic_5678":  # what bleak raises on Windows
+            raise OSError(5, "GATT Protocol Error: Insufficient Authentication")
         if address != "Meshtastic_1234":
             raise BLEInterface.BLEError("not found", BLEInterface.BLEError.DEVICE_NOT_FOUND)
         self.closed = False
@@ -122,9 +125,10 @@ def test_link_refuses_a_missing_port_then_retries(system, link):
     assert link.ports()["auto"] is None
     link.connect("COM8")  # the owner's choice: a missing port is an error
     wait_for(lambda: link.state == "Fehler")
-    assert "COM8" in link.error and link.status()["retrying"]
+    status = link.status()
+    assert "COM8" in status["error"] and status["error_kind"] == "no_port" and status["retrying"]
     wait_for(lambda: link.retries >= 1)  # retries fall back to detection: still nothing
-    assert "USB" in link.error
+    assert "USB" in link.status()["error"]
     system([port("COM3", hwid=BT), port("COM9", vid=0x2886, hwid="USB")])  # plugged in
     wait_for(lambda: link.state == "verbunden")
     assert link.port == "COM9" and not link.status()["retrying"]
@@ -172,9 +176,36 @@ def test_link_keeps_trying_a_missing_bluetooth_device(system, link):
     system([port("COM7", vid=0x2886, hwid="USB")])
     link.connect("ble:AA:BB:CC:DD:EE:FF")
     wait_for(lambda: link.retries >= 2)
-    assert link.state == "Fehler" and "AA:BB:CC:DD:EE:FF" in link.error
-    assert "Handy" in link.error  # the plain message, not the library's
+    status = link.status()
+    assert status["state"] == "Fehler" and status["error_kind"] == "not_found"
+    assert status["trying"] == "ble:AA:BB:CC:DD:EE:FF"
+    assert "AA:BB:CC:DD:EE:FF" in status["error"]
+    assert "Handy" in status["error"]  # the plain message, not the library's
     assert set(FakeBle.opened) == {"AA:BB:CC:DD:EE:FF"} and not FakeSerial.opened  # no USB instead
+
+
+def test_link_stops_at_an_unpaired_bluetooth_device(system, link):
+    system([])
+    link.connect("ble:Meshtastic_5678")
+    wait_for(lambda: link.state == "Fehler")
+    status = link.status()
+    assert status["error_kind"] == "unpaired" and "gekoppelt" in status["error"]
+    assert not status["retrying"]  # pairing is the owner's step; no attempts meanwhile
+    time.sleep(0.3)  # RETRY_S is 0.1 here
+    assert FakeBle.opened == ["Meshtastic_5678"]
+
+
+def test_unpaired_is_recognised_behind_the_library_error():
+    from meshplay import ble
+
+    try:
+        try:
+            raise RuntimeError("(5, 'GATT Protocol Error: Insufficient Authentication')")
+        except RuntimeError as e:
+            raise ValueError("Error writing BLE") from e
+    except ValueError as e:
+        assert ble.refused_unpaired(e)
+    assert not ble.refused_unpaired(OSError("Das Handle ist ungültig"))
 
 
 def test_bluetooth_search_fills_the_port_list(system, link, monkeypatch):

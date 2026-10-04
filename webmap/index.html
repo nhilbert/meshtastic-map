@@ -136,12 +136,15 @@
       <details class="sec" data-sec="device" open>
         <summary><h2 data-i18n>Verbindung</h2><span class="dot" id="devDot"></span></summary>
         <div class="dev"><span id="devText">—</span></div>
+        <select id="devPort" aria-label="Port" data-i18n-aria-label="Port"></select>
         <div class="devrow">
-          <select id="devPort" aria-label="Port" data-i18n-aria-label="Port"></select>
           <button class="btn small quiet" id="devScan" aria-label="Ports neu suchen" data-i18n-aria-label="Ports neu suchen" title="Ports neu suchen" data-i18n-title="Ports neu suchen"></button>
-          <button class="btn small quiet" id="devBle" aria-label="Bluetooth-Geräte suchen (10 s)" data-i18n-aria-label="Bluetooth-Geräte suchen (10 s)" title="Bluetooth-Geräte suchen (10 s)" data-i18n-title="Bluetooth-Geräte suchen (10 s)"></button>
+          <button class="btn small" id="devBle" aria-label="Bluetooth-Geräte suchen (10 s)" data-i18n-aria-label="Bluetooth-Geräte suchen (10 s)" title="Bluetooth-Geräte suchen (10 s)" data-i18n-title="Bluetooth-Geräte suchen (10 s)"></button>
           <button class="btn" id="devBtn" data-i18n>Verbinden</button>
         </div>
+        <p class="note" id="devHint" role="status" hidden></p>
+        <p class="note" id="devPair" hidden><span data-i18n>So koppeln: in den Bluetooth-Einstellungen des Rechners das Gerät hinzufügen und die PIN von seinem Display eingeben (ohne Display meist 123456). Danach hier wieder verbinden.</span>
+          <a id="devPairLink" href="ms-settings:bluetooth" data-i18n>Bluetooth-Einstellungen öffnen</a></p>
       </details>
       <details class="sec" data-sec="airtime" open>
         <summary><h2 data-i18n>Funklast</h2><span class="dot" id="airDot"></span></summary>

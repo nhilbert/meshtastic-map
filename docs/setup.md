@@ -130,8 +130,9 @@ map app. The same client is hosted at https://client.meshtastic.org.
 - **Bluetooth device not found:** the node advertises only while no other Bluetooth client
   holds it — disconnect the phone app. It must be switched on, in range and have Bluetooth
   enabled (on ESP32 boards it is off while WiFi is on).
-- **Bluetooth device found, but connecting fails or "nimmt keine Daten an":** pair the node in
-  the system's Bluetooth settings first (PIN from the node's display). After a firmware update
+- **Bluetooth device found, but "noch nicht mit diesem Rechner gekoppelt" ("Insufficient
+  Authentication" in the scripts):** pair the node in the system's Bluetooth settings first
+  (PIN from the node's display, without a display usually 123456). After a firmware update
   or a changed PIN, remove the pairing there and pair again. A one-off Windows error such as
   "Das Handle ist ungültig" goes away by itself; the map app tries again every 5 s.
 - **Map background blank:** open maps with `--open` (a local web server), not as a file.

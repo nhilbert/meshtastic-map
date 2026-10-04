@@ -59,6 +59,18 @@ class Interface(BLEInterface):
         super().close()
 
 
+def refused_unpaired(error: BaseException | None) -> bool:
+    """Whether an attempt failed because the node only talks to a paired computer: one of the
+    GATT errors "insufficient authentication / authorization / encryption", possibly behind
+    the library's own error. By their text, which every bleak version carries."""
+    marks = ("insufficient authentication", "insufficient authorization", "insufficient encr")
+    while error is not None:
+        if any(m in str(error).lower() for m in marks):
+            return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
 def scan() -> list[dict]:
     """Meshtastic devices advertising over Bluetooth right now, as port entries like those of
     device.list_serial_ports(). Takes 10 s. A device that is connected to a phone does not

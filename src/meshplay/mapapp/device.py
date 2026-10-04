@@ -43,6 +43,15 @@ class Simulation:
     speed: float = 1.0
 
 
+class ConnectProblem(RuntimeError):
+    """A failed attempt with a plain message for the owner. kind tells the page what to offer:
+    no_port, no_device, not_found (Bluetooth device not in range) or unpaired."""
+
+    def __init__(self, kind: str, message: L):
+        super().__init__(message)
+        self.kind, self.message = kind, message
+
+
 class DeviceLink:
     def __init__(
         self, data_dir: Path, log_packets: bool = True, simulate: Simulation | None = None
@@ -53,7 +62,9 @@ class DeviceLink:
         self.iface = None
         self.port: str | None = None
         self.state = "getrennt"  # getrennt, verbinde, verbunden, Fehler
-        self.error = ""
+        self.error: str | L = ""
+        self.error_kind = ""  # of a ConnectProblem
+        self.trying: str | None = None  # the port of the running or last attempt
         self.packets = 0
         self.last_packet: float | None = None
         self.sent = airtime.SendLog()  # our own transmissions, for the airtime panel
@@ -82,7 +93,7 @@ class DeviceLink:
             if self._busy or self.state == "verbunden":
                 return
             self._busy = True
-            self.state, self.error = "verbinde", ""
+            self.state, self.error, self.error_kind, self.trying = "verbinde", "", "", port
         threading.Thread(target=self._connect, args=(True,), daemon=True).start()
 
     def _connect(self, first: bool) -> None:
@@ -112,16 +123,20 @@ class DeviceLink:
                     present = port and any(p["device"].lower() == port.lower() for p in ports)
                     if port and not present:
                         if first:
-                            raise RuntimeError(L("Port {port} gibt es nicht (mehr)", port=port))
+                            raise ConnectProblem(
+                                "no_port", L("Port {port} gibt es nicht (mehr)", port=port)
+                            )
                         port = None
                     port = port or find_port(ports)
                 if not port:
-                    raise RuntimeError(
+                    raise ConnectProblem(
+                        "no_device",
                         L(
                             "kein Meshtastic-Gerät an USB gefunden: einstecken (Datenkabel, "
                             "kein Ladekabel) oder den Port auswählen"
-                        )
+                        ),
                     )
+                self.trying = port
                 iface = _open(port)
             with self._lock:
                 self._busy = False
@@ -129,12 +144,18 @@ class DeviceLink:
                     _close_quietly(iface)
                     return
                 self.iface, self.port, self.state = iface, port, "verbunden"
-                self.error, self.lost_at, self.retries = "", None, 0
+                self.error, self.error_kind, self.lost_at, self.retries = "", "", None, 0
             log.info("Device connected on %s", port)
         except Exception as e:  # port busy, no device, ...
+            problem = e if isinstance(e, ConnectProblem) else None
             with self._lock:
                 self._busy = False
-                self.state, self.error = "Fehler", f"{type(e).__name__}: {e}"
+                self.state = "Fehler"
+                self.error = problem.message if problem else f"{type(e).__name__}: {e}"
+                self.error_kind = problem.kind if problem else ""
+                if self.error_kind == "unpaired":
+                    # only the owner can pair, and attempts meanwhile could disturb the pairing
+                    self.wanted = False
             if first or self.retries % 12 == 0:  # once a minute while retrying
                 log.warning("Device connection failed: %s", e)
             self._schedule_retry()
@@ -181,7 +202,7 @@ class DeviceLink:
     def disconnect(self) -> None:
         with self._lock:
             iface, self.iface, self.state = self.iface, None, "getrennt"
-            self.wanted, self.lost_at, self.error = False, None, ""
+            self.wanted, self.lost_at, self.error, self.error_kind = False, None, "", ""
         if iface:
             _close_quietly(iface)
 
@@ -192,7 +213,7 @@ class DeviceLink:
             if interface is None or interface is not self.iface:
                 return
             self.iface, self.state, self.error = None, "Fehler", L("Verbindung verloren")
-            self.lost_at, self.retries = time.time(), 0
+            self.error_kind, self.lost_at, self.retries = "", time.time(), 0
         log.warning("Device connection lost; retrying every %.0f s", RETRY_S)
         # close() joins the reader thread, which may be the one calling here
         threading.Thread(target=_close_quietly, args=(interface,), daemon=True).start()
@@ -433,7 +454,9 @@ class DeviceLink:
         return dict(
             state=self.state,
             port=self.port,
+            trying=self.trying,
             error=str(self.error),
+            error_kind=self.error_kind,
             retrying=self.wanted and self.state != "verbunden",
             retry_s=RETRY_S,
             lost_at=self.lost_at,
@@ -476,26 +499,27 @@ class DeviceLink:
 def _open(port: str):
     """open_interface(), with the Bluetooth errors the owner can do something about as plain
     messages (the library's own point to its command line)."""
-    from meshplay.device import BLE_PREFIX, open_interface
+    from meshplay.device import BLE_PREFIX, is_ble, open_interface
 
     try:
         return open_interface(port)
     except Exception as e:
-        kind = getattr(e, "kind", None)  # of meshtastic's BLEError
-        if kind == "device_not_found":
-            raise RuntimeError(
+        if not is_ble(port):
+            raise
+        from meshplay import ble
+
+        if getattr(e, "kind", None) == "device_not_found":  # meshtastic's BLEError
+            raise ConnectProblem(
+                "not_found",
                 L(
                     "Bluetooth-Gerät {name} nicht gefunden: eingeschaltet, in Reichweite und "
                     "nicht mit dem Handy verbunden?",
                     name=port[len(BLE_PREFIX) :],
-                )
+                ),
             ) from e
-        if kind == "write_error":
-            raise RuntimeError(
-                L(
-                    "Bluetooth-Gerät nimmt keine Daten an: erst in den Bluetooth-Einstellungen "
-                    "des Rechners koppeln (PIN des Geräts)"
-                )
+        if ble.refused_unpaired(e):
+            raise ConnectProblem(
+                "unpaired", L("Das Gerät ist noch nicht mit diesem Rechner gekoppelt")
             ) from e
         raise
 
