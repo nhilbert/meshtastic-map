@@ -33,7 +33,7 @@ const kindLabels = () => ({
 const M = {
   api: null, open: false, conv: null, rev: 0, session: null, timer: null,
   msgs: new Map(), traffic: [], channels: [], me: null, state: "getrennt", names: {},
-  seen: {}, extraDm: new Set(), sending: false, hide: new Set(),
+  seen: {}, extraDm: new Set(), sending: false, hide: new Set(), favs: new Set(),
 };
 
 // api: { store, toast(msg, opts), connect(), focusNode(id) }
@@ -115,6 +115,7 @@ async function poll() {
     }
     M.traffic = M.traffic.concat(d.traffic).slice(-KEEP_TRAFFIC);
     Object.assign(M.names, d.names);
+    M.favs = new Set(d.favorites || []);
     M.rev = d.rev; M.channels = d.channels; M.me = d.me; M.state = d.state;
     if (M.open) markSeen();
     for (const m of fresh) if (m.to !== "^all" && !(M.open && convOf(m) === M.conv))
@@ -255,7 +256,8 @@ function renderFilter() {
 }
 // The packet list is updated row by row (new ones appended, dropped ones removed), so that an
 // opened packet keeps its place and its text selection while more packets arrive; the filter
-// only hides rows.
+// only hides rows. The star of a favourite node follows the device's node list, also on rows
+// that are already there.
 function renderTraffic(list) {
   if (list.dataset.mode !== TRAFFIC) { list.innerHTML = ""; list.dataset.mode = TRAFFIC; }
   const revs = new Set(M.traffic.map(p => p.rev));
@@ -267,6 +269,7 @@ function renderTraffic(list) {
   for (const p of M.traffic) if (p.rev > last) list.insertAdjacentHTML("beforeend", trafficHTML(p));
   for (const row of list.querySelectorAll(".pkt")) {
     row.hidden = M.hide.has(row.dataset.kind) || (row.classList.contains(LOCAL) && M.hide.has(LOCAL));
+    row.querySelector(".fav").hidden = !M.favs.has(row.dataset.from);
     if (!row.hidden) shown++;
   }
   const note = !M.traffic.length ? t("Noch keine Pakete empfangen.") : shown ? "" : t("Kein Paket passt zum Filter.");
@@ -279,9 +282,10 @@ function trafficHTML(p, open = false) {
   const to = p.to === "^all" ? t("alle") : nodeName(p.to);
   const port = p.port === "ENCRYPTED" ? t("verschlüsselt") : p.port.replace(/_APP$/, "").toLowerCase();
   const local = p.local ? ` <span class="loc" title="${esc(t("Vom eigenen Knoten nur an die App gegeben, nicht gefunkt"))}">${esc(t("nur App"))}</span>` : "";
-  return `<div class="pkt${open ? " open" : ""}${p.local ? " " + LOCAL : ""}" data-pkt="${p.rev}" data-kind="${kindOf(p)}"><div class="pkthd">
+  return `<div class="pkt${open ? " open" : ""}${p.local ? " " + LOCAL : ""}" data-pkt="${p.rev}" data-kind="${kindOf(p)}" data-from="${esc(p.from)}"><div class="pkthd">
     <button class="lnk fold" aria-expanded="${open}" aria-label="${esc(t("Felder des Pakets"))}" title="${esc(t("Felder des Pakets"))}"${p.packet ? "" : " disabled"}>${open ? "▾" : "▸"}</button>
     <span class="tm">${clock(p.time)}</span>
+    <span class="fav" title="${esc(t("Favorit"))}"${M.favs.has(p.from) ? "" : " hidden"}>★</span>
     <button class="lnk" data-node="${esc(p.from)}">${esc(nodeName(p.from))}</button> → ${esc(to)}
     <span class="port">${esc(port)}</span>${local} ${t("Kanal {n}", { n: p.channel })}${p.snr != null ? ` · SNR ${p.snr} dB` : ""}${p.hops != null ? ` · ${hops(p.hops)}` : ""}
     ${p.text ? `<span class="txt">${esc(t("„{text}“", { text: p.text }))}</span>` : ""}</div>${open ? packetHTML(p.packet) : ""}</div>`;

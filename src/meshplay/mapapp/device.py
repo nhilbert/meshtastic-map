@@ -464,6 +464,33 @@ class DeviceLink:
                 out[u["id"]] = {"short": u.get("shortName", ""), "long": u.get("longName", "")}
         return out
 
+    def favorites(self) -> list[str]:
+        """IDs of the nodes marked as favourites in the device's node list."""
+        iface = self.iface
+        if iface is None:
+            return []
+        return [node for node, n in list((iface.nodes or {}).items()) if n.get("isFavorite")]
+
+    def set_favorite(self, node: str, on: bool) -> dict:
+        """Mark a node as favourite in the device's node list, or take the mark away: an
+        admin message to our own node, nothing is transmitted. It is the mark the Meshtastic
+        apps show; the firmware keeps favourites when its node list is full. The library
+        reads the node list only when connecting, so its copy is changed here."""
+        iface = self.iface
+        if iface is None or self.state != "verbunden":
+            raise ValueError(_("Gerät nicht verbunden: unter „Gerät“ verbinden"))
+        entry = (iface.nodes or {}).get(node)
+        if entry is None:
+            raise ValueError(_("Das Gerät kennt den Knoten {id} nicht", id=node))
+        if entry.get("num") == getattr(getattr(iface, "myInfo", None), "my_node_num", None):
+            raise ValueError(_("Das eigene Gerät kann kein Favorit sein"))
+        if on:
+            iface.localNode.setFavorite(node)
+        else:
+            iface.localNode.removeFavorite(node)
+        entry["isFavorite"] = on
+        return {"id": node, "favorite": on}
+
     def channels(self) -> list[dict]:
         """Active channels of the device: index, name, primary or secondary."""
         iface = self.iface

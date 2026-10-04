@@ -56,6 +56,27 @@ def test_track_replay_reaches_the_link(dev):
     assert dev.messages.path.name == "messages-sim.jsonl"
 
 
+def test_favorite_is_set_on_the_device(dev):
+    """An admin message to the own node; the node list and the pane's list follow at once."""
+    from meshplay.mapapp.fake_device import CLIENT_NUM, HOME_NUM
+
+    client = node_id(CLIENT_NUM)
+    assert dev.favorites() == [node_id(TRACKER_NUM)]
+    assert dev.set_favorite(client, True) == {"id": client, "favorite": True}
+    assert dev.iface.admin[-1].set_favorite_node == CLIENT_NUM
+    assert dev.nodes()[0][client]["isFavorite"] is True
+    dev.set_favorite(node_id(TRACKER_NUM), False)
+    assert dev.iface.admin[-1].remove_favorite_node == TRACKER_NUM
+    assert dev.favorites() == [client]
+    with pytest.raises(ValueError, match="kennt den Knoten"):
+        dev.set_favorite("!00000001", True)
+    with pytest.raises(ValueError, match="eigene"):
+        dev.set_favorite(node_id(HOME_NUM), True)
+    dev.state = "getrennt"
+    with pytest.raises(ValueError, match="nicht verbunden"):
+        dev.set_favorite(client, True)
+
+
 def test_smart_broadcast_and_position_request(tmp_path):
     """Every 30 m in 10 s: broadcast at the start and after 180 m (100 m and 60 s passed); a
     position request is answered with where the tracker is, once per REPLY_GAP_S."""

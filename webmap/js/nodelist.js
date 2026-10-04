@@ -3,6 +3,8 @@
 // position shows it on the map; ✉ opens a direct conversation in the messaging pane. Traceroute
 // and position request go out over the mesh (server: node_requests.py); the latest result per
 // node shows under its row, polled while a request runs; a traceroute can be drawn on the map.
+// Favourites (★) are the device's own mark, as in the Meshtastic apps; setting one changes the
+// device's node list and transmits nothing.
 import { locale, t } from "./i18n.js";
 import { $, esc, fmt, getJSON, postJSON } from "./util.js";
 import { symbolSVG } from "./icons.js";
@@ -33,10 +35,17 @@ export function initNodeList(api) {
     if (ref.own) return [other];
     const off = L.api.connected() ? null : t("Gerät nicht verbunden");
     const ask = kind => () => { request(ref.id, kind); if (where === "map") showInList(ref.id); };
+    // the mark lives on the device: only the live node list shows it
+    const node = ((L.data && L.data.nodes) || []).find(n => n.id === ref.id);
+    const noFav = off || (L.data && L.data.refresh_s != null ? null : t("nur mit der Quelle „Live vom Gerät“"));
+    const fav = node && node.favorite
+      ? { label: t("Favorit entfernen"), short: t("Kein Favorit"), run: () => favorite(node, false) }
+      : { label: t("Als Favorit merken"), short: t("Favorit"), run: () => favorite(node, true) };
     return [
       { label: t("Direktnachricht"), short: t("Nachricht"), icon: "message", group: G.main, run: () => L.api.message(ref.id) },
       { label: t("Traceroute"), icon: "route", group: G.radio, radio: true, disabled: off, run: ask("traceroute") },
       { label: t("Position anfragen"), short: t("Position"), icon: "locate", group: G.radio, radio: true, disabled: off, run: ask("position") },
+      node && { ...fav, icon: "star", group: G.work, disabled: noFav },
       other,
     ];
   });
@@ -71,6 +80,17 @@ async function request(id, kind) {
   try { await postJSON(`api/nodes/${encodeURIComponent(id)}/${kind}`, {}); }
   catch (e) { L.api.toast(e.message, { bad: true }); }
   poll();
+}
+
+// Set or remove the favourite on the device; the row follows at once, map and popup with the
+// reloaded layer.
+async function favorite(node, on) {
+  try {
+    await postJSON(`api/nodes/${encodeURIComponent(node.id)}/favorite`, { on });
+    node.favorite = on;
+    fill();
+    L.api.refreshNodes();
+  } catch (e) { L.api.toast(e.message, { bad: true }); }
 }
 
 const clock = ts => new Date(ts * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
@@ -161,7 +181,7 @@ function fill() {
   body.innerHTML = shown.length ? `<table class="nodes"><tr><th>${t("Knoten")}</th><th>${t("Hops")}</th><th>SNR</th><th>${t("gehört")}</th></tr>
     ${shown.map(n => `<tr class="${n.own ? "own" : ""}${L.open === n.id ? " open" : ""}${L.flash && L.flash.id === n.id && Date.now() < L.flash.until ? " flash" : ""}">
       <td><button class="lnk nodebtn" data-focus="${esc(n.id)}" aria-expanded="${L.open === n.id}" title="${t("Aktionen zeigen")}">
-        <span class="sn">${esc(n.short || n.id.slice(-4))}</span> ${esc(n.long || n.id)}</button>
+        <span class="sn">${esc(n.short || n.id.slice(-4))}</span> ${esc(n.long || n.id)}${n.favorite ? ` <span class="fav" title="${t("Favorit")}">★</span>` : ""}</button>
         <div class="sub">${esc(n.id)}${n.hw ? " · " + esc(n.hw) : ""}${n.battery != null ? " · " + t("Akku {n} %", { n: n.battery }) : ""}${n.own ? " · " + t("eigenes Gerät") : ""}</div></td>
       <td class="n">${n.hops ?? "–"}</td><td class="n">${n.snr != null ? fmt(n.snr, 1) : "–"}</td><td class="n">${age(n.last)}</td></tr>
       ${L.open === n.id ? `<tr class="nl-tools"><td colspan="4" data-tools="${esc(n.id)}">${toolbarHTML(rowActions(n))}</td></tr>` : ""}

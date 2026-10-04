@@ -41,6 +41,7 @@ const PATHS = {
   // sends on the mesh: the mark of every action that transmits
   antenna: '<path d="M8 8v6.5M5.6 5.6a3.4 3.4 0 0 1 4.8 0M3.8 3.8a6 6 0 0 1 8.4 0"/><circle cx="8" cy="7.6" r=".8"/>',
   check: '<path d="m3 8.5 3 3 7-7"/>',
+  star: '<path d="m8 1.8 1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>',
   copy: '<rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/>',
   area: '<path d="M3 4.5 9 2l5 5-2.5 6.5L3.5 12z"/>',
   place: '<circle cx="8" cy="8" r="5.5" stroke-dasharray="2 2"/><circle cx="8" cy="8" r="1.3"/>',

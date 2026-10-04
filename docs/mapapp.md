@@ -141,6 +141,13 @@ long name, ID, hardware, battery, hops, SNR, last heard. Filter by name or ID, s
 hops, SNR or name. A click on a node opens its row with the same toolbar as its popup on the map
 and brings it into view on the map.
 
+**Favorit** in that toolbar marks a node as favourite (★ after its name) or takes the mark away.
+It is the device's own mark, the one the Meshtastic apps show: the app writes it to the connected
+device's node list (an admin message to your own node, nothing is transmitted), and the firmware
+keeps favourites when its node list is full. So it needs the device connected and the source
+*Live vom Gerät*. *Alle Pakete* shows the ★ before the sender of every packet from a favourite,
+and the coordination form lists favourites first.
+
 Two actions per node send over the mesh (`mapapp/node_requests.py`), on the channel the device
 heard the node on:
 

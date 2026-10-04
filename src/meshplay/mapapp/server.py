@@ -38,7 +38,8 @@ POST /api/heard               {"files": [{"name", "text"}, ...], "receiver"} imp
 GET  /api/messages?rev=N      messages (and with traffic=1 recent packets) newer than revision N
 POST /api/messages            {"text", "to": "!id" or "^all", "channel"} sends a text
 GET  /api/nodes/requests      latest traceroute and position request per node
-POST /api/nodes/<id>/<kind>   traceroute or position: send one to the node (node list)
+POST /api/nodes/<id>/<kind>   traceroute or position: send one to the node (node list);
+                              favorite {"on": bool}: the mark in the device's node list
 GET/POST /api/coord/...       coordination mode (dispatched in coord/missions.py)
 """
 
@@ -134,6 +135,7 @@ def messages_since(ctx: Context, rev: int, traffic: str | None) -> dict:
         "messages": messages,
         "traffic": packets,
         "names": dev.names(ids),
+        "favorites": dev.favorites(),
     }
 
 
@@ -379,6 +381,9 @@ def make_handler(ctx: Context):
                     return
                 if parts[:2] == ["api", "coord"]:
                     self.send_json(ctx.coord.api("POST", parts[2:], {}, body))
+                    return
+                if parts[:2] == ["api", "nodes"] and len(parts) == 4 and parts[3] == "favorite":
+                    self.send_json(ctx.device.set_favorite(parts[2], bool(body.get("on", True))))
                     return
                 if parts[:2] == ["api", "nodes"] and len(parts) == 4 and parts[3] in KINDS:
                     send = getattr(ctx.node_requests, parts[3])
