@@ -318,3 +318,150 @@ def test_a_failed_write_restarts_the_link(real, monkeypatch):
         device_config.write(ctx, {"hop_limit": 2})
     assert restarts and ctx.device.config_write is None
     assert "commit_edit_settings" not in kinds(ctx.device.iface)
+
+
+# ---------------------------------------------------------------- channels
+def keep(*indices) -> list[dict]:
+    return [{"from": i} for i in indices]
+
+
+def channel_writes(iface) -> list[int]:
+    return [m.set_channel.index for m in iface.admin if m.HasField("set_channel")]
+
+
+def test_channel_changes_are_previewed_without_keys(ctx):
+    node = ctx.device.iface.localNode
+    wanted = [
+        {"from": 0, "precision": 0},
+        {"from": 1, "name": "Team", "key": "generate"},
+        {"from": None, "name": "Gast", "key": "default", "precision": 32},
+    ]
+    plan = device_config.preview(ctx, {"channels": wanted})
+    assert [(c["label"], c["old"], c["new"]) for c in plan["changes"]] == [
+        ("Kanal 0: Position", "Position auf 2,9 km genau", "keine Position"),
+        ("Kanal 1: Name", "Privat", "Team"),
+        ("Kanal 1: Schlüssel", "AES-256", "neuer Schlüssel (AES-256)"),
+        ("Kanal 2", "—", "neu: „Gast“, Standardschlüssel, öffentlich bekannt, genaue Position"),
+    ]
+    warnings = [n["text"] for n in plan["notes"] if n["level"] == "warn"]
+    assert any("Kanal 1 ist der Kanal der Koordination" in w for w in warnings)
+    assert any("Kanal 2 sendet die genaue Position" in w for w in warnings)
+    assert not any("Primärkanal" in w for w in warnings)  # only its precision changes
+    assert any("Teilen" in n["text"] for n in plan["notes"])
+    assert base64.b64encode(node.channels[1].settings.psk).decode() not in json.dumps(plan)
+    assert not ctx.device.iface.admin
+
+
+def test_channels_are_written_and_confirmed(ctx):
+    iface = ctx.device.iface
+    node, old_key = iface.localNode, iface.localNode.channels[1].settings.psk
+    custom = base64.b64encode(bytes(range(100, 116))).decode()
+    wanted = [
+        {"from": 0},
+        {"from": 1, "name": "Team", "key": "generate"},
+        {"from": None, "name": "Gast", "key": "custom", "key_text": custom, "precision": 13},
+    ]
+    view = device_config.write(ctx, {"hop_limit": 2, "channels": wanted})["view"]
+    assert channel_writes(iface) == [1, 2]  # the primary channel is as it was: not sent
+    assert kinds(iface)[0] == "begin_edit_settings" and kinds(iface)[-1] == "commit_edit_settings"
+    new_key = node.channels[1].settings.psk
+    assert len(new_key) == 32 and new_key != old_key
+    assert node.channels[2].role == 2 and node.channels[2].settings.psk == bytes(range(100, 116))
+    assert [(c["index"], c["name"], c["key"]) for c in view["channels"]] == [
+        (0, "", "default"),
+        (1, "Team", "aes256"),
+        (2, "Gast", "aes128"),
+    ]
+    assert view["result"]["ok"] and view["result"]["text"].endswith("Hop-Limit, Kanäle")
+    assert base64.b64encode(new_key).decode() not in json.dumps(view)
+
+
+def test_deleting_a_channel_moves_the_ones_behind_it_up(ctx):
+    iface = ctx.device.iface
+    device_config.write(ctx, {"channels": [*keep(0, 1), {"from": None, "name": "Gast"}]})
+    guest_key = iface.localNode.channels[2].settings.psk
+    iface.admin.clear()
+    plan = device_config.preview(ctx, {"channels": keep(0, 2)})
+    assert [(c["label"], c["new"]) for c in plan["changes"]] == [("Kanal 1", "wird gelöscht")]
+    warnings = [n["text"] for n in plan["notes"] if n["level"] == "warn"]
+    assert any("Kanal 2 „Gast“ rückt auf und wird Kanal 1" in w for w in warnings)
+    assert any("Kanal der Koordination: er fällt weg" in w for w in warnings)
+    view = device_config.write(ctx, {"channels": keep(0, 2)})["view"]
+    assert channel_writes(iface) == [1, 2]  # the moved one, and its old slot is disabled
+    assert [c["name"] for c in view["channels"]] == ["", "Gast"]
+    assert iface.localNode.channels[1].settings.psk == guest_key
+    assert not iface.localNode.channels[2].role
+
+
+def test_changing_the_primary_channel_warns(ctx):
+    notes = device_config.preview(ctx, {"channels": [{"from": 0, "name": "Eigen"}, *keep(1)]})
+    assert any("Primärkanal ändert sich" in n["text"] for n in notes["notes"])
+
+
+def test_share_and_import_of_a_channel_url(ctx):
+    iface = ctx.device.iface
+    key = iface.localNode.channels[1].settings.psk
+    one = device_config.share(ctx, 1)
+    assert one["add"] and "/?add=true#" in one["url"]
+    everything = device_config.share(ctx, None)
+    assert not everything["add"] and everything["url"] == iface.localNode.getURL()
+    with pytest.raises(ValueError, match="Kanal 0"):
+        device_config.share(ctx, 0)  # the primary channel goes with all of them
+
+    with pytest.raises(ValueError, match="nicht schon hat"):
+        device_config.preview(ctx, {"channels": [*keep(0, 1), {"import": one["url"]}]})
+    with pytest.raises(ValueError, match="Keine gültige Kanal-URL"):
+        device_config.preview(ctx, {"channels": [*keep(0, 1), {"import": "https://example.org"}]})
+    device_config.write(ctx, {"channels": keep(0)})  # the private channel is gone
+    assert len(device_config.view(ctx)["channels"]) == 1
+    view = device_config.write(ctx, {"channels": [*keep(0), {"import": one["url"]}]})["view"]
+    assert [(c["name"], c["key"]) for c in view["channels"]] == [
+        ("", "default"),
+        ("Privat", "aes256"),
+    ]
+    assert iface.localNode.channels[1].settings.psk == key  # as it was shared
+
+
+@pytest.mark.parametrize(
+    "wanted",
+    [
+        [],
+        [{"from": 1}],  # the primary channel must stay
+        [{"from": 0}, {"from": 0}],
+        [{"from": 0}, {"from": 5}],
+        [{"from": 0}, {"from": "1"}],
+        [{"from": 0}, "x"],
+        [{"from": 0}, {"from": None, "name": ""}],
+        [{"from": 0}, {"from": None, "name": "x" * 12}],
+        [{"from": 0}, {"from": None, "name": "A", "key": "keep"}],
+        [{"from": 0}, {"from": None, "name": "A", "key": "custom", "key_text": "abc"}],
+        [{"from": 0}, {"from": 1, "precision": 40}],
+        [{"from": 0}, *[{"from": None, "name": f"K{i}"} for i in range(8)]],
+        [{"from": 0}, {"from": 1}],  # nothing changes
+    ],
+)
+def test_bad_channel_lists_are_refused(ctx, wanted):
+    for call in (device_config.preview, device_config.write):
+        with pytest.raises(ValueError):
+            call(ctx, {"channels": wanted})
+    assert not ctx.device.iface.admin
+
+
+def test_channels_the_node_did_not_take_are_reported(real):
+    ctx, _restarts = real
+    device_config.write(ctx, {"channels": [{"from": 0}, {"from": 1, "name": "Team"}]})
+    ctx.device.connects += 1
+    ctx.device.iface.localNode.channels[1].settings.name = "Privat"  # the node kept the old one
+    result = device_config.view(ctx)["result"]
+    assert not result["ok"] and result["text"].endswith("Kanäle")
+
+
+def test_notes_name_only_what_changes(ctx):
+    guest = {"from": None, "name": "Gast", "key": "default", "precision": 32}
+    device_config.write(ctx, {"channels": [*keep(0, 1), guest]})
+    url = device_config.share(ctx, 1)["url"]
+    device_config.write(ctx, {"channels": keep(0, 2)})  # "Privat" is gone, "Gast" is channel 1
+    plan = device_config.preview(ctx, {"channels": [*keep(0, 1), {"import": url}]})
+    notes = [n["text"] for n in plan["notes"]]
+    assert not any("genaue Position" in n for n in notes)  # "Gast" stays as it is
+    assert not any("Teilen" in n for n in notes)  # an imported key is one the others have

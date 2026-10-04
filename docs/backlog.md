@@ -20,21 +20,20 @@ which states publish what (summarised in [scenes.md](scenes.md), and in
 ## Device configuration (view Gerät)
 
 In: the configuration, the check, profile and backups, and writing hop limit, transmit power,
-telemetry, names and role (`mapapp/device_config.py`,
+telemetry, names, role and the channels with their keys (`mapapp/device_config.py`,
 [mapapp.md](mapapp.md#device-configuration)). Writing to the device is the owner's own action
 per change, never the app's or an agent's: every stage below goes through the same preview
 (old → new, with consequences such as a reboot or leaving the mesh), one settings transaction
 and a backup before it.
 
-- **Try the write on a real node.** The flow is tested with the simulated radio only: whether
-  20 s are enough for the reboot on the owner's boards, over USB and over Bluetooth, and
-  whether the firmware keeps giving the node's own metrics to the app with device telemetry
-  off (the airtime panel reads them).
+- **More tries on real nodes.** The owner wrote settings to the real node once (2026-10-04:
+  works); the tests use the simulated radio. Still to see: the reboot wait of 20 s over
+  Bluetooth and on other boards, a channel write, and whether the firmware keeps giving the
+  node's own metrics to the app with device telemetry off (the airtime panel reads them).
 - **More fields with the same form**: position broadcasts (interval, smart position),
   rebroadcast mode, node info interval, air quality and health telemetry.
-- **Channels**: add, change, delete; generate a key; share as URL (QR code needs a library);
-  import a URL adding by default, not replacing. Warn when a channel is the one of the
-  coordination settings or of a running walk.
+- **Channels**: a QR code for the share URLs (needs a library, vendored or on the server);
+  MQTT uplink/downlink per channel; showing a single key on request.
 - **Security**: new key pair, admin keys. `serial_enabled` and managed mode stay read-only:
   both can lock the app out.
 - **Restore** a profile or backup from the app (the command line's import is not callable as a

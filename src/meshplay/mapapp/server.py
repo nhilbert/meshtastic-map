@@ -18,8 +18,10 @@ GET  /api/device/config       the device's configuration, checked against the ap
                               (device_config.py)
 POST /api/device/config/backup   {"private_key": bool} writes a backup to data/device/;
                               /api/device/config/profile takes the current state as the profile
-POST /api/device/config/preview  {"changes": {name: value}}: old and new, what follows;
-                              /api/device/config/write writes them to the device
+POST /api/device/config/preview  {"changes": {name: value, "channels": [...]}}: old and new,
+                              what follows; /api/device/config/write writes them to the device
+POST /api/device/config/share {"index": n or null}: the channel URL of one channel (to add) or
+                              of all, for another device; it holds the keys
 GET  /api/jobs                background tasks; /api/jobs/kinds: task kinds with their forms
 GET  /api/jobs/<id>           one task with its log
 POST /api/jobs                {"kind", "params"} starts a task; /api/jobs/<id>/cancel, /remove
@@ -361,6 +363,9 @@ def make_handler(ctx: Context):
                     return
                 if parts == ["api", "device", "config", "write"]:
                     self.send_json(device_config.write(ctx, body.get("changes")))
+                    return
+                if parts == ["api", "device", "config", "share"]:
+                    self.send_json(device_config.share(ctx, body.get("index")))
                     return
                 if parts[:2] == ["api", "device"] and len(parts) == 3:
                     if parts[2] == "connect":

@@ -130,6 +130,12 @@ details.sec>summary .dot{background:var(--line)}
 .chan:first-child{border-top:0;padding-top:0}
 .chan .ix{font:500 12px var(--mono);color:var(--ink3);width:12px}
 .chan .sub{display:block;font-size:11px;color:var(--ink3)} .chan .sub.open{color:var(--warn)}
+.chan .cbody{flex:1;min-width:0}
+.chan .site{align-items:flex-start} .chan .site .sub{white-space:normal}
+.chan .tag{font:500 10px var(--mono);color:var(--accent);margin-left:4px}
+.chan.changed .nm{color:var(--accent)}
+.chan.gone .nm,.chan.gone .sub{text-decoration:line-through;color:var(--ink3)} .chan.gone .tag{text-decoration:none;display:inline-block}
+.chan .siteform,#cfgChannels>.siteform{margin-top:6px}
 .cfgform{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
 .cfgform label.changed{color:var(--accent)}
 .cfgform label.changed select,.cfgform label.changed input:not([type=checkbox]){border-color:var(--accent)}

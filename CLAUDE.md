@@ -93,7 +93,8 @@ lives in `data/` and `.env`, which are git-ignored: packet and probe logs, GPX t
 `data/sim/sites.json` (holds addresses), exports, `data/heard/` (names and positions of other
 people's nodes; the wording of their text messages is never stored), `data/device/` (the node's
 configuration with its channel keys). Channel keys, the private key and passwords never go to
-the page or into a log: `device_config.py` sends the kind of a channel key and masks the rest.
+the page or into a log: `device_config.py` sends the kind of a channel key and masks the rest;
+the one exception is the channel URL for another device (*Teilen*), on the owner's click.
 
 **Radio.** Sending on the mesh reaches other people's devices. Never transmit (send_text,
 traceroutes, starting a probe task, changing device config) without the owner's explicit OK

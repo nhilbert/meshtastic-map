@@ -444,12 +444,14 @@ Meshtastic app, reconnect.
 
 Secrets stay on the server: the page gets the kind of a channel key, never the key; the
 private key, the WiFi and the MQTT password are masked. The files do hold the channel keys
-(inside the channel URL), the private key only with *Privaten Schlüssel mitsichern*.
+(inside the channel URL), the private key only with *Privaten Schlüssel mitsichern*. The one
+place where keys reach the page is the channel URL of *Teilen* (below), on your click.
 
 **Changing settings.** What has an input field can be written to the node: hop limit and
 transmit power (*Funk*), device, environment and power telemetry on/off with their intervals
-(*Telemetrie*), long name, short name and role (*Name und Rolle*). Everything else stays with
-the Meshtastic app. Writing is always your own action, in three steps:
+(*Telemetrie*), long name, short name and role (*Name und Rolle*), and the channels (*Kanäle*,
+below). Everything else stays with the Meshtastic app. Writing is always your own action, in
+three steps:
 
 1. Change fields in any of the sections. Changed fields are marked, and a bar at the bottom
    of the view counts them (*Verwerfen* sets them back).
@@ -469,6 +471,23 @@ if it differed already, the profile stays and *Abgleich* keeps listing the diffe
 Writing is refused while a traceroute walk runs and for a node in managed mode (its fields are
 disabled). The simulated radio takes writes too, without a reboot, which is how the flow is
 tried.
+
+**Channels.** Each channel in *Kanäle* has a pencil that opens its form: name, key and how
+exact positions are on it. The key stays, or becomes a new random one (AES-256, made on the
+server when writing), one you enter (Base64, 16 or 32 bytes), the default key or none; the last
+two can be read by everyone. **＋ Kanal** adds a secondary channel, the bin deletes one (the
+channels behind it move up; *Zurücknehmen* brings it back before writing). The primary channel
+stays channel 0. All of it goes through the same bar, preview and write as the settings, and
+the preview warns about what breaks: a changed primary channel (nodes on the old one no longer
+hear the node), a new key or another index for the channel of the coordination settings, a
+channel that then sends the exact position readable by everyone.
+
+**Teilen** (the copy button of a secondary channel) shows the URL that adds this one channel
+on another device (`https://meshtastic.org/e/?add=true#…`), **Alle teilen** the URL of all
+channels, which replaces the channels and radio settings of the device that takes it. Both
+hold the keys. **Aus URL …** takes such a URL from another device: its channels are added as
+further channels, existing ones (by name) stay as they are, and its radio settings are ignored.
+There is no QR code yet.
 
 ### Simulated radio
 

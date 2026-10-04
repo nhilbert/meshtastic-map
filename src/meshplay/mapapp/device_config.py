@@ -1,5 +1,5 @@
 """The device's own configuration for the view Gerät: what it is set to, whether that fits the
-app, backups, and writing the settings of FIELDS.
+app, backups, and writing the settings of FIELDS and the channels.
 
 What is shown comes from the configuration the library downloaded when it connected
 (localConfig, moduleConfig, channels). Writing is the owner's own action from the page, never
@@ -16,23 +16,28 @@ The profile and the backups are YAML files in the format of the `meshtastic` com
 
 They hold the channel keys (inside the channel URL), which is why they stay in data/. The
 private key is only in a backup that asks for it. Secrets never go to the page: of a channel
-key it learns the kind, of passwords that there is one.
+key it learns the kind, of passwords that there is one. The one exception is share(), the
+channel URL for another device, on the owner's click.
 """
 
 from __future__ import annotations
 
 import base64
+import binascii
+import hashlib
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 import yaml
 from google.protobuf.json_format import MessageToDict
-from meshtastic.protobuf import apponly_pb2, config_pb2
+from meshtastic.protobuf import apponly_pb2, channel_pb2, config_pb2
+from meshtastic.util import genPSK256
 
 from meshplay.config import DEFAULT_PRESET
 from meshplay.mapapp.coord.settings import DEFAULTS as COORD_DEFAULTS
-from meshplay.mapapp.i18n import N_, _
+from meshplay.mapapp.i18n import N_, _, get_lang
 from meshplay.mapapp.registry import Context, Setting
 from meshplay.probe import modem_preset
 
@@ -73,6 +78,9 @@ ROUTER_ROLES = {"ROUTER", "ROUTER_LATE", "ROUTER_CLIENT", "REPEATER"}
 RESTART_S = 20.0  # the firmware reboots 7 s after the commit; then it has to boot
 PAUSE_S = 0.5  # between the admin messages of a write, as the command line does
 AUTO_BACKUPS = 20  # backups made before a write that are kept
+MAX_CHANNELS = 8
+CHANNEL_NAME_BYTES = 11  # what the firmware's field holds
+URL = "https://meshtastic.org/e/"
 
 
 def key_kind(psk: bytes) -> str:
@@ -473,22 +481,27 @@ def _labels(iface) -> dict:
     return {s["name"]: s["label"] for section in form(iface) for s in section["settings"]}
 
 
+def _name(label: str, raw, limit: int, required: bool = True) -> str:
+    """A name from the page, trimmed; limit: the bytes the firmware's field holds."""
+    text = str(raw).strip()
+    if required and not text:
+        raise ValueError(_("{label}: darf nicht leer sein", label=label))
+    if len(text.encode("utf-8")) > limit:
+        raise ValueError(
+            _(
+                "{label}: zu lang (höchstens {n} Zeichen; Umlaute und Emojis zählen mehrfach)",
+                label=label,
+                n=limit,
+            )
+        )
+    return text
+
+
 def _typed(name: str, raw, label: str):
     """A value from the page in the type of its field; ValueError says what is wrong."""
     unknown = ValueError(_("{label}: unbekannter Wert {value}", label=label, value=raw))
     if name in NAME_BYTES:
-        text = str(raw).strip()
-        if not text:
-            raise ValueError(_("{label}: darf nicht leer sein", label=label))
-        if len(text.encode("utf-8")) > NAME_BYTES[name]:
-            raise ValueError(
-                _(
-                    "{label}: zu lang (höchstens {n} Zeichen; Umlaute und Emojis zählen mehrfach)",
-                    label=label,
-                    n=NAME_BYTES[name],
-                )
-            )
-        return text
+        return _name(label, raw, NAME_BYTES[name])
     if name == "role":
         if raw not in Role.keys():
             raise unknown
@@ -511,8 +524,6 @@ def _typed(name: str, raw, label: str):
 def _parse(iface, changes) -> dict:
     """The wanted changes, checked and typed, in the order of FIELDS; what the device has
     already is not a change."""
-    if not isinstance(changes, dict):
-        raise ValueError(_("Keine Änderung: das Gerät hat diese Werte schon"))
     for name in changes:
         if name not in FIELDS:
             raise KeyError(_("unbekannte Einstellung {name}", name=name))
@@ -523,9 +534,315 @@ def _parse(iface, changes) -> dict:
             value = _typed(name, changes[name], labels[name])
             if value != now[name]:
                 out[name] = value
-    if not out:
-        raise ValueError(_("Keine Änderung: das Gerät hat diese Werte schon"))
     return out
+
+
+def _plan(iface, changes) -> tuple[dict, ChannelPlan | None]:
+    """What a request wants: the settings of FIELDS that change, and the channel plan if
+    "channels" (see _channels) changes anything."""
+    nothing = ValueError(_("Keine Änderung: das Gerät hat diese Werte schon"))
+    if not isinstance(changes, dict):
+        raise nothing
+    changes = dict(changes)
+    wanted = changes.pop("channels", None)
+    fields = _parse(iface, changes)
+    plan = _channels(iface, wanted) if wanted is not None else None
+    if plan is not None and not plan.items:
+        plan = None
+    if not fields and plan is None:
+        raise nothing
+    return fields, plan
+
+
+# ---------------------------------------------------------------- channels
+@dataclass
+class ChannelPlan:
+    """The channels as they are to be: settings per new index, what the preview says about
+    it, and what the notes need. A key in `generate` is made when writing."""
+
+    settings: list = field(default_factory=list)
+    generate: set = field(default_factory=set)
+    items: list = field(default_factory=list)
+    primary: bool = False  # the primary channel's name or key changes
+    keyed: list = field(default_factory=list)  # new indices with another key than before
+    touched: set = field(default_factory=set)  # new indices whose key or position changes
+    imported: set = field(default_factory=set)  # new indices that come from a URL
+    moved: list = field(default_factory=list)  # (old index, new index, name)
+    gone: list = field(default_factory=list)  # old indices that are deleted
+
+
+def _active(node) -> list:
+    return [c for c in node.channels or [] if c.role]
+
+
+def _distance(m: float) -> str:
+    text = f"{m / 1000:.1f} km" if m >= 1000 else f"{m:.0f} m"
+    return text if get_lang() == "en" else text.replace(".", ",")
+
+
+def _precision(bits: int) -> str:
+    if bits == 0:
+        return _("keine Position")
+    if bits == 32:
+        return _("genaue Position")
+    return _("Position auf {d} genau", d=_distance(precision_m(bits)))
+
+
+def _key(entry: dict, old: bytes | None) -> bytes | None:
+    """The key an entry asks for; None: a new one, made when writing."""
+    mode = entry.get("key", "keep" if old is not None else "generate")
+    if mode == "keep" and old is not None:
+        return old
+    if mode == "generate":
+        return None
+    if mode == "default":
+        return b"\x01"
+    if mode == "none":
+        return b""
+    if mode == "custom":
+        text = str(entry.get("key_text", "")).strip().removeprefix("base64:")
+        try:
+            key = base64.b64decode(text.replace("-", "+").replace("_", "/"), validate=True)
+        except (binascii.Error, ValueError):
+            key = b""
+        if len(key) in (16, 32):
+            return key
+        raise ValueError(_("Schlüssel: Base64 mit 16 oder 32 Bytes (AES-128 oder AES-256)"))
+    raise ValueError(_("{label}: unbekannter Wert {value}", label=_("Schlüssel"), value=mode))
+
+
+def _url_settings(url: str) -> list:
+    """The channel settings inside a channel URL (the kind that adds or the kind that
+    replaces: only its channels are taken)."""
+    data = str(url).strip().split("#")[-1]
+    try:
+        raw = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
+        found = list(apponly_pb2.ChannelSet.FromString(raw).settings)
+    except Exception:
+        found = []
+    if "#" not in str(url) or not found:
+        raise ValueError(_("Keine gültige Kanal-URL"))
+    return found
+
+
+def _channels(iface, wanted) -> ChannelPlan:
+    """The plan for a wanted channel list. Its entries, in the new order: {"from": index} for
+    a channel the device has, with what changes (name, key: keep | generate | default | none
+    | custom with key_text, precision); {"from": null, ...} for a new one; {"import": url}
+    for the channels of a URL the device doesn't have by name. The primary channel stays the
+    first; a channel that is left out is deleted and the ones behind it move up."""
+    node = iface.localNode
+    current = _active(node)
+    plan = ChannelPlan()
+    if not isinstance(wanted, list) or not all(isinstance(e, dict) for e in wanted):
+        raise ValueError(_("Kanäle lassen sich nicht umsortieren"))
+    if not wanted or wanted[0].get("from") != 0:
+        raise ValueError(_("Der Primärkanal bleibt Kanal 0 und lässt sich nicht löschen"))
+    entries, names = [], {c.settings.name for c in current}
+    for entry in wanted:
+        if "import" in entry:
+            new = [x for x in _url_settings(entry["import"]) if x.name and x.name not in names]
+            if not new:
+                raise ValueError(_("Die URL enthält keinen Kanal, den das Gerät nicht schon hat"))
+            names.update(x.name for x in new)
+            entries.extend((None, x, None) for x in new)
+        else:
+            entries.append((entry.get("from"), None, entry))
+    if len(entries) > MAX_CHANNELS:
+        raise ValueError(_("Höchstens {n} Kanäle", n=MAX_CHANNELS))
+    kept = [src for src, _x, _e in entries if src is not None]
+    known = all(type(k) is int and 0 <= k < len(current) for k in kept)
+    if not known or kept != sorted(set(kept)):
+        raise ValueError(_("Kanäle lassen sich nicht umsortieren"))
+
+    def item(label: str, old: str, new: str) -> None:
+        plan.items.append({"name": "channels", "label": label, "old": old, "new": new})
+
+    for i, (src, imported, entry) in enumerate(entries):
+        before = current[src].settings if src is not None else None
+        after = channel_pb2.ChannelSettings()
+        if imported is not None:
+            after.CopyFrom(imported)
+        else:
+            if before is not None:
+                after.CopyFrom(before)
+            if "name" in entry:  # only the primary channel may go without (the preset's name)
+                after.name = _name(_("Kanalname"), entry["name"], CHANNEL_NAME_BYTES, bool(i))
+            key = _key(entry, before.psk if before is not None else None)
+            if key is None:
+                plan.generate.add(i)
+                after.psk = b""
+            else:
+                after.psk = key
+            if "precision" in entry:
+                bits = entry["precision"]
+                if not isinstance(bits, int) or not 0 <= bits <= 32:
+                    raise ValueError(
+                        _("{label}: unbekannter Wert {value}", label=_("Position"), value=bits)
+                    )
+                after.module_settings.position_precision = bits
+        plan.settings.append(after)
+        new_key = (
+            _("neuer Schlüssel (AES-256)")
+            if i in plan.generate
+            else _(KEY_LABELS[key_kind(after.psk)])
+        )
+        if before is None:
+            item(
+                _("Kanal {n}", n=i),
+                "—",
+                _(
+                    "neu: „{name}“, {key}, {position}",
+                    name=after.name,
+                    key=new_key,
+                    position=_precision(after.module_settings.position_precision),
+                ),
+            )
+            plan.keyed.append(i)
+            plan.touched.add(i)
+            if imported is not None:
+                plan.imported.add(i)
+            continue
+        if src != i:
+            plan.moved.append((src, i, after.name))
+        if after.name != before.name:
+            item(_("Kanal {n}: Name", n=i), before.name or "—", after.name or "—")
+        if i in plan.generate or after.psk != before.psk:
+            item(_("Kanal {n}: Schlüssel", n=i), _(KEY_LABELS[key_kind(before.psk)]), new_key)
+            plan.keyed.append(i)
+            plan.touched.add(i)
+        bits = before.module_settings.position_precision
+        if after.module_settings.position_precision != bits:
+            plan.touched.add(i)
+            item(
+                _("Kanal {n}: Position", n=i),
+                _precision(bits),
+                _precision(after.module_settings.position_precision),
+            )
+        if i == 0 and (0 in plan.keyed or after.name != before.name):
+            plan.primary = True
+    for old in current:
+        if old.index not in kept:
+            plan.gone.append(old.index)
+            item(_("Kanal {n}", n=old.index), old.settings.name, _("wird gelöscht"))
+    return plan
+
+
+def _channel_notes(ctx: Context, plan: ChannelPlan) -> list[dict]:
+    out = []
+
+    def warn(text: str) -> None:
+        out.append({"level": "warn", "text": text})
+
+    if plan.primary:
+        warn(
+            _(
+                "Der Primärkanal ändert sich: Knoten, die beim bisherigen bleiben, hören dieses "
+                "Gerät dann nicht mehr"
+            )
+        )
+    for old, new, name in plan.moved:
+        warn(_("Kanal {a} „{name}“ rückt auf und wird Kanal {b}", a=old, name=name, b=new))
+    coord = (
+        int(ctx.coord.settings["channel"]) if ctx.coord is not None else COORD_DEFAULTS["channel"]
+    )
+    if coord in plan.gone or any(old == coord for old, _new, _name in plan.moved):
+        warn(
+            _(
+                "Kanal {n} ist der Kanal der Koordination: er fällt weg oder verschiebt sich, "
+                "danach in ihren Einstellungen neu wählen",
+                n=coord,
+            )
+        )
+    elif coord in plan.keyed and coord < len(plan.settings) and coord not in plan.gone:
+        warn(
+            _(
+                "Kanal {n} ist der Kanal der Koordination und der Rundgänge: der Tracker braucht "
+                "denselben Schlüssel",
+                n=coord,
+            )
+        )
+    fresh = False  # a key of its own that no other device has yet
+    for i, settings in enumerate(plan.settings):
+        kind = "aes256" if i in plan.generate else key_kind(settings.psk)
+        if kind in PRIVATE_KEYS:
+            fresh = fresh or (i in plan.keyed and i not in plan.imported)
+            continue
+        if i not in plan.touched:
+            continue  # as before: the check names it
+        label = _(KEY_LABELS[kind])
+        if settings.module_settings.position_precision == 32:
+            warn(
+                _(
+                    "Kanal {n} sendet die genaue Position, und jeder kann sie lesen ({key})",
+                    n=i,
+                    key=label,
+                )
+            )
+        elif i and i in plan.keyed:
+            warn(_("Kanal {n} ist dann für jeden lesbar ({key})", n=i, key=label))
+    if fresh:
+        out.append(
+            {
+                "level": "info",
+                "text": _(
+                    "Neue Schlüssel brauchen auch die anderen Geräte des Kanals: nach dem "
+                    "Schreiben über „Teilen“ weitergeben"
+                ),
+            }
+        )
+    return out
+
+
+def _write_channels(node, plan: ChannelPlan, pause) -> None:
+    """Bring the node's eight channel slots to the plan; only slots that change are sent."""
+    for i in range(MAX_CHANNELS):
+        channel = channel_pb2.Channel(index=i)
+        if i < len(plan.settings):
+            channel.role = (
+                channel_pb2.Channel.Role.PRIMARY if i == 0 else channel_pb2.Channel.Role.SECONDARY
+            )
+            channel.settings.CopyFrom(plan.settings[i])
+            if i in plan.generate:
+                channel.settings.psk = genPSK256()
+        if i == len(node.channels):
+            node.channels.append(channel_pb2.Channel(index=i))
+        if not channel.role and not node.channels[i].role:
+            continue  # stays disabled, whatever is left in the slot
+        if node.channels[i].SerializeToString() != channel.SerializeToString():
+            node.channels[i] = channel
+            pause()
+            node.writeChannel(i)
+
+
+def _fingerprints(node) -> list:
+    """The active channels as name, a hash of the key and the precision: enough to tell
+    whether the node has what was written, without keeping keys around."""
+    return [
+        [
+            c.settings.name,
+            hashlib.sha256(c.settings.psk).hexdigest(),
+            c.settings.module_settings.position_precision,
+        ]
+        for c in _active(node)
+    ]
+
+
+def share(ctx: Context, index: int | None) -> dict:
+    """The channel URL to give to another device: every channel (index None; the receiver
+    replaces its channels and radio settings with them) or one secondary channel, to be
+    added. It holds the keys, which is its purpose: the owner asked for it."""
+    iface = _iface(ctx)
+    node = iface.localNode
+    if index is None:
+        return {"url": node.getURL(), "add": False}
+    channel = next((c for c in _active(node) if c.index == index and c.role != 1), None)
+    if channel is None:
+        raise ValueError(_("Kanal {n} gibt es auf dem Gerät nicht", n=index))
+    wrapped = apponly_pb2.ChannelSet(settings=[channel.settings])
+    wrapped.lora_config.CopyFrom(node.localConfig.lora)
+    data = base64.urlsafe_b64encode(wrapped.SerializeToString()).decode().rstrip("=")
+    return {"url": f"{URL}?add=true#{data}", "add": True}
 
 
 def locked(iface) -> str:
@@ -596,15 +913,17 @@ def preview(ctx: Context, changes) -> dict:
     """What a write of these changes would do: the changes as old and new, and the notes."""
     iface = _iface(ctx)
     _refuse(ctx, iface)
-    wanted = _parse(iface, changes)
+    wanted, plan = _plan(iface, changes)
     now, labels = _values(iface), _labels(iface)
-    return {
-        "changes": [
-            {"name": n, "label": labels[n], "old": _show(n, now[n]), "new": _show(n, v)}
-            for n, v in wanted.items()
-        ],
-        "notes": _notes(ctx, iface, wanted),
-    }
+    items = [
+        {"name": n, "label": labels[n], "old": _show(n, now[n]), "new": _show(n, v)}
+        for n, v in wanted.items()
+    ]
+    notes = _notes(ctx, iface, wanted)
+    if plan is not None:
+        items += plan.items
+        notes = _channel_notes(ctx, plan) + notes
+    return {"changes": items, "notes": notes}
 
 
 def write(ctx: Context, changes) -> dict:
@@ -613,13 +932,18 @@ def write(ctx: Context, changes) -> dict:
     doesn't: {"restart_s": 0, "view"}."""
     iface = _iface(ctx)
     _refuse(ctx, iface)
-    wanted = _parse(iface, changes)
+    wanted, plan = _plan(iface, changes)
     dev, folder, node = ctx.device, _dir(ctx, iface), iface.localNode
     simulated = dev.simulate is not None
     matched = _matches_profile(folder, iface)
     _auto_backup(folder, iface)
     user = _user(iface)
     sections = []
+
+    def pause() -> None:
+        if not simulated:
+            time.sleep(PAUSE_S)
+
     try:
         node.beginSettingsTransaction()
         if "long_name" in wanted or "short_name" in wanted:
@@ -637,9 +961,10 @@ def write(ctx: Context, changes) -> dict:
             if section not in sections:
                 sections.append(section)
         for section in sections:
-            if not simulated:
-                time.sleep(PAUSE_S)
+            pause()
             node.writeConfig(section)
+        if plan is not None:
+            _write_channels(node, plan, pause)
         node.commitSettingsTransaction()
     except Exception as e:
         if not simulated:  # our copy of the configuration is no longer the node's
@@ -652,6 +977,7 @@ def write(ctx: Context, changes) -> dict:
         "node": user.get("id"),
         "time": time.time(),
         "wanted": wanted,
+        "channels": _fingerprints(node) if plan is not None else None,
         "connects": dev.connects,
         "profile": matched is True,
         "checked": False,
@@ -673,7 +999,11 @@ def _result(ctx: Context, iface) -> dict | None:
     if dev.simulate is None and dev.connects == w["connects"]:
         return None
     now, labels = _values(iface), _labels(iface)
+    labels["channels"] = _("Kanäle")
+    written = list(w["wanted"]) + (["channels"] if w["channels"] is not None else [])
     failed = [n for n, v in w["wanted"].items() if now[n] != v]
+    if w["channels"] is not None and w["channels"] != _fingerprints(iface.localNode):
+        failed.append("channels")
     if not w["checked"]:
         w["checked"] = True
         if not failed and w["profile"]:
@@ -689,7 +1019,7 @@ def _result(ctx: Context, iface) -> dict | None:
     text = _(
         "Um {time} geschrieben und vom Gerät bestätigt: {fields}",
         time=at,
-        fields=", ".join(labels[n] for n in w["wanted"]),
+        fields=", ".join(labels[n] for n in written),
     )
     return {"ok": True, "text": text}
 
