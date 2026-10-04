@@ -170,6 +170,7 @@ def test_messages_survive_a_restart(dev, tmp_path):
     dev.send_text("antwort", "!abcd1234", 0)
     dev.iface.ack(0xABCD1234)
     again = MessageStore(tmp_path / "messages.jsonl")
+    assert again.session != dev.messages.session  # tells an open page to start over
     assert [(m["text"], m.get("status")) for m in again.since(0)] == [
         ("erste", None),
         ("antwort", "zugestellt"),

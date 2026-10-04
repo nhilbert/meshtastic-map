@@ -127,6 +127,7 @@ def messages_since(ctx: Context, rev: int, traffic: str | None) -> dict:
     status = dev.status()
     return {
         "rev": store.rev,
+        "session": store.session,
         "state": status["state"],
         "me": status.get("me"),
         "channels": dev.channels(),

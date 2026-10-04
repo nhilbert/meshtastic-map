@@ -31,7 +31,7 @@ const kindLabels = () => ({
   other: t("Sonstige"), [LOCAL]: t("nur App"),
 });
 const M = {
-  api: null, open: false, conv: null, rev: 0, timer: null,
+  api: null, open: false, conv: null, rev: 0, session: null, timer: null,
   msgs: new Map(), traffic: [], channels: [], me: null, state: "getrennt", names: {},
   seen: {}, extraDm: new Set(), sending: false, hide: new Set(),
 };
@@ -100,6 +100,13 @@ async function poll() {
   clearTimeout(M.timer);
   try {
     const d = await getJSON(`api/messages?rev=${M.rev}&traffic=1`);
+    if (M.session !== null && d.session !== M.session) {
+      // the server was restarted and counts its revisions anew: take everything again
+      M.session = null; M.rev = 0; M.traffic = []; M.msgs.clear();
+      $("#msgList").dataset.mode = "";
+      return poll();
+    }
+    M.session = d.session;
     const fresh = [];
     for (const m of d.messages) {
       const key = `${m.dir}:${m.id}:${m.time}`;

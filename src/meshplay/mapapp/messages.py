@@ -9,6 +9,7 @@ revision it has. The list of recent packets ("traffic") lives in memory only.
 from __future__ import annotations
 
 import json
+import secrets
 import threading
 import time
 from collections import deque
@@ -28,6 +29,9 @@ class MessageStore:
         self.messages: deque[dict] = deque(maxlen=keep)
         self.traffic: deque[dict] = deque(maxlen=KEEP_TRAFFIC)
         self.rev = 0
+        # Revisions and the traffic list start anew with every run of the server; a page
+        # that was open before sees by this that what it holds is from an earlier run.
+        self.session = secrets.token_hex(4)
         self._lock = threading.Lock()
         self._load()
 
