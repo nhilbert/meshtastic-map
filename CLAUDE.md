@@ -59,7 +59,9 @@ src/meshplay/sim/           itu.py, p1812.py (verbatim ITU port), models.py, sce
 src/meshplay/mapapp/        server.py (HTTP + API), registry.py (Layer, Setting, Context),
                             layers/ (one module per layer), tools/link.py, jobs.py (background
                             tasks), sites_store.py (sites.json editing), device.py (live USB link,
-                            sending texts, packet listeners), fake_device.py (--simulate),
+                            sending texts, packet listeners), device_config.py (the node's
+                            configuration: view, check, profile, backups, writing),
+                            fake_device.py (--simulate),
                             messages.py (message store for the pane), airtime.py (airtime
                             panel), i18n.py (translations), heard_store.py (passive walks),
                             walks_store.py (walk lists of both kinds, deleting),
@@ -68,7 +70,7 @@ src/meshplay/mapapp/        server.py (HTTP + API), registry.py (Layer, Setting,
                             decisions + API, phrases.py radio texts, routing.py + osm.py road
                             graph, areas.py, paths.py, settings.py, store.py)
 webmap/js/                  main.js (wiring), forms.js, tasks.js, sites.js, walks.js, scenes.js, messages.js,
-                            nodelist.js, coord.js, panels.js, map2d.js (Leaflet), map3d.js
+                            nodelist.js, devconfig.js, coord.js, panels.js, map2d.js (Leaflet), map3d.js
                             (three.js), util.js, icons.js, i18n.js, export.js (GPX/CSV)
 webmap/vendor/, i18n/       served libraries and fonts (offline use); translation catalogues
 tests/                      pytest; markers `hardware` and `data` are opt-in; conftest.py has
@@ -89,7 +91,9 @@ addresses, street names, node IDs, names of people or their nodes. Use placehold
 (`!abcd1234`, sites `HOME`/`ROOF`, public places for example coordinates). Everything personal
 lives in `data/` and `.env`, which are git-ignored: packet and probe logs, GPX tracks,
 `data/sim/sites.json` (holds addresses), exports, `data/heard/` (names and positions of other
-people's nodes; the wording of their text messages is never stored).
+people's nodes; the wording of their text messages is never stored), `data/device/` (the node's
+configuration with its channel keys). Channel keys, the private key and passwords never go to
+the page or into a log: `device_config.py` sends the kind of a channel key and masks the rest.
 
 **Radio.** Sending on the mesh reaches other people's devices. Never transmit (send_text,
 traceroutes, starting a probe task, changing device config) without the owner's explicit OK
@@ -102,7 +106,9 @@ and position requests, `coord/missions.py`), never nodes without one; the only e
 answer to a node's own marker command (`+D`/`?D`, setting *Markierungen per Funk*), and only for
 nodes on the private channel of its settings. Walk traffic goes on a private channel with hop
 limit 0; coordination messages are direct messages on the channel of its settings (default 1,
-the private channel).
+the private channel). Writing settings to the node (view *Gerät*, `device_config.write`) is
+the owner's own action as well, after the page's preview; nothing else calls it, and it is
+tried with the simulated radio only (`tests/test_device_config.py`).
 
 **Elevation tiles.** One source module per state (`sim/sources/`). Tiles are downloaded only
 when the owner asks (the scene form's *Fehlende Kacheln herunterladen*, `sim_build_scene.py

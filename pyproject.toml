@@ -14,7 +14,9 @@ requires-python = ">=3.10"
 dependencies = [
     "folium>=0.17",
     "meshtastic>=2.7",
+    "protobuf>=5.26",
     "python-dotenv>=1.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

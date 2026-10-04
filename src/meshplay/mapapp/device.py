@@ -32,6 +32,7 @@ from meshplay.packets import to_plain
 log = logging.getLogger(__name__)
 BROADCAST = 0xFFFFFFFF  # "to" of a message for everyone on the channel
 RETRY_S = 5.0  # a wanted connection that dropped or could not be made is tried again this often
+RESTART_GRACE_S = 60.0  # a node rebooting after a settings write is "restarting" this long
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,12 @@ class DeviceLink:
         self._want_port: str | None = None
         self.lost_at: float | None = None
         self.retries = 0
+        # Settings were written (device_config.py): the node reboots and the connection is
+        # taken up again, which reads its configuration anew. connects counts the connections
+        # made, config_write is the last write, to be checked against what the node then has.
+        self.restart_at: float | None = None
+        self.connects = 0
+        self.config_write: dict | None = None
         self._busy = False  # a connection attempt is running
         self._ble: list[dict] = []  # Bluetooth devices of the last search, for the port list
         self._lock = threading.Lock()
@@ -145,6 +152,8 @@ class DeviceLink:
                     return
                 self.iface, self.port, self.state = iface, port, "verbunden"
                 self.error, self.error_kind, self.lost_at, self.retries = "", "", None, 0
+                self.restart_at = None
+                self.connects += 1
             log.info("Device connected on %s", port)
         except Exception as e:  # port busy, no device, ...
             problem = e if isinstance(e, ConnectProblem) else None
@@ -203,8 +212,26 @@ class DeviceLink:
         with self._lock:
             iface, self.iface, self.state = self.iface, None, "getrennt"
             self.wanted, self.lost_at, self.error, self.error_kind = False, None, "", ""
+            self.restart_at = None
         if iface:
             _close_quietly(iface)
+
+    def restart(self, wait_s: float) -> None:
+        """Settings were written and the node reboots: release the connection and take it up
+        again after wait_s (then every RETRY_S, like a lost one). Not every board drops the
+        port when it reboots, and a connection that stays open would hear nothing from then
+        on. Until it is back, for RESTART_GRACE_S at most, status() says restarting instead
+        of reporting a lost connection."""
+        with self._lock:
+            iface, self.iface = self.iface, None
+            self.state, self.error, self.error_kind, self.retries = "verbinde", "", "", 0
+            self.restart_at = self.lost_at = time.time()
+        timers = [threading.Timer(wait_s, self._retry)]
+        if iface:  # after a moment: the last admin message must be out
+            timers.append(threading.Timer(1.0, _close_quietly, args=(iface,)))
+        for t in timers:
+            t.daemon = True
+            t.start()
 
     def _on_lost(self, interface=None, **_):
         """The connection dropped (cable, reset, out of Bluetooth range): release the port and
@@ -470,6 +497,8 @@ class DeviceLink:
             retrying=self.wanted and self.state != "verbunden",
             retry_s=RETRY_S,
             lost_at=self.lost_at,
+            restarting=self.restart_at is not None
+            and time.time() - self.restart_at < RESTART_GRACE_S,
             packets=self.packets,
             last_packet=self.last_packet,
             logging=self.log_packets,

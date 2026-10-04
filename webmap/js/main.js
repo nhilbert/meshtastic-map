@@ -4,6 +4,7 @@ import { Map2D } from "./map2d.js";
 import { G, actionsFor, bindToolbar, openMenu, registerActions, toolbarHTML } from "./actions.js";
 import { Map3D, LAYERS_3D } from "./map3d.js";
 import { assignTo, hasMissionDetail, initCoord, renderMissionDetail } from "./coord.js";
+import { initDevConfig, loadDevConfig } from "./devconfig.js";
 import { bindInputs, initialValues, inputsHTML, optionsFor, setFormMap } from "./forms.js";
 import { initMessages, openConversation } from "./messages.js";
 import { initNodeList, renderNodeList } from "./nodelist.js";
@@ -498,6 +499,7 @@ async function deviceStatus(action) {
   // Device states are German codes: t("getrennt") t("verbinde") t("verbunden") t("Fehler")
   $("#devText").textContent = d.state === "verbunden"
     ? t("{name} auf {port} · {n} Pakete", { name: d.me ? d.me.name : t("verbunden"), port: d.port === "sim" ? t("Simulation") : isBle(d.port) ? t("Bluetooth") : d.port, n: d.packets }) + since + (d.logging ? " · " + t("Log an") : "")
+    : d.restarting ? t("Gerät startet nach dem Schreiben neu …")
     : d.state === "Fehler" ? t("Fehler: {error}", { error: d.error })
     : d.state === "verbinde" && isBle(d.trying) ? t("verbinde über Bluetooth (kann eine halbe Minute dauern) …")
     : t(d.state);
@@ -511,14 +513,19 @@ async function deviceStatus(action) {
   // A connection that dropped is retried by the server; say so over the map until it is back.
   const lost = d.lost_at && d.retrying;
   $("#devBanner").hidden = !lost;
+  $("#devBanner").classList.toggle("lost", !d.restarting);  // a reboot after a write is no alarm
   if (lost) {
     const p = { time: new Date(d.lost_at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }), s: d.retry_s };
-    $("#devBannerText").textContent = isBle(d.port)
+    $("#devBannerText").textContent = d.restarting
+      ? t("Das Gerät startet neu und übernimmt die Einstellungen. Die Verbindung kommt gleich von selbst wieder.")
+      : isBle(d.port)
       ? t("Bluetooth-Verbindung zum Gerät seit {time} weg: neuer Versuch alle {s} s. Reichweite prüfen.", p)
       : t("Verbindung zum Gerät seit {time} weg: neuer Versuch alle {s} s. Kabel prüfen.", p);
   }
   if (d.retrying && !d.lost_at && d.state === "Fehler") $("#devText").textContent += " · " + t("neuer Versuch alle {s} s", { s: d.retry_s });
   if (!connected && d.state !== S.devState) loadPorts();  // plugged in or out meanwhile?
+  if (d.state !== S.devState || !!d.restarting !== S.devRestarting) loadDevConfig(d.state === "verbunden", d.restarting);
+  S.devRestarting = !!d.restarting;
   if (S.devState !== null && d.state !== S.devState && d.state !== "verbinde") {
     // The live node layer and today's packet log depend on the connection: reload the layer
     // list (new log dates, live source as default) and redraw.
@@ -865,6 +872,7 @@ function bindUI() {
   initMessages({ store, toast, connect: () => deviceStatus("connect"), focusNode,
     onOpen: () => { if (matchMedia("(max-width: 700px)").matches && !$("#right").hidden) toggleInspector(false); },
   });
+  initDevConfig({ toast, refreshStatus: () => deviceStatus() });
   initTasks({ store, toast, openInspector, updateInspector, onTransition: taskTransition, actions: taskActions,
     guided: { scene: openNewScene } });
   watchJobs($("#walkJobs"), job => job.kind === "probe" && isActive(job));

@@ -150,6 +150,20 @@ def test_lost_connection_is_released_and_retried(system, link):
     assert not link.wanted and not link.status()["retrying"]
 
 
+def test_restart_after_a_settings_write_reconnects(system, link):
+    system([port("COM7", vid=0x2886, hwid="USB")])
+    link.connect()
+    wait_for(lambda: link.state == "verbunden")
+    first = link.iface
+    link.restart(0.2)  # settings were written: the node reboots
+    status = link.status()
+    assert status["state"] == "verbinde" and status["restarting"] and link.iface is None
+    wait_for(lambda: link.state == "verbunden")  # taken up again: the configuration is read anew
+    assert link.iface is not first and link.connects == 2
+    assert not link.status()["restarting"] and link.lost_at is None
+    wait_for(lambda: first.closed)  # the old port was released
+
+
 def test_bluetooth_only_when_asked_for(system):
     usb = port("COM7", vid=0x2886, hwid="USB VID:PID=2886:0059")
     system([usb], configured="ble:Meshtastic_1234")

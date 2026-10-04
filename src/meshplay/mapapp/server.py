@@ -13,6 +13,13 @@ GET  /api/device/ports        serial ports of the system, Bluetooth devices of t
 POST /api/device/scan         search for Bluetooth devices (10 s); answers like /ports
 POST /api/device/connect      {"port": "COM8"}, {"port": "ble:<address>"} or {} for auto-detect;
                               /api/device/disconnect
+GET  /api/device/config       the device's configuration, checked against the app's needs and
+                              the saved profile, with the forms of what can be written
+                              (device_config.py)
+POST /api/device/config/backup   {"private_key": bool} writes a backup to data/device/;
+                              /api/device/config/profile takes the current state as the profile
+POST /api/device/config/preview  {"changes": {name: value}}: old and new, what follows;
+                              /api/device/config/write writes them to the device
 GET  /api/jobs                background tasks; /api/jobs/kinds: task kinds with their forms
 GET  /api/jobs/<id>           one task with its log
 POST /api/jobs                {"kind", "params"} starts a task; /api/jobs/<id>/cancel, /remove
@@ -46,7 +53,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlparse
 
 from meshplay.config import DEFAULT_PRESET
-from meshplay.mapapp import heard_store, sites_store, walks_store
+from meshplay.mapapp import device_config, heard_store, sites_store, walks_store
 from meshplay.mapapp import scenes as scenes_api
 from meshplay.mapapp.coord.missions import Coordinator
 from meshplay.mapapp.device import DeviceLink, Simulation
@@ -249,6 +256,8 @@ def make_handler(ctx: Context):
                     self.send_json(ctx.device.status())
                 elif parts == ["api", "device", "ports"]:
                     self.send_json(ctx.device.ports())
+                elif parts == ["api", "device", "config"]:
+                    self.send_json(device_config.view(ctx))
                 elif parts == ["api", "jobs"]:
                     self.send_json({"jobs": ctx.jobs.list()})
                 elif parts == ["api", "jobs", "kinds"]:
@@ -340,6 +349,18 @@ def make_handler(ctx: Context):
                     return
                 if parts == ["api", "device", "scan"]:
                     self.send_json(ctx.device.scan_bluetooth())
+                    return
+                if parts == ["api", "device", "config", "backup"]:
+                    self.send_json(device_config.backup(ctx, bool(body.get("private_key"))), 201)
+                    return
+                if parts == ["api", "device", "config", "profile"]:
+                    self.send_json(device_config.save_profile(ctx), 201)
+                    return
+                if parts == ["api", "device", "config", "preview"]:
+                    self.send_json(device_config.preview(ctx, body.get("changes")))
+                    return
+                if parts == ["api", "device", "config", "write"]:
+                    self.send_json(device_config.write(ctx, body.get("changes")))
                     return
                 if parts[:2] == ["api", "device"] and len(parts) == 3:
                     if parts[2] == "connect":

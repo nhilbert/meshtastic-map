@@ -150,6 +150,48 @@
         <summary><h2 data-i18n>Funklast</h2><span class="dot" id="airDot"></span></summary>
         <div id="airBox"></div>
       </details>
+      <details class="sec" data-sec="devcheck" open>
+        <summary><h2 data-i18n>Abgleich</h2><span class="dot" id="cfgDot"></span></summary>
+        <div id="cfgChecks"></div>
+      </details>
+      <div id="cfgSections" hidden>
+        <details class="sec" data-sec="devradio">
+          <summary><h2 data-i18n>Funk (LoRa)</h2></summary>
+          <div id="cfgRadio"></div>
+        </details>
+        <details class="sec" data-sec="devchannels">
+          <summary><h2 data-i18n>Kanäle</h2><span class="count" id="cfgChanCount"></span></summary>
+          <div id="cfgChannels"></div>
+        </details>
+        <details class="sec" data-sec="devtelemetry">
+          <summary><h2 data-i18n>Telemetrie</h2></summary>
+          <div id="cfgTelemetry"></div>
+        </details>
+        <details class="sec" data-sec="devsecurity">
+          <summary><h2 data-i18n>Sicherheit</h2></summary>
+          <div id="cfgSecurity"></div>
+        </details>
+        <details class="sec" data-sec="devidentity">
+          <summary><h2 data-i18n>Name und Rolle</h2></summary>
+          <div id="cfgIdentity"></div>
+        </details>
+        <details class="sec" data-sec="devall">
+          <summary><h2 data-i18n>Alle Einstellungen</h2></summary>
+          <p class="note" style="margin-top:0" data-i18n>Nur zum Lesen. Ändern lässt sich, was in den Abschnitten oben ein Eingabefeld hat; alles andere in der Meshtastic-App (danach neu verbinden).</p>
+          <div id="cfgAll"></div>
+        </details>
+        <details class="sec" data-sec="devfiles">
+          <summary><h2 data-i18n>Profil und Backup</h2></summary>
+          <div id="cfgFiles"></div>
+          <label class="tog"><input type="checkbox" id="cfgPrivate"><span data-i18n>Privaten Schlüssel mitsichern</span></label>
+          <div class="devrow">
+            <button class="btn small" id="cfgBackup" data-i18n>Backup schreiben</button>
+            <button class="btn small" id="cfgProfile" data-i18n>Als Profil übernehmen</button>
+          </div>
+          <p class="note" data-i18n>Das Profil ist der Soll-Zustand, gegen den der Abgleich prüft. Beide Dateien enthalten die Kanalschlüssel und lassen sich mit „meshtastic --configure“ zurückspielen.</p>
+        </details>
+      </div>
+      <div id="cfgPending" hidden></div>
     </section>
 
     <section class="view" data-view="settings" hidden>

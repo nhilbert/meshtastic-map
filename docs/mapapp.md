@@ -417,6 +417,59 @@ with the time on air estimated for the preset. Warnings: channel above 25 % (the
 holds back its own positions), own airtime above 8 % (the EU limit is 10 %), the app alone
 above 2 %. The recipients' acknowledgements and answers are their airtime and not counted.
 
+### Device configuration
+
+The view *Gerät* also shows how the connected node is set up and writes a few of its settings.
+The values are the ones the node handed over when it connected, so after a change in the
+Meshtastic app, reconnect.
+
+- **Abgleich** checks the node against what the app does with it: the modem preset (the
+  simulations assume `DEFAULT_PRESET`), region and transmitting switched on, the hop limit (a
+  warning above 3), that the channel of the coordination settings (default 1) exists and has a
+  key of its own (AES-128/256, not the default key every node knows), and that no channel with
+  a public key sends the exact position. With a saved profile it also lists every setting and
+  channel that differs from it.
+- **Funk (LoRa)**, **Kanäle**, **Telemetrie**, **Sicherheit**, **Name und Rolle** show the
+  main settings: preset, region, hop limit, power; per channel its role, the kind of its key
+  and how exact positions are on it; what the node measures and sends by itself and how
+  often; the public key, admin keys, managed mode; names, node ID, role.
+- **Alle Einstellungen** lists every field of the configuration and the module configuration
+  by its protobuf name.
+- **Profil und Backup**: *Als Profil übernehmen* saves the current state as the wanted one
+  (`data/device/<node id>/profile.yaml`, the previous one stays as `profile.yaml.bak`);
+  *Backup schreiben* writes `data/device/<node id>/backups/<time>.yaml`. Both are in the format
+  of the `meshtastic` command line, with every field spelled out, so
+  `meshtastic --configure <file>` restores one without the map app. Canned messages and the
+  ringtone are not included.
+
+Secrets stay on the server: the page gets the kind of a channel key, never the key; the
+private key, the WiFi and the MQTT password are masked. The files do hold the channel keys
+(inside the channel URL), the private key only with *Privaten Schlüssel mitsichern*.
+
+**Changing settings.** What has an input field can be written to the node: hop limit and
+transmit power (*Funk*), device, environment and power telemetry on/off with their intervals
+(*Telemetrie*), long name, short name and role (*Name und Rolle*). Everything else stays with
+the Meshtastic app. Writing is always your own action, in three steps:
+
+1. Change fields in any of the sections. Changed fields are marked, and a bar at the bottom
+   of the view counts them (*Verwerfen* sets them back).
+2. **Prüfen …** shows each change as old → new and what follows from it: the reboot, a hop
+   limit above 3, a router role, that the node announces a new name to the mesh, that the
+   coordination mode pauses while it reboots.
+3. **Auf Gerät schreiben** makes a backup (`<time>_auto.yaml`, the newest 20 are kept), sends
+   the changes as one settings transaction over USB or Bluetooth and releases the connection:
+   the node reboots, and the app reconnects by itself after about 20 s. A banner says so
+   meanwhile.
+
+The configuration read after the reboot tells whether the node took the settings; the first
+line of *Abgleich* (and a notice) says *geschrieben und vom Gerät bestätigt* or names what it
+did not take. If the node matched its profile before the write, the profile moves with it;
+if it differed already, the profile stays and *Abgleich* keeps listing the differences.
+
+Writing is refused while a traceroute walk runs and for a node in managed mode (its fields are
+disabled). The simulated radio takes writes too, without a reboot, which is how the flow is
+tried.
+
 ### Simulated radio
 
 ```powershell
@@ -433,7 +486,9 @@ Sent messages are acknowledged after half a second, traceroutes are answered (th
 `!fa4e0002` through the tracker), and a direct
 message to the tracker that starts with `>` is spoken by the tracker: `>?` arrives as `?` from
 it. Messages go to `data/messages-sim.jsonl`, packets are not logged. This is how the messaging
-pane and the coordination mode are tried without touching the mesh.
+pane and the coordination mode are tried without touching the mesh. The fake node has a
+configuration of its own (ShortSlow, a public and a private channel, made-up keys) for the
+device configuration sections.
 
 ## Offline use
 
@@ -483,9 +538,10 @@ work on the scene and the models holds the server's model lock (`ctx.model_lock`
 ```
 src/meshplay/mapapp/
   server.py        HTTP server: page, /scene/* (3D data), /api/app, /api/layers/<id>,
-                   /api/tools/<name>, /api/device, /api/jobs, /api/sites, /api/scenes,
-                   /api/tracks, /api/walks, /api/heard, /api/messages, /api/coord/*
+                   /api/tools/<name>, /api/device (and /config), /api/jobs, /api/sites,
+                   /api/scenes, /api/tracks, /api/walks, /api/heard, /api/messages, /api/coord/*
   device.py        live connection (USB or Bluetooth): node list, packet logging, listeners
+  device_config.py the device's configuration: view, check, profile, backups, preview + write
   fake_device.py   simulated radio (--simulate)
   coord/           coordination mode: missions.py (Coordinator, decisions, API), phrases.py
                    (radio texts, commands), paths.py, settings.py, store.py, geo.py
@@ -514,6 +570,7 @@ webmap/
   js/scenes.js     scene manager (layer Laserscan-Szene)
   js/messages.js   messaging pane
   js/nodelist.js   node list (inspector tab Knoten)
+  js/devconfig.js  device configuration in the view Gerät
   js/i18n.js       language choice, t(), static HTML translation
   i18n/            translation catalogues (en.json, fr.json)
   js/map2d.js      Leaflet view

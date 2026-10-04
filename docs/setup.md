@@ -96,6 +96,7 @@ which is never committed:
 | `data/exports/` | node list exports |
 | `data/sim/` | sites, laser-scan tiles, scenes, predictions, coverage grids ([details](simulation.md#data-not-committed)) |
 | `data/messages.jsonl` | messages sent and received in the map app (`messages-sim.jsonl` with `--simulate`) |
+| `data/device/<node id>/` | the node's configuration: `profile.yaml` (wanted state) and `backups/`; they hold the channel keys |
 | `data/coord/` | coordination mode: settings, targets, paths, areas, places, missions, event log |
 | `data/osm/` | road graphs for the coordination mode (from Overpass or `coord_import_osm.py`) |
 | `data/tiles/` | cached OpenStreetMap tiles for offline use |

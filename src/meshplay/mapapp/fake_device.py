@@ -54,25 +54,14 @@ class FakeInterface:
         self._replied = 0.0  # monotonic time of the last position reply
         self._at: tuple[float, float] = home  # where the tracker is, heard or not
         self.sent: list[dict] = []
+        self.admin: list = []  # the admin messages our node got (settings writes)
         self.responseHandlers: dict = {}
         self._next_id = 1000
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._timers: list[threading.Timer] = []
         self.myInfo = SimpleNamespace(my_node_num=HOME_NUM)
-        from meshtastic.protobuf import config_pb2
-
-        lora = SimpleNamespace(
-            use_preset=True,
-            modem_preset=config_pb2.Config.LoRaConfig.ModemPreset.Value("SHORT_SLOW"),
-        )
-        self.localNode = SimpleNamespace(
-            channels=[
-                SimpleNamespace(index=0, role=1, settings=SimpleNamespace(name="")),
-                SimpleNamespace(index=1, role=2, settings=SimpleNamespace(name="Privat")),
-            ],
-            localConfig=SimpleNamespace(lora=lora),
-        )
+        self.localNode = self._local_node()
         start = self.track[0] if self.track else None
         lat, lon = (start["lat"], start["lon"]) if start else _offset(*home, 250, 150)
         self.nodes = {
@@ -91,6 +80,35 @@ class FakeInterface:
         self._set_tracker(lat, lon)
         self._thread = threading.Thread(target=self._walk, daemon=True)
         self._thread.start()
+
+    def _local_node(self):
+        """The library's own Node with a configuration like a real one's: ShortSlow in
+        EU_868, the public primary channel and a private one, made-up keys. What it writes
+        (settings, names) arrives in sendData as admin messages."""
+        from meshtastic.node import Node
+        from meshtastic.protobuf import channel_pb2, config_pb2
+
+        node = Node(self, HOME_NUM)
+        lora = node.localConfig.lora
+        lora.use_preset, lora.tx_enabled, lora.hop_limit = True, True, 3
+        lora.modem_preset = config_pb2.Config.LoRaConfig.ModemPreset.SHORT_SLOW
+        lora.region = config_pb2.Config.LoRaConfig.RegionCode.EU_868
+        node.localConfig.device.role = config_pb2.Config.DeviceConfig.Role.CLIENT
+        node.localConfig.position.position_broadcast_smart_enabled = True
+        node.localConfig.security.public_key = bytes(range(32))
+        node.localConfig.security.private_key = bytes(range(32, 64))
+        node.localConfig.security.serial_enabled = True
+        node.moduleConfig.telemetry.device_telemetry_enabled = True
+        node.moduleConfig.telemetry.device_update_interval = 1800
+        primary = channel_pb2.Channel(index=0, role=channel_pb2.Channel.Role.PRIMARY)
+        primary.settings.psk = b"\x01"
+        primary.settings.module_settings.position_precision = 13
+        private = channel_pb2.Channel(index=1, role=channel_pb2.Channel.Role.SECONDARY)
+        private.settings.name = "Privat"
+        private.settings.psk = bytes(range(64, 96))
+        private.settings.module_settings.position_precision = 32
+        node.channels = [primary, private] + [channel_pb2.Channel(index=i) for i in range(2, 8)]
+        return node
 
     @staticmethod
     def _node(num, short, long, hw, role, hops, favorite=False) -> dict:
@@ -125,9 +143,12 @@ class FakeInterface:
         onResponseAckPermitted=False,
         channelIndex=0,
         hopLimit=None,
+        pkiEncrypted=False,
     ):
         from meshtastic.protobuf import portnums_pb2
 
+        if portNum == portnums_pb2.PortNum.ADMIN_APP:
+            return self._admin(data)
         with self._lock:
             self._next_id += 1
             packet_id = self._next_id
@@ -157,6 +178,25 @@ class FakeInterface:
             if text.startswith(">"):
                 self._later(1.0, self.receive_text, text[1:].strip(), TRACKER_NUM)
         return SimpleNamespace(id=packet_id)
+
+    def _getOrCreateByNum(self, num: int) -> dict:
+        """The node's entry as the library's Node wants it for admin messages; the session key
+        is there, so it doesn't ask for one."""
+        return {"num": num, "adminSessionPassKey": b"sim"}
+
+    def _admin(self, message):
+        """An admin message to our own node. The library changed its copy of the configuration
+        before sending it; a new owner name goes to the node database, as the firmware does."""
+        self.admin.append(message)
+        if message.HasField("set_owner"):
+            user = self.nodes[node_id(HOME_NUM)]["user"]
+            if message.set_owner.long_name:
+                user["longName"] = message.set_owner.long_name
+            if message.set_owner.short_name:
+                user["shortName"] = message.set_owner.short_name
+        with self._lock:
+            self._next_id += 1
+            return SimpleNamespace(id=self._next_id)
 
     def close(self) -> None:
         self._stop.set()
