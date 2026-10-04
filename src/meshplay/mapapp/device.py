@@ -1,13 +1,15 @@
-"""Live connection to the USB Meshtastic device for the map app.
+"""Live connection to the Meshtastic device for the map app.
 
-The server keeps one serial connection open in a background thread. While connected it
-provides the device's node database (live node layer) and appends every received packet to
-data/packets/<date>.jsonl in the same format as scripts/listen.py, so a walk can be recorded
-with the map app open (only one program can hold the serial port). It also feeds the messaging
-pane: received texts and recent packets go to a MessageStore, texts are sent from here.
+The server keeps one connection open in a background thread: serial (USB), or Bluetooth for a
+port "ble:<address or name>", which is only ever the owner's choice, never detected. While
+connected it provides the device's node database (live node layer) and appends every received
+packet to data/packets/<date>.jsonl in the same format as scripts/listen.py, so a walk can be
+recorded with the map app open (only one program can hold the serial port). It also feeds the
+messaging pane: received texts and recent packets go to a MessageStore, texts are sent from
+here.
 
 With a Simulation (scripts/mapapp.py --simulate) connect() builds a FakeInterface instead of
-opening a serial port: nothing is transmitted, and the messages go to a separate store.
+opening a port: nothing is transmitted, and the messages go to a separate store.
 """
 
 from __future__ import annotations
@@ -63,6 +65,7 @@ class DeviceLink:
         self.lost_at: float | None = None
         self.retries = 0
         self._busy = False  # a connection attempt is running
+        self._ble: list[dict] = []  # Bluetooth devices of the last search, for the port list
         self._lock = threading.Lock()
         self._subscribed = False
         name = "messages-sim.jsonl" if simulate else "messages.jsonl"
@@ -85,10 +88,11 @@ class DeviceLink:
     def _connect(self, first: bool) -> None:
         """One attempt. first: the owner's own attempt, where a chosen port that is missing is
         an error; a retry falls back to automatic detection (the node may come back on another
-        port after being plugged in again)."""
+        port after being plugged in again). A Bluetooth device keeps its address and is
+        tried as it is."""
         from pubsub import pub
 
-        from meshplay.device import find_port, list_serial_ports
+        from meshplay.device import find_port, is_ble, list_serial_ports
 
         port = self._want_port
         try:
@@ -103,15 +107,14 @@ class DeviceLink:
                 port = "sim"
                 iface = FakeInterface(sim.home, load_track(sim.track), sim.speed)
             else:
-                from meshtastic.serial_interface import SerialInterface
-
-                ports = list_serial_ports()
-                present = port and any(p["device"].lower() == port.lower() for p in ports)
-                if port and not present:
-                    if first:
-                        raise RuntimeError(L("Port {port} gibt es nicht (mehr)", port=port))
-                    port = None
-                port = port or find_port(ports)
+                if not is_ble(port):
+                    ports = list_serial_ports()
+                    present = port and any(p["device"].lower() == port.lower() for p in ports)
+                    if port and not present:
+                        if first:
+                            raise RuntimeError(L("Port {port} gibt es nicht (mehr)", port=port))
+                        port = None
+                    port = port or find_port(ports)
                 if not port:
                     raise RuntimeError(
                         L(
@@ -119,7 +122,7 @@ class DeviceLink:
                             "kein Ladekabel) oder den Port auswählen"
                         )
                     )
-                iface = SerialInterface(devPath=port)
+                iface = _open(port)
             with self._lock:
                 self._busy = False
                 if not self.wanted:  # disconnected while this attempt ran
@@ -152,11 +155,28 @@ class DeviceLink:
         self._connect(False)
 
     def ports(self) -> dict:
-        """The system's serial ports and the one automatic detection would take."""
+        """The system's serial ports, the Bluetooth devices of the last search and the port
+        automatic detection would take."""
         from meshplay.device import find_port, list_serial_ports
 
         ports = list_serial_ports()
-        return {"ports": ports, "auto": find_port(ports), "simulated": self.simulate is not None}
+        return {
+            "ports": ports + self._ble,
+            "auto": find_port(ports),
+            "simulated": self.simulate is not None,
+        }
+
+    def scan_bluetooth(self) -> dict:
+        """Search for Meshtastic devices over Bluetooth (takes 10 s); returns ports()."""
+        if self.simulate is None:
+            from meshplay import ble
+
+            try:
+                self._ble = ble.scan()
+            except Exception as e:  # no adapter, Bluetooth switched off
+                error = str(e) or type(e).__name__
+                raise ValueError(_("Bluetooth-Suche nicht möglich: {error}", error=error)) from e
+        return self.ports()
 
     def disconnect(self) -> None:
         with self._lock:
@@ -166,7 +186,8 @@ class DeviceLink:
             _close_quietly(iface)
 
     def _on_lost(self, interface=None, **_):
-        """The connection dropped (cable, reset): release the port and try again."""
+        """The connection dropped (cable, reset, out of Bluetooth range): release the port and
+        try again."""
         with self._lock:
             if interface is None or interface is not self.iface:
                 return
@@ -248,7 +269,7 @@ class DeviceLink:
         text = check_text(text)
         iface = self.iface
         if iface is None or self.state != "verbunden":
-            raise ValueError(_("Gerät nicht verbunden: oben unter „Gerät (USB)“ verbinden"))
+            raise ValueError(_("Gerät nicht verbunden: unter „Gerät“ verbinden"))
         channel = int(channel)
         if channel not in {c["index"] for c in self.channels()}:
             raise ValueError(_("Kanal {n} gibt es auf dem Gerät nicht", n=channel))
@@ -366,7 +387,7 @@ class DeviceLink:
         """The interface, if a direct packet to `to` on `channel` can be sent now."""
         iface = self.iface
         if iface is None or self.state != "verbunden":
-            raise ValueError(_("Gerät nicht verbunden: oben unter „Gerät (USB)“ verbinden"))
+            raise ValueError(_("Gerät nicht verbunden: unter „Gerät“ verbinden"))
         if int(channel) not in {c["index"] for c in self.channels()}:
             raise ValueError(_("Kanal {n} gibt es auf dem Gerät nicht", n=int(channel)))
         if not (to.startswith("!") and len(to) == 9):
@@ -450,6 +471,33 @@ class DeviceLink:
         nodes = to_plain(dict(iface.nodes or {}))
         my_num = getattr(getattr(iface, "myInfo", None), "my_node_num", None)
         return nodes, my_num
+
+
+def _open(port: str):
+    """open_interface(), with the Bluetooth errors the owner can do something about as plain
+    messages (the library's own point to its command line)."""
+    from meshplay.device import BLE_PREFIX, open_interface
+
+    try:
+        return open_interface(port)
+    except Exception as e:
+        kind = getattr(e, "kind", None)  # of meshtastic's BLEError
+        if kind == "device_not_found":
+            raise RuntimeError(
+                L(
+                    "Bluetooth-Gerät {name} nicht gefunden: eingeschaltet, in Reichweite und "
+                    "nicht mit dem Handy verbunden?",
+                    name=port[len(BLE_PREFIX) :],
+                )
+            ) from e
+        if kind == "write_error":
+            raise RuntimeError(
+                L(
+                    "Bluetooth-Gerät nimmt keine Daten an: erst in den Bluetooth-Einstellungen "
+                    "des Rechners koppeln (PIN des Geräts)"
+                )
+            ) from e
+        raise
 
 
 def _close_quietly(iface) -> None:

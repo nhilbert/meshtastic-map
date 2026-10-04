@@ -46,7 +46,8 @@ restart; the page's files are served fresh (Ctrl+F5).
 
 ```
 src/meshplay/config.py      settings from .env; DEFAULT_PRESET; PROJECT_ROOT
-src/meshplay/device.py      connect()/find_port() for the serial device
+src/meshplay/device.py      connect()/find_port() for the device: serial, or "ble:<address or
+                            name>" over Bluetooth (ble.py, loaded only then)
 src/meshplay/packets.py     protobuf/packet dicts -> plain JSON
 src/meshplay/walk.py        walk data: load positions, probes, GPX; place probes on the track
 src/meshplay/applog.py      the Android app's CSV packet export (passive walks); relay candidates
@@ -125,6 +126,11 @@ scripts/mapapp.py --port 8771` (tests: `tests/test_mapapp.py::test_*_without_sce
 **Serial port.** Only one program can hold it. The map app's `DeviceLink` owns it while
 connected; the probe task uses that connection. A browser tab with the web client blocks it
 until the tab is closed.
+
+**Bluetooth.** Only for a device the owner chose (the page's search, `--device ble:…`,
+`MESHTASTIC_PORT`): never connect to whatever a scan finds, it also lists other people's nodes.
+Detection stays with USB. A node serves one Bluetooth client at a time (the phone app blocks
+it). Use `ble.Interface`, not the library's `BLEInterface` directly: its close can hang.
 
 **Measurement pitfalls** (already handled; keep them handled):
 - The Python API omits `hopLimit` when it is 0: missing means 0, not "unknown".

@@ -8,9 +8,10 @@ nodes (live from the device or from a node export), coverage walk (positions or 
 GPX, optionally scored against the models), simulated coverage, scene extent. Background tasks
 (traceroute walk, coverage simulation) are started and followed in the page. See docs/mapapp.md.
 
---device connects to the USB node at start (auto-detect, or give the port, e.g. COM8); the page
-also has a connect button. While connected, every received packet is appended to
-data/packets/<date>.jsonl like scripts/listen.py does (switch off with --no-log). Only one
+--device connects to the node at start: on USB (auto-detect, or give the port, e.g. COM8) or
+over Bluetooth (ble:<address or name>, e.g. ble:Meshtastic_1234; pair it with the computer
+first); the page also has a connect button. While connected, every received packet is appended
+to data/packets/<date>.jsonl like scripts/listen.py does (switch off with --no-log). Only one
 program can use the serial port: close the web client and listen.py first.
 
 --simulate replaces the device by a simulated radio: nothing is transmitted, a fake tracker
@@ -35,7 +36,10 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8770)
     parser.add_argument("--open", action="store_true", help="open the browser")
     parser.add_argument(
-        "--device", nargs="?", const="auto", help="connect to the USB node (optionally: port)"
+        "--device",
+        nargs="?",
+        const="auto",
+        help="connect to the node (optionally: serial port, or ble:<address or name>)",
     )
     parser.add_argument("--no-log", action="store_true", help="don't log packets while connected")
     parser.add_argument("--export-scene", action="store_true", help="re-export the 3D scene data")

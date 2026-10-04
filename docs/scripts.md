@@ -3,7 +3,8 @@
 Everything the map app does is also available as a script, plus a few tools only used from
 the command line. All scripts are in `scripts/`, print their options with `--help`, and take
 `--port COM8` where they talk to the device (otherwise `MESHTASTIC_PORT` from `.env` or
-auto-detection; see [setup.md](setup.md)).
+auto-detection; see [setup.md](setup.md)). `--port ble:<name or address>` connects over
+Bluetooth instead of USB (pair the node with the computer first; connecting starts with a 10 s search).
 
 | Script | What it does |
 |---|---|
@@ -48,7 +49,8 @@ with connect() as iface:  # finds the port like the scripts do
 ```
 
 `iface` is a `meshtastic.serial_interface.SerialInterface` from the
-[Meshtastic Python library](https://python.meshtastic.org). Anything you send reaches other
+[Meshtastic Python library](https://python.meshtastic.org) (a `BLEInterface` for
+`connect("ble:<name or address>")`; both have the same methods). Anything you send reaches other
 people's devices; test on a private channel. For a quick exploration, copy
 `experiments/_template/` to `experiments/<date>-<name>/` (see
 [experiments/README.md](../experiments/README.md)).

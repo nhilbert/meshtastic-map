@@ -63,7 +63,8 @@ you want to know about, below what keeps coming in.
   the layer shows. An upload shows its walk at once; otherwise the eyes under *Ebenen* choose
   it. *Koordination*: the mode switch and the sections *Einsätze*, *Archiv*, *Einstellungen*. *Aufgaben*: start forms and the task
   list. *Gerät*: connection (the port list shows every serial port,
-  *Automatisch* names the one detection would take, ↻ searches again after plugging in) and
+  *Automatisch* names the one detection would take, ↻ searches again after plugging in, the
+  Bluetooth button searches for nodes over Bluetooth and adds them to the list) and
   *Funklast*. *Einstellungen*: language and light or dark.
 - **Status bar** (bottom): device, packets, channel use and airtime; a click opens *Gerät*.
   Escape closes a drawer or the details; map picking returns to the form it came from.
@@ -105,7 +106,7 @@ you want to know about, below what keeps coming in.
 ## Messages and node list
 
 A comfort add-on for simple messaging and watching the traffic while using the map; for anything
-more, use a Meshtastic app. Needs the device connected (**Verbinden** under *Gerät (USB)*, in the
+more, use a Meshtastic app. Needs the device connected (**Verbinden** under *Gerät*, in the
 pane's bar, or `--device`).
 
 - **Messaging pane** under the map (**Nachrichten** in the activity bar, or click its bar). Left the
@@ -163,7 +164,7 @@ when a task ends or fails.
 - One task per kind runs at a time; more of the same kind wait in line.
 - Tasks are stored in `data/mapapp/jobs/` (`<id>.json`, `<id>.log`); after a restart of the
   server the list is back, and tasks that were running are marked *abgebrochen*.
-- **Traceroute-Rundgang** is `scripts/probe_walk.py` inside the server: it uses the map app's USB
+- **Traceroute-Rundgang** is `scripts/probe_walk.py` inside the server: it uses the map app's device
   connection (connecting if needed), so the node layer and packet logging keep working. Stopping
   it is its normal end. The device can't be disconnected while it runs. Afterwards upload the
   phone's GPX track (*GPX-Spur hochladen …* on the finished task or under *Rundgänge*, stored in
@@ -352,10 +353,11 @@ editor lists what uses it. Each change keeps the previous file as `sites.json.ba
 
 ```powershell
 python scripts/mapapp.py --open --device          # or --device COM8
+python scripts/mapapp.py --open --device ble:Meshtastic_1234   # over Bluetooth
 ```
 
-With `--device` (or **Verbinden** in the sidebar) the server keeps the USB connection to your
-node open. Then:
+With `--device` (or **Verbinden** in the sidebar) the server keeps the connection to your
+node open, on USB or over Bluetooth. Then:
 
 - the node layer's source **Live vom Gerät** shows the device's node list, refreshed every
   15 s (setting), with your own node highlighted;
@@ -370,6 +372,24 @@ program. The server keeps trying every 5 s as long as the connection is wanted: 
 releases the port, a red banner over the map says since when the device is gone, and it
 reconnects on its own, by automatic detection if the chosen port is gone. **Trennen** (or
 *Nicht mehr versuchen* in the banner) stops that.
+
+**Bluetooth** works without a cable, for a node that is out of the cable's reach:
+
+1. Pair the node with the computer once, in the system's Bluetooth settings (Windows:
+   *Bluetooth & devices → Add device*; the PIN is on the node's display, or the fixed one from
+   its Bluetooth settings).
+2. Under *Gerät*, press the Bluetooth button: the search takes 10 s and adds the Meshtastic
+   nodes it finds to the port list (*Bluetooth · name*). A single one is selected at once.
+3. **Verbinden**. This takes longer than on USB, because the Bluetooth library searches for
+   another 10 s before it connects. The choice is remembered by the browser; on the command line it is
+   `--device ble:<name or address>`, in `.env` `MESHTASTIC_PORT=ble:<name or address>`.
+
+A node talks to one Bluetooth client at a time and stops advertising while it is connected:
+if the phone app holds it, the search doesn't find it (disconnect in the app or switch the
+phone's Bluetooth off). Automatic detection never takes a Bluetooth device, since a search
+also finds other people's nodes; Bluetooth is only used for the device you chose. A link that
+drops (out of range) is retried like a pulled cable, always with the same device. On ESP32
+boards Bluetooth is off while WiFi is on. `--simulate` has no Bluetooth search.
 
 **Funklast** (airtime, a section in the left column; the footer shows the first two values):
 what the device measures, channel utilisation of the last minute and its own transmit share
@@ -448,7 +468,7 @@ src/meshplay/mapapp/
   server.py        HTTP server: page, /scene/* (3D data), /api/app, /api/layers/<id>,
                    /api/tools/<name>, /api/device, /api/jobs, /api/sites, /api/scenes,
                    /api/tracks, /api/walks, /api/heard, /api/messages, /api/coord/*
-  device.py        live USB connection: node list, packet logging, packet listeners
+  device.py        live connection (USB or Bluetooth): node list, packet logging, listeners
   fake_device.py   simulated radio (--simulate)
   coord/           coordination mode: missions.py (Coordinator, decisions, API), phrases.py
                    (radio texts, commands), paths.py, settings.py, store.py, geo.py

@@ -1,4 +1,5 @@
-"""Port detection (no device needed) and a real connection (marker hardware)."""
+"""Port detection and the Bluetooth connection (no device needed, the radio libraries are
+faked) and a real connection (marker hardware)."""
 
 import time
 from types import SimpleNamespace
@@ -85,15 +86,32 @@ class FakeSerial:
         self.closed = True
 
 
+class FakeBle:
+    """Stands in for ble.Interface: only the device named Meshtastic_1234 is in range."""
+
+    opened: list = []
+
+    def __init__(self, address):
+        from meshtastic.ble_interface import BLEInterface
+
+        FakeBle.opened.append(address)
+        if address != "Meshtastic_1234":
+            raise BLEInterface.BLEError("not found", BLEInterface.BLEError.DEVICE_NOT_FOUND)
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
 @pytest.fixture
 def link(system, tmp_path, monkeypatch):
-    import meshtastic.serial_interface
-
+    from meshplay import ble
     from meshplay.mapapp import device as mapdevice
 
-    monkeypatch.setattr(meshtastic.serial_interface, "SerialInterface", FakeSerial)
+    monkeypatch.setattr(device, "SerialInterface", FakeSerial)
+    monkeypatch.setattr(ble, "Interface", FakeBle)
     monkeypatch.setattr(mapdevice, "RETRY_S", 0.1)
-    FakeSerial.opened = []
+    FakeSerial.opened, FakeBle.opened = [], []
     d = mapdevice.DeviceLink(tmp_path, log_packets=False)
     yield d
     d.disconnect()
@@ -126,6 +144,135 @@ def test_lost_connection_is_released_and_retried(system, link):
     assert link.state == "verbunden"
     link.disconnect()
     assert not link.wanted and not link.status()["retrying"]
+
+
+def test_bluetooth_only_when_asked_for(system):
+    usb = port("COM7", vid=0x2886, hwid="USB VID:PID=2886:0059")
+    system([usb], configured="ble:Meshtastic_1234")
+    assert device.find_port() == "ble:Meshtastic_1234"  # taken as it is, USB or not
+    assert device.is_ble("BLE:AA:BB:CC:DD:EE:FF") and not device.is_ble("COM7")
+    assert not device.is_ble(None)
+    with pytest.raises(ValueError, match="address or name"):
+        device.open_interface("ble:")
+
+
+def test_link_over_bluetooth(system, link):
+    system([port("COM7", vid=0x2886, hwid="USB")])
+    link.connect("ble:Meshtastic_1234")
+    wait_for(lambda: link.state == "verbunden")
+    assert link.port == "ble:Meshtastic_1234" and isinstance(link.iface, FakeBle)
+    assert not FakeSerial.opened
+    first = link.iface
+    link._on_lost(interface=first)  # out of range
+    wait_for(lambda: first.closed and link.state == "verbunden")
+    assert link.iface is not first and link.port == "ble:Meshtastic_1234"
+
+
+def test_link_keeps_trying_a_missing_bluetooth_device(system, link):
+    system([port("COM7", vid=0x2886, hwid="USB")])
+    link.connect("ble:AA:BB:CC:DD:EE:FF")
+    wait_for(lambda: link.retries >= 2)
+    assert link.state == "Fehler" and "AA:BB:CC:DD:EE:FF" in link.error
+    assert "Handy" in link.error  # the plain message, not the library's
+    assert set(FakeBle.opened) == {"AA:BB:CC:DD:EE:FF"} and not FakeSerial.opened  # no USB instead
+
+
+def test_bluetooth_search_fills_the_port_list(system, link, monkeypatch):
+    from meshtastic.ble_interface import BLEInterface
+
+    system([port("COM7", vid=0x2886, hwid="USB")])
+    found = [SimpleNamespace(name="Meshtastic_1234", address="AA:BB:CC:DD:EE:FF")]
+    monkeypatch.setattr(BLEInterface, "scan", staticmethod(lambda: found))
+    ports = link.scan_bluetooth()
+    assert ports["auto"] == "COM7"  # detection stays with USB
+    ble_ports = [p for p in ports["ports"] if p["kind"] == "ble"]
+    assert [(p["device"], p["description"]) for p in ble_ports] == [
+        ("ble:AA:BB:CC:DD:EE:FF", "Meshtastic_1234")
+    ]
+    assert link.ports()["ports"] == ports["ports"]  # remembered for the page's next request
+
+    def no_adapter():
+        raise OSError("Bluetooth is switched off")
+
+    monkeypatch.setattr(BLEInterface, "scan", staticmethod(no_adapter))
+    with pytest.raises(ValueError, match="switched off"):
+        link.scan_bluetooth()
+
+
+class FakeBleClient:
+    """Stands in for meshtastic's BLEClient. Like bleak on Windows it reports the end of the
+    link also when the program itself disconnects."""
+
+    made: list = []
+    fail_connect = False
+
+    def __init__(self, address=None, disconnected_callback=None):
+        self.address, self.callback = address, disconnected_callback
+        self.disconnects, self.closed = 0, False
+        FakeBleClient.made.append(self)
+
+    def connect(self):
+        if FakeBleClient.fail_connect:
+            raise TimeoutError("no answer")
+
+    def has_characteristic(self, uuid):
+        return False
+
+    def start_notify(self, *args):
+        pass
+
+    def disconnect(self):
+        self.disconnects += 1
+        self.callback(self)
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def ble_client(monkeypatch):
+    from meshplay import ble
+
+    monkeypatch.setattr(ble, "BLEClient", FakeBleClient)
+    monkeypatch.setattr(
+        ble.Interface, "find_device", lambda self, address: SimpleNamespace(address=address)
+    )
+    FakeBleClient.made, FakeBleClient.fail_connect = [], False
+    return ble
+
+
+def test_bluetooth_close_is_not_answered_by_another_close(ble_client):
+    iface = ble_client.Interface("AA:BB:CC:DD:EE:FF", noProto=True)
+    client = FakeBleClient.made[0]
+    iface.close()
+    assert client.disconnects == 1 and client.closed and iface.client is None
+
+
+def test_bluetooth_drop_closes_and_reports_lost(ble_client):
+    from pubsub import pub
+
+    lost = []
+
+    def on_lost(interface=None):
+        lost.append(interface)
+
+    pub.subscribe(on_lost, "meshtastic.connection.lost")
+    iface = ble_client.Interface("AA:BB:CC:DD:EE:FF", noProto=True)
+    client = FakeBleClient.made[0]
+    client.callback(client)  # the device went out of range
+    wait_for(lambda: client.closed and iface in lost)
+    assert iface.client is None
+
+
+def test_failed_bluetooth_attempt_leaves_nothing_behind(ble_client):
+    import threading
+
+    FakeBleClient.fail_connect = True
+    before = {t for t in threading.enumerate() if t.name == "BLEReceive"}
+    with pytest.raises(TimeoutError):
+        ble_client.Interface("AA:BB:CC:DD:EE:FF", noProto=True)
+    assert FakeBleClient.made[0].closed
+    wait_for(lambda: {t for t in threading.enumerate() if t.name == "BLEReceive"} <= before)
 
 
 @pytest.mark.hardware

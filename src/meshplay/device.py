@@ -1,4 +1,4 @@
-"""Finding and connecting to a USB-attached Meshtastic device."""
+"""Finding and connecting to a Meshtastic device: on USB, or over Bluetooth when asked for."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+from meshtastic.mesh_interface import MeshInterface
 from meshtastic.serial_interface import SerialInterface
 from serial.tools import list_ports
 
@@ -22,8 +23,15 @@ KNOWN_VIDS = {
     0x10C4: "Silicon Labs CP210x",
 }
 
+# A port written "ble:<address or name>" is the device over Bluetooth. Never chosen by
+# detection: a scan takes 10 s and also finds other people's nodes.
+BLE_PREFIX = "ble:"
 
 _warned: set[str] = set()  # configured ports already reported missing
+
+
+def is_ble(port: str | None) -> bool:
+    return bool(port) and port.lower().startswith(BLE_PREFIX)
 
 
 def list_serial_ports() -> list[dict]:
@@ -59,11 +67,14 @@ def list_serial_ports() -> list[dict]:
 
 
 def find_port(ports: list[dict] | None = None) -> str | None:
-    """The port to use: MESHTASTIC_PORT if that port exists, else the first port from a known
-    vendor, else the only other USB serial port. None if there is no clear choice."""
+    """The port to use: MESHTASTIC_PORT if that port exists (a Bluetooth one is taken as it
+    is: only the connection can tell), else the first port from a known vendor, else the only
+    other USB serial port. None if there is no clear choice."""
     ports = list_serial_ports() if ports is None else ports
     configured = load_settings().port
     if configured:
+        if is_ble(configured):
+            return configured
         if any(p["device"].lower() == configured.lower() for p in ports):
             return configured
         if configured not in _warned:  # once: the map app asks every few seconds while retrying
@@ -76,9 +87,23 @@ def find_port(ports: list[dict] | None = None) -> str | None:
     return usb[0] if len(usb) == 1 else None
 
 
+def open_interface(port: str, **kwargs) -> MeshInterface:
+    """Connect to the device on a serial port, or over Bluetooth for "ble:<address or name>"
+    (the name as the device advertises it, e.g. ble:Meshtastic_1234)."""
+    if not is_ble(port):
+        return SerialInterface(devPath=port, **kwargs)
+    address = port[len(BLE_PREFIX) :].strip()
+    if not address:
+        raise ValueError("ble: needs the device's Bluetooth address or name")
+    from meshplay import ble  # loads the Bluetooth stack only when it is used
+
+    return ble.Interface(address, **kwargs)
+
+
 @contextmanager
-def connect(port: str | None = None, **kwargs) -> Iterator[SerialInterface]:
-    """Open a serial connection to the device and always close it afterwards.
+def connect(port: str | None = None, **kwargs) -> Iterator[MeshInterface]:
+    """Open a connection to the device (serial, or Bluetooth for a "ble:" port) and always
+    close it afterwards.
 
     Usage:
         with connect() as iface:
@@ -88,10 +113,11 @@ def connect(port: str | None = None, **kwargs) -> Iterator[SerialInterface]:
     if port is None:
         raise RuntimeError(
             "No Meshtastic device found on USB. Plug it in (a data cable, not a charging cable) "
-            "or give the port (--port, MESHTASTIC_PORT in .env)."
+            "or give the port (--port, MESHTASTIC_PORT in .env; ble:<address or name> for "
+            "Bluetooth)."
         )
     log.info("Connecting to %s", port)
-    iface = SerialInterface(devPath=port, **kwargs)
+    iface = open_interface(port, **kwargs)
     try:
         yield iface
     finally:

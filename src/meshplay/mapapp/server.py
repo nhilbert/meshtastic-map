@@ -7,9 +7,12 @@ POST /api/scenes/<action>     activate, delete ({"name"}), delete_tiles (data/si
 GET  /api/app                 home position, scene extent, layer list with settings
 GET  /api/layers/<id>?...     layer data for the given settings (GeoJSON or raster)
 POST /api/tools/<name>        run a tool, e.g. link
-GET  /api/device              connection status of the USB device
-GET  /api/device/ports        serial ports of the system and the automatic choice
-POST /api/device/connect      {"port": "COM8"} or {} for auto-detect; /api/device/disconnect
+GET  /api/device              connection status of the device
+GET  /api/device/ports        serial ports of the system, Bluetooth devices of the last search
+                              and the automatic choice
+POST /api/device/scan         search for Bluetooth devices (10 s); answers like /ports
+POST /api/device/connect      {"port": "COM8"}, {"port": "ble:<address>"} or {} for auto-detect;
+                              /api/device/disconnect
 GET  /api/jobs                background tasks; /api/jobs/kinds: task kinds with their forms
 GET  /api/jobs/<id>           one task with its log
 POST /api/jobs                {"kind", "params"} starts a task; /api/jobs/<id>/cancel, /remove
@@ -335,6 +338,9 @@ def make_handler(ctx: Context):
                 if parts[:2] == ["api", "walks"] and len(parts) == 4 and parts[3] == "delete":
                     self.send_json(walks_store.delete_active(ctx, unquote(parts[2])))
                     return
+                if parts == ["api", "device", "scan"]:
+                    self.send_json(ctx.device.scan_bluetooth())
+                    return
                 if parts[:2] == ["api", "device"] and len(parts) == 3:
                     if parts[2] == "connect":
                         ctx.device.connect(body.get("port") or None)
@@ -407,7 +413,8 @@ def run(
     log_packets: bool = True,
     simulate: tuple[Path | None, float] | None = None,
 ) -> None:
-    """device: None = don't connect at start, "auto" = find the port, else a port like COM8.
+    """device: None = don't connect at start, "auto" = find the port, else a port like COM8
+    or ble:<address or name> for Bluetooth.
     simulate: (GPX track or None, speed factor) replaces the device by a simulated radio."""
     ctx = Context()
     sim = None

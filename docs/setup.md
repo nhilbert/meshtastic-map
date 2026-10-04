@@ -10,7 +10,8 @@ with their shell's syntax, but haven't been tried.
 - **Python 3.10 or newer** ([python.org](https://www.python.org/downloads/); on Windows tick
   "Add python.exe to PATH" during installation).
 - **Git** to get the code, or download the repository as a ZIP.
-- **A Meshtastic node with a USB data cable** (some cables only charge). For walks, a second
+- **A Meshtastic node with a USB data cable** (some cables only charge), or one paired over
+  Bluetooth ([mapapp.md](mapapp.md#live-device)). For walks, a second
   node that you carry (a tracker such as the T1000-E, or any node) and a phone app that records
   a GPX track. Without a node, the map app runs with a simulated radio (`--simulate`).
 - **For the simulation and the 3D view:** about 1–2 GB of disk space and 2 GB of RAM for a
@@ -64,7 +65,7 @@ says the port is busy or no device was found, see [Troubleshooting](#troubleshoo
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MESHTASTIC_PORT` | auto | serial port, e.g. `COM8` (Windows) or `/dev/ttyACM0` (Linux); used only while it exists, else auto-detection |
+| `MESHTASTIC_PORT` | auto | serial port, e.g. `COM8` (Windows) or `/dev/ttyACM0` (Linux); used only while it exists, else auto-detection. `ble:<name or address>` (e.g. `ble:Meshtastic_1234`) connects over Bluetooth instead |
 | `MESHPLAY_HOME` | – | home node position as `lat,lon`: map centre, distances, nearest site, tile area |
 | `MESHPLAY_DATA_DIR` | `data` | where logs, exports and simulation data go |
 | `MESHPLAY_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
@@ -126,6 +127,13 @@ map app. The same client is hosted at https://client.meshtastic.org.
   over Bluetooth link"), and a `MESHTASTIC_PORT` that no longer exists is skipped. Otherwise
   pick the port in the map app (*Gerät* lists all ports) or pass `--port`. On Windows the
   port is listed in Device Manager → Ports (COM & LPT).
+- **Bluetooth device not found:** the node advertises only while no other Bluetooth client
+  holds it — disconnect the phone app. It must be switched on, in range and have Bluetooth
+  enabled (on ESP32 boards it is off while WiFi is on).
+- **Bluetooth device found, but connecting fails or "nimmt keine Daten an":** pair the node in
+  the system's Bluetooth settings first (PIN from the node's display). After a firmware update
+  or a changed PIN, remove the pairing there and pair again. A one-off Windows error such as
+  "Das Handle ist ungültig" goes away by itself; the map app tries again every 5 s.
 - **Map background blank:** open maps with `--open` (a local web server), not as a file.
 - **3D view empty or "Keine Laserscan-Szene":** create a scene ([scenes.md](scenes.md)). The
   3D view also needs WebGL in the browser.

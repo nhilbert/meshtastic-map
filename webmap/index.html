@@ -139,6 +139,7 @@
         <div class="devrow">
           <select id="devPort" aria-label="Port" data-i18n-aria-label="Port"></select>
           <button class="btn small quiet" id="devScan" aria-label="Ports neu suchen" data-i18n-aria-label="Ports neu suchen" title="Ports neu suchen" data-i18n-title="Ports neu suchen"></button>
+          <button class="btn small quiet" id="devBle" aria-label="Bluetooth-Geräte suchen (10 s)" data-i18n-aria-label="Bluetooth-Geräte suchen (10 s)" title="Bluetooth-Geräte suchen (10 s)" data-i18n-title="Bluetooth-Geräte suchen (10 s)"></button>
           <button class="btn" id="devBtn" data-i18n>Verbinden</button>
         </div>
       </details>
@@ -224,7 +225,7 @@
 </main>
 <footer class="telemetry-bar" aria-label="Gerätestatus" data-i18n-aria-label="Gerätestatus">
   <dl class="telemetry" id="deviceTelemetry">
-    <div><dt data-i18n>Gerät (USB)</dt><dd id="telemetryDevice">—</dd></div>
+    <div><dt data-i18n>Gerät</dt><dd id="telemetryDevice">—</dd></div>
     <div><dt data-i18n>Pakete</dt><dd id="telemetryPackets">—</dd></div>
     <div><dt data-i18n>Letztes Paket</dt><dd id="telemetryLast">—</dd></div>
     <div><dt data-i18n>Kanal belegt</dt><dd id="telemetryChUtil">—</dd></div>

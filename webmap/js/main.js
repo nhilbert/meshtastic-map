@@ -405,19 +405,51 @@ function renderAirtime(a) {
       preset: a.preset, age: dv.age_s === null ? t("noch keine") : t("vor {n} s", { n: dv.age_s }) }))}</p>`;
 }
 // The system's serial ports for the port choice; "" = automatic, which the server resolves.
+// Bluetooth devices ("ble:<address>") come from a search; the chosen one is remembered with its
+// name, so that it stays in the list without a new search.
+const isBle = port => (port || "").startsWith("ble:");
 async function loadPorts() {
-  let d;
-  try { d = await getJSON("api/device/ports"); } catch (_) { return; }
+  try { renderPorts(await getJSON("api/device/ports")); } catch (_) { }
+}
+function renderPorts(d) {
   const sel = $("#devPort");
-  const label = p => p.kind === "bluetooth" ? t("{port} · Bluetooth, kein USB-Gerät", { port: p.device })
-    : `${p.device} · ${p.vendor || p.description || ""}`;
-  const auto = d.auto ? t("Automatisch ({port})", { port: d.auto }) : t("Automatisch (kein Gerät gefunden)");
-  sel.innerHTML = `<option value="">${esc(auto)}</option>`
-    + d.ports.map(p => `<option value="${esc(p.device)}">${esc(label(p))}</option>`).join("");
   const saved = store.get("device.port", "");
-  sel.value = d.ports.some(p => p.device === saved) ? saved : "";
+  const ports = isBle(saved) && !d.ports.some(p => p.device === saved)
+    ? [...d.ports, { device: saved, kind: "ble", description: store.get("device.name", "") || saved.slice(4) }]
+    : d.ports;
+  const label = p => p.kind === "ble" ? t("Bluetooth · {name}", { name: p.description })
+    : p.kind === "bluetooth" ? t("{port} · serieller Bluetooth-Port, kein Meshtastic-Gerät", { port: p.device })
+    : `${p.device} · ${p.vendor || p.description || ""}`;
+  const auto = isBle(d.auto) ? t("Automatisch (Bluetooth)")
+    : d.auto ? t("Automatisch ({port})", { port: d.auto }) : t("Automatisch (kein Gerät gefunden)");
+  sel.innerHTML = `<option value="">${esc(auto)}</option>`
+    + ports.map(p => `<option value="${esc(p.device)}" data-name="${esc(p.kind === "ble" ? p.description : "")}">${esc(label(p))}</option>`).join("");
+  sel.value = ports.some(p => p.device === saved) ? saved : "";
   S.simulated = d.simulated;
   sel.disabled = d.simulated || S.devState === "verbunden" || S.devState === "verbinde";
+}
+function choosePort(port) {
+  const sel = $("#devPort");
+  sel.value = port;
+  store.set("device.port", sel.value);
+  store.set("device.name", sel.selectedOptions[0]?.dataset.name || "");
+}
+async function scanBluetooth() {
+  const btn = $("#devBle");
+  S.bleScan = btn.disabled = true;
+  toast(t("Suche Bluetooth-Geräte (10 s) …"));
+  try {
+    const d = await postJSON("api/device/scan", {});
+    renderPorts(d);
+    const found = d.ports.filter(p => p.kind === "ble");
+    if (found.length === 1) {
+      choosePort(found[0].device);
+      toast(t("Bluetooth-Gerät {name} gefunden und ausgewählt.", { name: found[0].description }));
+    } else if (found.length) toast(t("{n} Bluetooth-Geräte gefunden: in der Liste auswählen.", { n: found.length }));
+    else toast(t("Kein Meshtastic-Gerät über Bluetooth gefunden: eingeschaltet, in Reichweite und nicht mit dem Handy verbunden?"), { bad: true });
+  } catch (e) { toast(e.message, { bad: true }); }
+  S.bleScan = false;
+  btn.disabled = S.simulated || S.devState === "verbunden" || S.devState === "verbinde";
 }
 async function deviceStatus(action) {
   let d;
@@ -444,17 +476,22 @@ async function deviceStatus(action) {
   const since = d.last_packet ? ", " + t("letztes vor {s} s", { s: Math.round(Date.now() / 1000 - d.last_packet) }) : "";
   // Device states are German codes: t("getrennt") t("verbinde") t("verbunden") t("Fehler")
   $("#devText").textContent = d.state === "verbunden"
-    ? t("{name} auf {port} · {n} Pakete", { name: d.me ? d.me.name : t("verbunden"), port: d.port === "sim" ? t("Simulation") : d.port, n: d.packets }) + since + (d.logging ? " · " + t("Log an") : "")
+    ? t("{name} auf {port} · {n} Pakete", { name: d.me ? d.me.name : t("verbunden"), port: d.port === "sim" ? t("Simulation") : isBle(d.port) ? t("Bluetooth") : d.port, n: d.packets }) + since + (d.logging ? " · " + t("Log an") : "")
     : d.state === "Fehler" ? t("Fehler: {error}", { error: d.error }) : t(d.state);
   const connected = d.state === "verbunden" || d.state === "verbinde";
   $("#devBtn").textContent = connected || d.retrying ? t("Trennen") : t("Verbinden");
   $("#devBtn").dataset.action = connected || d.retrying ? "disconnect" : "connect";
   $("#devPort").disabled = connected || S.simulated;
+  $("#devBle").disabled = connected || S.simulated || S.bleScan;
   // A connection that dropped is retried by the server; say so over the map until it is back.
   const lost = d.lost_at && d.retrying;
   $("#devBanner").hidden = !lost;
-  if (lost) $("#devBannerText").textContent = t("Verbindung zum Gerät seit {time} weg: neuer Versuch alle {s} s. Kabel prüfen.", {
-    time: new Date(d.lost_at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }), s: d.retry_s });
+  if (lost) {
+    const p = { time: new Date(d.lost_at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }), s: d.retry_s };
+    $("#devBannerText").textContent = isBle(d.port)
+      ? t("Bluetooth-Verbindung zum Gerät seit {time} weg: neuer Versuch alle {s} s. Reichweite prüfen.", p)
+      : t("Verbindung zum Gerät seit {time} weg: neuer Versuch alle {s} s. Kabel prüfen.", p);
+  }
   if (d.retrying && !d.lost_at && d.state === "Fehler") $("#devText").textContent += " · " + t("neuer Versuch alle {s} s", { s: d.retry_s });
   if (!connected && d.state !== S.devState) loadPorts();  // plugged in or out meanwhile?
   if (S.devState !== null && d.state !== S.devState && d.state !== "verbinde") {
@@ -687,8 +724,10 @@ function bindUI() {
   $("#devBtn").addEventListener("click", () => deviceStatus($("#devBtn").dataset.action || "connect"));
   $("#devScan").innerHTML = symbolSVG("refresh");
   $("#devScan").addEventListener("click", loadPorts);
+  $("#devBle").innerHTML = symbolSVG("bluetooth");
+  $("#devBle").addEventListener("click", scanBluetooth);
   $("#devBannerStop").addEventListener("click", () => deviceStatus("disconnect"));
-  $("#devPort").addEventListener("change", () => store.set("device.port", $("#devPort").value));
+  $("#devPort").addEventListener("change", () => choosePort($("#devPort").value));
   $("#view2d").addEventListener("click", () => setView("2d"));
   $("#view3d").addEventListener("click", () => setView("3d"));
   $("#btnInsp").addEventListener("click", () => toggleInspector($("#right").hidden));

@@ -71,6 +71,9 @@ Meshtastic web client), then:
 python scripts/mapapp.py --device --open
 ```
 
+No cable to the node? It also connects over Bluetooth, see
+[docs/mapapp.md](docs/mapapp.md#live-device).
+
 The map opens at http://localhost:8770. Without a laser-scan scene, the 3D view and the
 simulation say what's missing; everything else works right away. Stuck? See
 [Troubleshooting](docs/setup.md#troubleshooting).

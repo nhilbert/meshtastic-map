@@ -250,7 +250,7 @@ function render() {
   const modeTip = d.enabled
     ? t("An: der eigene Knoten funkt selbstständig an die Knoten mit Einsatz (Zuweisung, Kurs, Ankunft, Antworten auf ? ?R ?Z ?P HALT GO X).")
     : connected ? t("Aus: es wird nichts gesendet. Einschalten erlaubt dem Server, Knoten mit Einsatz selbstständig anzufunken.")
-      : t("Braucht das verbundene Gerät (oben unter „Gerät (USB)“ verbinden).");
+      : t("Braucht das verbundene Gerät (unter „Gerät“ verbinden).");
   const waiting = d.enabled && !connected;
   const missions = d.missions.slice().sort((a, b) => RANK[missionStatus(a).level] - RANK[missionStatus(b).level]);
   const list = C.form ? formHTML(d)
